@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Transaction } from "../utils/transactions";
 import {
+  autoCategorize,
   detectDelimiterFromLine,
   guessColumnIndex,
   makeSignature,
@@ -9,6 +10,7 @@ import {
   pickHeaderLineIndex,
   splitCSVLine,
   toISODate,
+  type Category,
 } from "../utils/transactions";
 
 type ImportStatus = "idle" | "reading" | "mapping" | "ready" | "error";
@@ -16,11 +18,13 @@ type ImportStatus = "idle" | "reading" | "mapping" | "ready" | "error";
 type UseCsvImportParams = {
   existingTransactions: Transaction[];
   onImport: (transactions: Transaction[]) => void;
+  categories: Category[];
 };
 
 export function useCsvImport({
   existingTransactions,
   onImport,
+  categories,
 }: UseCsvImportParams) {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<ImportStatus>("idle");
@@ -136,7 +140,7 @@ export function useCsvImport({
         title: normalizeSpaces(rawDesc) || "Sem descrição",
         amount: Math.abs(amt),
         date: isoDate,
-        category: "Outros",
+        category: autoCategorize(rawDesc, categories),
       });
 
       if (preview.length >= 200) break;
@@ -144,7 +148,15 @@ export function useCsvImport({
 
     setImportPreview(preview);
     setImportStatus(preview.length > 0 ? "ready" : "mapping");
-  }, [csvHeaders, csvRows, importStatus, mapDateIdx, mapDescIdx, mapValueIdx]);
+  }, [
+    categories,
+    csvHeaders,
+    csvRows,
+    importStatus,
+    mapDateIdx,
+    mapDescIdx,
+    mapValueIdx,
+  ]);
 
   function importPreviewIntoApp() {
     if (importPreview.length === 0) {

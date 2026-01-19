@@ -1,15 +1,6 @@
 export type TransactionType = "entrada" | "saida";
 
-export type Category =
-  | "Alimentação"
-  | "Transporte"
-  | "Moradia"
-  | "Lazer"
-  | "Saúde"
-  | "Educação"
-  | "Assinaturas"
-  | "Salário"
-  | "Outros";
+export type Category = string;
 
 export type Transaction = {
   id: string;
@@ -21,8 +12,9 @@ export type Transaction = {
 };
 
 export const STORAGE_KEY = "cf_transactions_v7";
+export const CATEGORY_STORAGE_KEY = "cf_categories_v1";
 
-export const CATEGORIES: Category[] = [
+export const DEFAULT_CATEGORIES: Category[] = [
   "Alimentação",
   "Transporte",
   "Moradia",
@@ -32,6 +24,22 @@ export const CATEGORIES: Category[] = [
   "Assinaturas",
   "Salário",
   "Outros",
+];
+
+type CategoryKeyword = {
+  category: Category;
+  keywords: string[];
+};
+
+const CATEGORY_KEYWORDS: CategoryKeyword[] = [
+  { category: "Alimentação", keywords: ["mercado", "restaurante", "lanch", "ifood", "uber eats", "padaria"] },
+  { category: "Transporte", keywords: ["uber", "99", "taxi", "combust", "gasolina", "metro", "onibus", "passagem"] },
+  { category: "Moradia", keywords: ["aluguel", "condominio", "luz", "energia", "agua", "internet"] },
+  { category: "Lazer", keywords: ["cinema", "show", "viagem", "netflix", "spotify", "hbo", "prime"] },
+  { category: "Saúde", keywords: ["farmacia", "remedio", "consulta", "hospital", "exame", "plano"] },
+  { category: "Educação", keywords: ["curso", "faculdade", "livro", "escola", "mensalidade"] },
+  { category: "Assinaturas", keywords: ["assinatura", "saas", "github", "notion"] },
+  { category: "Salário", keywords: ["salario", "folha", "pagamento"] },
 ];
 
 export function formatBRL(value: number) {
@@ -45,11 +53,15 @@ export function normalizeSpaces(s: string) {
   return s.replace(/\s+/g, " ").trim();
 }
 
-export function normalizeHeader(s: string) {
-  return normalizeSpaces(s)
+export function normalizeText(input: string) {
+  return normalizeSpaces(input)
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
+}
+
+export function normalizeHeader(s: string) {
+  return normalizeText(s);
 }
 
 export function toISODate(input: string): string | null {
@@ -131,9 +143,9 @@ export function makeSignature(t: {
   type: TransactionType;
   category: Category;
 }) {
-  return `${t.date}|${normalizeSpaces(t.title).toLowerCase()}|${t.amount.toFixed(
-    2
-  )}|${t.type}|${t.category}`;
+  return `${t.date}|${normalizeText(t.title)}|${t.amount.toFixed(2)}|${t.type}|${
+    t.category
+  }`;
 }
 
 export function guessColumnIndex(
@@ -210,4 +222,49 @@ export function buildTransactionsCsv(transactions: Transaction[]) {
   );
 
   return [header.join(";"), ...lines].join("\n");
+}
+
+export function ensureDefaultCategory(categories: Category[]) {
+  const normalized = categories.map(normalizeSpaces).filter(Boolean);
+  const unique = Array.from(new Set(normalized));
+  return unique.includes("Outros") ? unique : [...unique, "Outros"];
+}
+
+export function autoCategorize(
+  title: string,
+  categories: Category[],
+  fallback: Category = "Outros"
+) {
+  const normalizedTitle = normalizeText(title);
+  if (!normalizedTitle) return fallback;
+
+  const normalizedCategories = categories.map((c) => ({
+    raw: c,
+    normalized: normalizeText(c),
+  }));
+
+  const directMatch = normalizedCategories.find(
+    (item) =>
+      item.normalized &&
+      item.normalized !== "outros" &&
+      normalizedTitle.includes(item.normalized)
+  );
+
+  if (directMatch) {
+    return directMatch.raw;
+  }
+
+  for (const entry of CATEGORY_KEYWORDS) {
+    const hasKeyword = entry.keywords.some((keyword) =>
+      normalizedTitle.includes(normalizeText(keyword))
+    );
+    if (hasKeyword) {
+      const available = normalizedCategories.find(
+        (item) => item.normalized === normalizeText(entry.category)
+      );
+      return available?.raw ?? fallback;
+    }
+  }
+
+  return fallback;
 }

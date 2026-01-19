@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Card } from "./components/Card";
+import { useCategories } from "./hooks/useCategories";
 import { useCsvImport } from "./hooks/useCsvImport";
 import { useTransactions } from "./hooks/useTransactions";
 import {
   buildTransactionsCsv,
-  CATEGORIES,
   formatBRL,
   normalizeSpaces,
   parseAmount,
@@ -32,6 +32,7 @@ export default function App() {
   const [type, setType] = useState<TransactionType>("entrada");
   const [category, setCategory] = useState<Category>("Outros");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [categoryInput, setCategoryInput] = useState("");
 
   // FILTROS
   const [filterType, setFilterType] = useState<"todos" | TransactionType>(
@@ -41,6 +42,9 @@ export default function App() {
     "todas"
   );
   const [searchQuery, setSearchQuery] = useState("");
+
+  const { categories, addCategory, removeCategory, resetCategories } =
+    useCategories();
 
   const {
     isImportOpen,
@@ -62,6 +66,7 @@ export default function App() {
   } = useCsvImport({
     existingTransactions: transactions,
     onImport: (items) => setTransactions((prev) => [...items, ...prev]),
+    categories,
   });
 
   const filteredTransactions = useMemo(() => {
@@ -94,6 +99,46 @@ export default function App() {
 
     return { income, expense, balance };
   }, [filteredTransactions]);
+
+  const totalsByCategory = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const t of filteredTransactions) {
+      totals.set(t.category, (totals.get(t.category) ?? 0) + t.amount);
+    }
+    return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+  }, [filteredTransactions]);
+
+  const monthlyTotals = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, index) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}`;
+      return {
+        key,
+        label: d.toLocaleString("pt-BR", { month: "short", year: "2-digit" }),
+      };
+    });
+
+    const totals = new Map(months.map((m) => [m.key, 0]));
+    for (const t of filteredTransactions) {
+      const key = t.date.slice(0, 7);
+      if (totals.has(key)) {
+        totals.set(key, (totals.get(key) ?? 0) + t.amount);
+      }
+    }
+
+    return months.map((m) => ({
+      ...m,
+      total: totals.get(m.key) ?? 0,
+    }));
+  }, [filteredTransactions]);
+
+  const maxCategoryTotal =
+    totalsByCategory.length > 0 ? totalsByCategory[0][1] : 0;
+  const maxMonthTotal = Math.max(...monthlyTotals.map((m) => m.total), 0);
 
   function resetForm() {
     setTitle("");
@@ -185,6 +230,11 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
+  function handleAddCategory() {
+    addCategory(categoryInput);
+    setCategoryInput("");
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
@@ -221,6 +271,70 @@ export default function App() {
               {formatBRL(summary.expense)}
             </p>
             <p className="mt-1 text-xs text-slate-500">No mês</p>
+          </Card>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-[2fr,3fr]">
+          <Card title="Categorias (top gastos)">
+            {totalsByCategory.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Sem dados para exibir. Adicione transações para gerar insights.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {totalsByCategory.map(([cat, total]) => {
+                  const percentage =
+                    maxCategoryTotal > 0 ? (total / maxCategoryTotal) * 100 : 0;
+                  return (
+                    <div key={cat} className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-medium">{cat}</span>
+                        <span className="text-slate-500">
+                          {formatBRL(total)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div
+                          className="h-2 rounded-full bg-emerald-500"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          <Card title="Evolução (últimos 6 meses)">
+            {monthlyTotals.every((m) => m.total === 0) ? (
+              <p className="text-sm text-slate-500">
+                Sem dados para o período selecionado.
+              </p>
+            ) : (
+              <div className="grid gap-3">
+                {monthlyTotals.map((m) => {
+                  const percentage =
+                    maxMonthTotal > 0 ? (m.total / maxMonthTotal) * 100 : 0;
+                  return (
+                    <div key={m.key} className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-medium">{m.label}</span>
+                        <span className="text-slate-500">
+                          {formatBRL(m.total)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div
+                          className="h-2 rounded-full bg-sky-500"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Card>
         </section>
 
@@ -422,7 +536,7 @@ export default function App() {
                 className="rounded-lg border px-3 py-2"
               >
                 <option value="todas">Todas</option>
-                {CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -484,7 +598,7 @@ export default function App() {
                   onChange={(e) => setCategory(e.target.value as Category)}
                   className="rounded-lg border px-3 py-2"
                 >
-                  {CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -521,6 +635,58 @@ export default function App() {
               </div>
             </div>
           )}
+
+          <div className="mb-4 grid gap-3 rounded-2xl border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Categorias personalizadas</p>
+                <p className="text-sm text-slate-500">
+                  Adicione categorias novas para classificar transações e
+                  melhorar a importação automática.
+                </p>
+              </div>
+              <button
+                onClick={resetCategories}
+                className="rounded-xl border px-3 py-1 text-xs hover:bg-slate-50"
+              >
+                Restaurar padrão
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {categories.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => removeCategory(c)}
+                  className={
+                    "rounded-full border px-3 py-1 text-xs " +
+                    (c === "Outros"
+                      ? "cursor-not-allowed bg-slate-50 text-slate-400"
+                      : "hover:bg-slate-50")
+                  }
+                  title={c === "Outros" ? "Categoria padrão" : "Remover"}
+                  disabled={c === "Outros"}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={categoryInput}
+                onChange={(e) => setCategoryInput(e.target.value)}
+                className="rounded-lg border px-3 py-2 text-sm"
+                placeholder="Nova categoria"
+              />
+              <button
+                onClick={handleAddCategory}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+              >
+                Adicionar
+              </button>
+            </div>
+          </div>
 
           {/* LISTA */}
           {filteredTransactions.length === 0 ? (
