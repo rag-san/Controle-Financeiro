@@ -58,6 +58,15 @@ export default function App() {
     [categories, transactions]
   );
 
+  const monthLabel = useMemo(
+    () =>
+      new Date().toLocaleString("pt-BR", {
+        month: "long",
+        year: "numeric",
+      }),
+    []
+  );
+
   const {
     isImportOpen,
     setIsImportOpen,
@@ -115,6 +124,7 @@ export default function App() {
   const totalsByCategory = useMemo(() => {
     const totals = new Map<string, number>();
     for (const t of filteredTransactions) {
+      if (t.type !== "saida") continue;
       totals.set(t.category, (totals.get(t.category) ?? 0) + t.amount);
     }
     return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
@@ -136,6 +146,7 @@ export default function App() {
 
     const totals = new Map(months.map((m) => [m.key, 0]));
     for (const t of filteredTransactions) {
+      if (t.type !== "saida") continue;
       const key = t.date.slice(0, 7);
       if (totals.has(key)) {
         totals.set(key, (totals.get(key) ?? 0) + t.amount);
@@ -151,6 +162,12 @@ export default function App() {
   const maxCategoryTotal =
     totalsByCategory.length > 0 ? totalsByCategory[0][1] : 0;
   const maxMonthTotal = Math.max(...monthlyTotals.map((m) => m.total), 0);
+  const balanceTone =
+    summary.balance > 0
+      ? "text-emerald-600"
+      : summary.balance < 0
+      ? "text-rose-600"
+      : "text-slate-500";
 
   function resetForm() {
     setTitle("");
@@ -216,8 +233,10 @@ export default function App() {
   }
 
   function clearAll() {
-    const ok = confirm("Tem certeza que quer apagar todas as transações?");
-    if (!ok) return;
+    const confirmText = prompt(
+      "Para confirmar, digite LIMPAR e apagar todas as transações."
+    );
+    if (confirmText !== "LIMPAR") return;
     clearTransactions();
     setIsFormOpen(false);
     setEditingId(null);
@@ -291,16 +310,20 @@ export default function App() {
           </div>
 
           <span className="text-xs rounded-full border px-3 py-1 text-slate-600">
-            Janeiro
+            {monthLabel}
           </span>
         </div>
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-6 space-y-6">
         <section className="grid gap-4 sm:grid-cols-3">
-          <Card title="Saldo (filtrado)">
-            <p className="text-2xl font-bold">{formatBRL(summary.balance)}</p>
-            <p className="mt-1 text-xs text-slate-500">Atual</p>
+          <Card title="Resultado do mês">
+            <p className={`text-2xl font-bold ${balanceTone}`}>
+              {formatBRL(summary.balance)}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Entradas - Saídas (filtro atual)
+            </p>
           </Card>
 
           <Card title="Entradas (filtrado)">
@@ -322,7 +345,7 @@ export default function App() {
           <Card title="Categorias (top gastos)">
             {totalsByCategory.length === 0 ? (
               <p className="text-sm text-slate-500">
-                Sem dados para exibir. Adicione transações para gerar insights.
+                Sem dados de saídas. Adicione gastos para gerar insights.
               </p>
             ) : (
               <div className="space-y-3">
@@ -350,10 +373,10 @@ export default function App() {
             )}
           </Card>
 
-          <Card title="Evolução (últimos 6 meses)">
+          <Card title="Evolução de gastos (últimos 6 meses)">
             {monthlyTotals.every((m) => m.total === 0) ? (
               <p className="text-sm text-slate-500">
-                Sem dados para o período selecionado.
+                Sem dados de gastos no período selecionado.
               </p>
             ) : (
               <div className="grid gap-3">
@@ -413,8 +436,8 @@ export default function App() {
 
               <button
                 onClick={clearAll}
-                className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
-                title="Apagar tudo"
+                className="rounded-xl border border-rose-200 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
+                title="Apagar tudo (ação irreversível)"
               >
                 Limpar
               </button>
