@@ -233,10 +233,6 @@ export default function App() {
   }
 
   function clearAll() {
-    const confirmText = prompt(
-      "Para confirmar, digite LIMPAR e apagar todas as transações."
-    );
-    if (confirmText !== "LIMPAR") return;
     clearTransactions();
     setIsFormOpen(false);
     setEditingId(null);
