@@ -1,207 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card } from "./components/Card";
-
-type TransactionType = "entrada" | "saida";
-
-type Category =
-  | "Alimentação"
-  | "Transporte"
-  | "Moradia"
-  | "Lazer"
-  | "Saúde"
-  | "Educação"
-  | "Assinaturas"
-  | "Salário"
-  | "Outros";
-
-type Transaction = {
-  id: string;
-  type: TransactionType;
-  title: string;
-  amount: number;
-  date: string; // "YYYY-MM-DD"
-  category: Category;
-};
-
-const STORAGE_KEY = "cf_transactions_v7";
-
-const CATEGORIES: Category[] = [
-  "Alimentação",
-  "Transporte",
-  "Moradia",
-  "Lazer",
-  "Saúde",
-  "Educação",
-  "Assinaturas",
-  "Salário",
-  "Outros",
-];
-
-function formatBRL(value: number) {
-  return value.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  });
-}
-
-function normalizeSpaces(s: string) {
-  return s.replace(/\s+/g, " ").trim();
-}
-
-function normalizeHeader(s: string) {
-  return normalizeSpaces(s)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
-function toISODate(input: string): string | null {
-  const s = input.trim();
-  if (!s) return null;
-
-  // YYYY-MM-DD
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-
-  // DD/MM/YYYY or DD-MM-YYYY
-  const br = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
-  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
-
-  return null;
-}
-
-function parseAmount(raw: string): number | null {
-  let s = raw.trim();
-  if (!s) return null;
-
-  s = s.replace(/[R$\s]/g, "");
-
-  // 1.234,56
-  if (s.includes(",") && s.includes(".")) {
-    s = s.replace(/\./g, "").replace(",", ".");
-  } else {
-    // 123,45 ou 123.45
-    s = s.replace(",", ".");
-  }
-
-  const n = Number(s);
-  if (!Number.isFinite(n)) return null;
-  return n;
-}
-
-function splitCSVLine(line: string, delimiter: "," | ";") {
-  const out: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-
-    if (ch === '"') {
-      // "" vira "
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && ch === delimiter) {
-      out.push(cur);
-      cur = "";
-      continue;
-    }
-
-    cur += ch;
-  }
-
-  out.push(cur);
-  return out.map((v) => v.trim());
-}
-
-function detectDelimiterFromLine(line: string): "," | ";" {
-  const semis = (line.match(/;/g) || []).length;
-  const commas = (line.match(/,/g) || []).length;
-  return semis >= commas ? ";" : ",";
-}
-
-function makeSignature(t: {
-  date: string;
-  title: string;
-  amount: number;
-  type: TransactionType;
-  category: Category;
-}) {
-  return `${t.date}|${normalizeSpaces(t.title).toLowerCase()}|${t.amount.toFixed(
-    2
-  )}|${t.type}|${t.category}`;
-}
-
-function guessColumnIndex(headers: string[], kind: "date" | "desc" | "value") {
-  const h = headers.map(normalizeHeader);
-
-  const findAny = (needles: string[]) => {
-    for (let i = 0; i < h.length; i++) {
-      for (const n of needles) {
-        if (h[i].includes(n)) return i;
-      }
-    }
-    return -1;
-  };
-
-  if (kind === "date") return findAny(["data", "date", "lancamento"]);
-  if (kind === "desc")
-    return findAny(["descricao", "descr", "historico", "hist", "memo"]);
-  return findAny(["valor", "value", "amount", "debito", "credito"]);
-}
-
-function pickHeaderLineIndex(lines: string[], delimiter: "," | ";") {
-  // procura a linha que realmente é o header:
-  // - tem >= 3 colunas
-  // - tem palavras chave tipo data/valor/descricao/historico/saldo
-  let bestIdx = 0;
-  let bestScore = -1;
-
-  for (let i = 0; i < Math.min(lines.length, 40); i++) {
-    const cols = splitCSVLine(lines[i], delimiter);
-    if (cols.length < 3) continue;
-
-    const nonEmpty = cols.filter((c) => c.trim().length > 0).length;
-    const joined = cols.map(normalizeHeader).join(" ");
-
-    const hasKeywords =
-      joined.includes("data") ||
-      joined.includes("valor") ||
-      joined.includes("descricao") ||
-      joined.includes("historico") ||
-      joined.includes("saldo");
-
-    const score = cols.length + nonEmpty + (hasKeywords ? 10 : 0);
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestIdx = i;
-    }
-  }
-
-  return bestIdx;
-}
+import { useCategories } from "./hooks/useCategories";
+import { useCsvImport } from "./hooks/useCsvImport";
+import { useTransactions } from "./hooks/useTransactions";
+import {
+  buildTransactionsCsv,
+  formatBRL,
+  normalizeSpaces,
+  parseAmount,
+  type Category,
+  type Transaction,
+  type TransactionType,
+} from "./utils/transactions";
 
 export default function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw) as Transaction[];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
+  const {
+    transactions,
+    setTransactions,
+    addTransaction,
+    updateTransaction,
+    removeTransaction,
+    clearTransactions,
+  } = useTransactions();
 
   // FORM (manual)
   const [title, setTitle] = useState("");
@@ -209,6 +32,7 @@ export default function App() {
   const [type, setType] = useState<TransactionType>("entrada");
   const [category, setCategory] = useState<Category>("Outros");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [categoryInput, setCategoryInput] = useState("");
 
   // FILTROS
   const [filterType, setFilterType] = useState<"todos" | TransactionType>(
@@ -217,36 +41,50 @@ export default function App() {
   const [filterCategory, setFilterCategory] = useState<"todas" | Category>(
     "todas"
   );
+  const [searchQuery, setSearchQuery] = useState("");
 
-  // IMPORT CSV (mapeamento)
-  const [isImportOpen, setIsImportOpen] = useState(false);
-  const [importStatus, setImportStatus] = useState<
-    "idle" | "reading" | "mapping" | "ready" | "error"
-  >("idle");
-  const [importError, setImportError] = useState<string>("");
+  const { categories, addCategory, removeCategory, resetCategories } =
+    useCategories();
 
-  const [csvDelimiter, setCsvDelimiter] = useState<"," | ";">(";");
-  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
-  const [csvRows, setCsvRows] = useState<string[][]>([]);
-
-  const [mapDateIdx, setMapDateIdx] = useState<number>(-1);
-  const [mapDescIdx, setMapDescIdx] = useState<number>(-1);
-  const [mapValueIdx, setMapValueIdx] = useState<number>(-1);
-
-  const [importPreview, setImportPreview] = useState<Transaction[]>([]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
-  }, [transactions]);
+  const {
+    isImportOpen,
+    setIsImportOpen,
+    importStatus,
+    importError,
+    csvDelimiter,
+    csvHeaders,
+    mapDateIdx,
+    mapDescIdx,
+    mapValueIdx,
+    importPreview,
+    setMapDateIdx,
+    setMapDescIdx,
+    setMapValueIdx,
+    handleCSVFile,
+    importPreviewIntoApp,
+    closeImport,
+  } = useCsvImport({
+    existingTransactions: transactions,
+    onImport: (items) => setTransactions((prev) => [...items, ...prev]),
+    categories,
+  });
 
   const filteredTransactions = useMemo(() => {
+    const normalizedQuery = normalizeSpaces(searchQuery).toLowerCase();
+
     return transactions.filter((t) => {
       const typeOk = filterType === "todos" ? true : t.type === filterType;
       const catOk =
         filterCategory === "todas" ? true : t.category === filterCategory;
-      return typeOk && catOk;
+      const searchOk = normalizedQuery
+        ? `${t.title} ${t.category}`
+            .toLowerCase()
+            .includes(normalizedQuery)
+        : true;
+
+      return typeOk && catOk && searchOk;
     });
-  }, [transactions, filterType, filterCategory]);
+  }, [transactions, filterType, filterCategory, searchQuery]);
 
   const summary = useMemo(() => {
     const income = filteredTransactions
@@ -262,196 +100,139 @@ export default function App() {
     return { income, expense, balance };
   }, [filteredTransactions]);
 
-  function addTransaction() {
-    const numericAmount = Number(amount);
+  const totalsByCategory = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const t of filteredTransactions) {
+      totals.set(t.category, (totals.get(t.category) ?? 0) + t.amount);
+    }
+    return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
+  }, [filteredTransactions]);
 
-    if (!title.trim()) return alert("Digite um título!");
-    if (!numericAmount || numericAmount <= 0)
-      return alert("Digite um valor válido!");
-    if (!date) return alert("Escolha uma data!");
+  const monthlyTotals = useMemo(() => {
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, index) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+        2,
+        "0"
+      )}`;
+      return {
+        key,
+        label: d.toLocaleString("pt-BR", { month: "short", year: "2-digit" }),
+      };
+    });
 
-    const newTransaction: Transaction = {
-      id: crypto.randomUUID(),
-      type,
-      title: title.trim(),
-      amount: numericAmount,
-      date,
-      category,
-    };
+    const totals = new Map(months.map((m) => [m.key, 0]));
+    for (const t of filteredTransactions) {
+      const key = t.date.slice(0, 7);
+      if (totals.has(key)) {
+        totals.set(key, (totals.get(key) ?? 0) + t.amount);
+      }
+    }
 
-    setTransactions((prev) => [newTransaction, ...prev]);
+    return months.map((m) => ({
+      ...m,
+      total: totals.get(m.key) ?? 0,
+    }));
+  }, [filteredTransactions]);
 
+  const maxCategoryTotal =
+    totalsByCategory.length > 0 ? totalsByCategory[0][1] : 0;
+  const maxMonthTotal = Math.max(...monthlyTotals.map((m) => m.total), 0);
+
+  function resetForm() {
     setTitle("");
     setAmount("");
     setType("entrada");
     setCategory("Outros");
     setDate(new Date().toISOString().slice(0, 10));
+  }
+
+  function toggleForm() {
+    if (isFormOpen) {
+      setEditingId(null);
+      resetForm();
+      setIsFormOpen(false);
+      return;
+    }
+
+    setIsFormOpen(true);
+  }
+
+  function handleSave() {
+    const numericAmount = parseAmount(amount);
+
+    if (!title.trim()) return alert("Digite um título!");
+    if (numericAmount === null || numericAmount <= 0)
+      return alert("Digite um valor válido!");
+    if (!date) return alert("Escolha uma data!");
+
+    const payload: Transaction = {
+      id: editingId ?? crypto.randomUUID(),
+      type,
+      title: title.trim(),
+      amount: Math.abs(numericAmount),
+      date,
+      category,
+    };
+
+    if (editingId) {
+      updateTransaction(payload);
+    } else {
+      addTransaction(payload);
+    }
+
+    setEditingId(null);
+    resetForm();
     setIsFormOpen(false);
   }
 
-  function removeTransaction(id: string) {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
+  function startEdit(transaction: Transaction) {
+    setIsFormOpen(true);
+    setEditingId(transaction.id);
+    setTitle(transaction.title);
+    setAmount(transaction.amount.toString().replace(".", ","));
+    setType(transaction.type);
+    setCategory(transaction.category);
+    setDate(transaction.date);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    resetForm();
+    setIsFormOpen(false);
   }
 
   function clearAll() {
     const ok = confirm("Tem certeza que quer apagar todas as transações?");
     if (!ok) return;
-    setTransactions([]);
+    clearTransactions();
     setIsFormOpen(false);
-    setIsImportOpen(false);
-    setImportPreview([]);
-    setImportStatus("idle");
-    setImportError("");
-    setCsvHeaders([]);
-    setCsvRows([]);
-    setMapDateIdx(-1);
-    setMapDescIdx(-1);
-    setMapValueIdx(-1);
+    setEditingId(null);
+    closeImport();
   }
 
-  async function handleCSVFile(file: File | null) {
-    if (!file) return;
-
-    setImportError("");
-    setImportStatus("reading");
-    setImportPreview([]);
-    setCsvHeaders([]);
-    setCsvRows([]);
-    setMapDateIdx(-1);
-    setMapDescIdx(-1);
-    setMapValueIdx(-1);
-
-    try {
-      const text = await file.text();
-
-      const lines = text
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-
-      if (lines.length < 2) {
-        throw new Error("CSV com poucas linhas. Precisa ter header + dados.");
-      }
-
-      // Delimitador pelo primeiro pedaço do arquivo
-      const delimiter = detectDelimiterFromLine(lines[0]);
-      setCsvDelimiter(delimiter);
-
-      // Acha o header verdadeiro (ignora "Extrato Conta Corrente" e similares)
-      const headerIdx = pickHeaderLineIndex(lines, delimiter);
-
-      const headers = splitCSVLine(lines[headerIdx], delimiter).map((h) =>
-        normalizeSpaces(h)
-      );
-
-      const rows = lines
-        .slice(headerIdx + 1)
-        .map((line) => splitCSVLine(line, delimiter))
-        .filter((r) => r.filter((c) => c.trim()).length >= 3);
-
-      setCsvHeaders(headers);
-      setCsvRows(rows);
-
-      // sugestões automáticas
-      const guessDate = guessColumnIndex(headers, "date");
-      const guessDesc = guessColumnIndex(headers, "desc");
-      const guessValue = guessColumnIndex(headers, "value");
-
-      setMapDateIdx(guessDate >= 0 ? guessDate : 0);
-      setMapDescIdx(guessDesc >= 0 ? guessDesc : Math.min(1, headers.length - 1));
-      setMapValueIdx(guessValue >= 0 ? guessValue : Math.min(2, headers.length - 1));
-
-      setImportStatus("mapping");
-    } catch (e) {
-      setImportStatus("error");
-      setImportError(e instanceof Error ? e.message : "Erro ao ler CSV");
-    }
-  }
-
-  // gera preview ao mudar mapeamento
-  useEffect(() => {
-    if (importStatus !== "mapping" && importStatus !== "ready") return;
-    if (csvHeaders.length === 0 || csvRows.length === 0) return;
-    if (mapDateIdx < 0 || mapDescIdx < 0 || mapValueIdx < 0) return;
-
-    const preview: Transaction[] = [];
-
-    for (let i = 0; i < csvRows.length; i++) {
-      const cols = csvRows[i];
-      const rawDate = cols[mapDateIdx] ?? "";
-      const rawDesc = cols[mapDescIdx] ?? "";
-      const rawValue = cols[mapValueIdx] ?? "";
-
-      const isoDate = toISODate(rawDate);
-      const amt = parseAmount(rawValue);
-
-      if (!isoDate || amt === null) continue;
-
-      const txType: TransactionType = amt >= 0 ? "entrada" : "saida";
-
-      preview.push({
-        id: crypto.randomUUID(),
-        type: txType,
-        title: normalizeSpaces(rawDesc) || "Sem descrição",
-        amount: Math.abs(amt),
-        date: isoDate,
-        category: "Outros",
-      });
-
-      if (preview.length >= 200) break;
-    }
-
-    setImportPreview(preview);
-    setImportStatus(preview.length > 0 ? "ready" : "mapping");
-  }, [importStatus, csvHeaders, csvRows, mapDateIdx, mapDescIdx, mapValueIdx]);
-
-  function importPreviewIntoApp() {
-    if (importPreview.length === 0) {
-      alert("Prévia vazia. Ajuste o mapeamento (Data/Descrição/Valor).");
+  function handleExportCsv() {
+    if (filteredTransactions.length === 0) {
+      alert("Não há transações para exportar.");
       return;
     }
 
-    const existing = new Set(
-      transactions.map((t) =>
-        makeSignature({
-          date: t.date,
-          title: t.title,
-          amount: t.amount,
-          type: t.type,
-          category: t.category,
-        })
-      )
-    );
+    const csv = buildTransactionsCsv(filteredTransactions);
+    const blob = new Blob([`\ufeff${csv}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "transacoes.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
-    const toAdd: Transaction[] = [];
-    for (const t of importPreview) {
-      const sig = makeSignature({
-        date: t.date,
-        title: t.title,
-        amount: t.amount,
-        type: t.type,
-        category: t.category,
-      });
-      if (!existing.has(sig)) {
-        existing.add(sig);
-        toAdd.push(t);
-      }
-    }
-
-    if (toAdd.length === 0) {
-      alert("Nada novo para importar (evitei duplicadas).");
-      return;
-    }
-
-    setTransactions((prev) => [...toAdd, ...prev]);
-    alert(`Importei ${toAdd.length} transações!`);
-
-    setIsImportOpen(false);
-    setImportPreview([]);
-    setImportStatus("idle");
-    setImportError("");
-    setCsvHeaders([]);
-    setCsvRows([]);
+  function handleAddCategory() {
+    addCategory(categoryInput);
+    setCategoryInput("");
   }
 
   return (
@@ -493,23 +274,97 @@ export default function App() {
           </Card>
         </section>
 
+        <section className="grid gap-4 lg:grid-cols-[2fr,3fr]">
+          <Card title="Categorias (top gastos)">
+            {totalsByCategory.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Sem dados para exibir. Adicione transações para gerar insights.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {totalsByCategory.map(([cat, total]) => {
+                  const percentage =
+                    maxCategoryTotal > 0 ? (total / maxCategoryTotal) * 100 : 0;
+                  return (
+                    <div key={cat} className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-medium">{cat}</span>
+                        <span className="text-slate-500">
+                          {formatBRL(total)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div
+                          className="h-2 rounded-full bg-emerald-500"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          <Card title="Evolução (últimos 6 meses)">
+            {monthlyTotals.every((m) => m.total === 0) ? (
+              <p className="text-sm text-slate-500">
+                Sem dados para o período selecionado.
+              </p>
+            ) : (
+              <div className="grid gap-3">
+                {monthlyTotals.map((m) => {
+                  const percentage =
+                    maxMonthTotal > 0 ? (m.total / maxMonthTotal) * 100 : 0;
+                  return (
+                    <div key={m.key} className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-medium">{m.label}</span>
+                        <span className="text-slate-500">
+                          {formatBRL(m.total)}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100">
+                        <div
+                          className="h-2 rounded-full bg-sky-500"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        </section>
+
         <Card
           title="Transações"
           right={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => setIsFormOpen((v) => !v)}
+                onClick={toggleForm}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 active:bg-slate-900"
               >
-                + Nova
+                {isFormOpen ? "Fechar" : "+ Nova"}
               </button>
 
               <button
-                onClick={() => setIsImportOpen((v) => !v)}
+                onClick={() =>
+                  isImportOpen ? closeImport() : setIsImportOpen(true)
+                }
                 className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
                 title="Importar extrato"
               >
                 Importar CSV
+              </button>
+
+              <button
+                onClick={handleExportCsv}
+                className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
+                title="Exportar transações filtradas"
+              >
+                Exportar CSV
               </button>
 
               <button
@@ -655,7 +510,7 @@ export default function App() {
           )}
 
           {/* FILTROS */}
-          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div className="mb-4 grid gap-3 sm:grid-cols-3">
             <div className="grid gap-2">
               <label className="text-sm font-medium">Filtrar por tipo</label>
               <select
@@ -681,12 +536,22 @@ export default function App() {
                 className="rounded-lg border px-3 py-2"
               >
                 <option value="todas">Todas</option>
-                {CATEGORIES.map((c) => (
+                {categories.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Buscar</label>
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="rounded-lg border px-3 py-2"
+                placeholder="Ex: Mercado"
+              />
             </div>
           </div>
 
@@ -733,7 +598,7 @@ export default function App() {
                   onChange={(e) => setCategory(e.target.value as Category)}
                   className="rounded-lg border px-3 py-2"
                 >
-                  {CATEGORIES.map((c) => (
+                  {categories.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -751,14 +616,77 @@ export default function App() {
                 />
               </div>
 
-              <button
-                onClick={addTransaction}
-                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
-              >
-                Salvar
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleSave}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                >
+                  {editingId ? "Atualizar" : "Salvar"}
+                </button>
+
+                {editingId && (
+                  <button
+                    onClick={cancelEdit}
+                    className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
+                  >
+                    Cancelar edição
+                  </button>
+                )}
+              </div>
             </div>
           )}
+
+          <div className="mb-4 grid gap-3 rounded-2xl border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Categorias personalizadas</p>
+                <p className="text-sm text-slate-500">
+                  Adicione categorias novas para classificar transações e
+                  melhorar a importação automática.
+                </p>
+              </div>
+              <button
+                onClick={resetCategories}
+                className="rounded-xl border px-3 py-1 text-xs hover:bg-slate-50"
+              >
+                Restaurar padrão
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {categories.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => removeCategory(c)}
+                  className={
+                    "rounded-full border px-3 py-1 text-xs " +
+                    (c === "Outros"
+                      ? "cursor-not-allowed bg-slate-50 text-slate-400"
+                      : "hover:bg-slate-50")
+                  }
+                  title={c === "Outros" ? "Categoria padrão" : "Remover"}
+                  disabled={c === "Outros"}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={categoryInput}
+                onChange={(e) => setCategoryInput(e.target.value)}
+                className="rounded-lg border px-3 py-2 text-sm"
+                placeholder="Nova categoria"
+              />
+              <button
+                onClick={handleAddCategory}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+              >
+                Adicionar
+              </button>
+            </div>
+          </div>
 
           {/* LISTA */}
           {filteredTransactions.length === 0 ? (
@@ -793,6 +721,14 @@ export default function App() {
                     >
                       {t.type === "entrada" ? "+" : "-"} {formatBRL(t.amount)}
                     </p>
+
+                    <button
+                      onClick={() => startEdit(t)}
+                      className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
+                      title="Editar"
+                    >
+                      Editar
+                    </button>
 
                     <button
                       onClick={() => removeTransaction(t.id)}
