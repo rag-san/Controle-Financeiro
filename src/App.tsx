@@ -263,18 +263,10 @@ export default function App() {
   }
 
   async function handleAiSuggestCategory(transaction: Transaction) {
-    const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
-
-    if (!apiKey) {
-      alert("Defina VITE_OPENAI_API_KEY para usar a auto-categorização via IA.");
-      return;
-    }
-
     setAiBusyIds((prev) => ({ ...prev, [transaction.id]: true }));
 
     try {
       const suggested = await suggestCategoryWithAI({
-        apiKey,
         title: transaction.title,
         categories: categoriesForSelect,
       });
