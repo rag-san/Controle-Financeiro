@@ -78,7 +78,11 @@ app.post("/suggest-category", async (req, res) => {
     });
 
     if (!response.ok) {
-      return res.status(500).json({ error: "Falha ao consultar a OpenAI." });
+      const details = await response.text();
+      return res.status(500).json({
+        error: "Falha ao consultar a OpenAI.",
+        details: details || undefined,
+      });
     }
 
     const data = await response.json();
@@ -87,7 +91,10 @@ app.post("/suggest-category", async (req, res) => {
 
     return res.json({ category });
   } catch (error) {
-    return res.status(500).json({ error: "Erro ao sugerir categoria." });
+    return res.status(500).json({
+      error: "Erro ao sugerir categoria.",
+      details: error instanceof Error ? error.message : undefined,
+    });
   }
 });
 
