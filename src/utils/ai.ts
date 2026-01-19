@@ -7,19 +7,27 @@ type SuggestCategoryParams = {
   baseUrl?: string;
 };
 
+function normalizeBaseUrl(baseUrl?: string) {
+  if (!baseUrl) return "";
+  return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+}
+
 export async function suggestCategoryWithAI({
   title,
   categories,
   fallback = "Outros",
-  baseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3001",
+  baseUrl,
 }: SuggestCategoryParams) {
+  const resolvedBaseUrl = normalizeBaseUrl(
+    baseUrl ?? import.meta.env.VITE_API_BASE_URL
+  );
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return fallback;
 
   let response: Response;
 
   try {
-    response = await fetch(`${baseUrl}/suggest-category`, {
+    response = await fetch(`${resolvedBaseUrl}/suggest-category`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
