@@ -225,9 +225,20 @@ export function buildTransactionsCsv(transactions: Transaction[]) {
 }
 
 export function ensureDefaultCategory(categories: Category[]) {
-  const normalized = categories.map(normalizeSpaces).filter(Boolean);
-  const unique = Array.from(new Set(normalized));
-  return unique.includes("Outros") ? unique : [...unique, "Outros"];
+  const seen = new Set<string>();
+  const unique: Category[] = [];
+
+  for (const category of categories) {
+    const trimmed = normalizeSpaces(category);
+    const normalized = normalizeText(trimmed);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    unique.push(trimmed);
+  }
+
+  return unique.some((item) => normalizeText(item) === "outros")
+    ? unique
+    : [...unique, "Outros"];
 }
 
 export function autoCategorize(

@@ -3,8 +3,10 @@ import { Card } from "./components/Card";
 import { useCategories } from "./hooks/useCategories";
 import { useCsvImport } from "./hooks/useCsvImport";
 import { useTransactions } from "./hooks/useTransactions";
+import { suggestCategoryWithAI } from "./utils/ai";
 import {
   buildTransactionsCsv,
+  ensureDefaultCategory,
   formatBRL,
   normalizeSpaces,
   parseAmount,
@@ -33,6 +35,7 @@ export default function App() {
   const [category, setCategory] = useState<Category>("Outros");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [categoryInput, setCategoryInput] = useState("");
+  const [aiBusyIds, setAiBusyIds] = useState<Record<string, boolean>>({});
 
   // FILTROS
   const [filterType, setFilterType] = useState<"todos" | TransactionType>(
@@ -45,6 +48,15 @@ export default function App() {
 
   const { categories, addCategory, removeCategory, resetCategories } =
     useCategories();
+
+  const categoriesForSelect = useMemo(
+    () =>
+      ensureDefaultCategory([
+        ...categories,
+        ...transactions.map((transaction) => transaction.category),
+      ]),
+    [categories, transactions]
+  );
 
   const {
     isImportOpen,
@@ -66,7 +78,7 @@ export default function App() {
   } = useCsvImport({
     existingTransactions: transactions,
     onImport: (items) => setTransactions((prev) => [...items, ...prev]),
-    categories,
+    categories: categoriesForSelect,
   });
 
   const filteredTransactions = useMemo(() => {
@@ -233,6 +245,38 @@ export default function App() {
   function handleAddCategory() {
     addCategory(categoryInput);
     setCategoryInput("");
+  }
+
+  async function handleAiSuggestCategory(transaction: Transaction) {
+    const apiKey = import.meta.env.VITE_OPENAI_API_KEY as string | undefined;
+
+    if (!apiKey) {
+      alert("Defina VITE_OPENAI_API_KEY para usar a auto-categorização via IA.");
+      return;
+    }
+
+    setAiBusyIds((prev) => ({ ...prev, [transaction.id]: true }));
+
+    try {
+      const suggested = await suggestCategoryWithAI({
+        apiKey,
+        title: transaction.title,
+        categories: categoriesForSelect,
+      });
+
+      updateTransaction({
+        ...transaction,
+        category: suggested,
+      });
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível obter sugestão da IA."
+      );
+    } finally {
+      setAiBusyIds((prev) => ({ ...prev, [transaction.id]: false }));
+    }
   }
 
   return (
@@ -536,7 +580,7 @@ export default function App() {
                 className="rounded-lg border px-3 py-2"
               >
                 <option value="todas">Todas</option>
-                {categories.map((c) => (
+                {categoriesForSelect.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -598,7 +642,7 @@ export default function App() {
                   onChange={(e) => setCategory(e.target.value as Category)}
                   className="rounded-lg border px-3 py-2"
                 >
-                  {categories.map((c) => (
+                  {categoriesForSelect.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -721,6 +765,33 @@ export default function App() {
                     >
                       {t.type === "entrada" ? "+" : "-"} {formatBRL(t.amount)}
                     </p>
+
+                    <select
+                      value={t.category}
+                      onChange={(e) =>
+                        updateTransaction({
+                          ...t,
+                          category: e.target.value as Category,
+                        })
+                      }
+                      className="rounded-lg border px-2 py-1 text-xs"
+                      aria-label="Alterar categoria"
+                    >
+                      {categoriesForSelect.map((c) => (
+                        <option key={`${t.id}-${c}`} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={() => handleAiSuggestCategory(t)}
+                      className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
+                      disabled={aiBusyIds[t.id]}
+                      title="Sugerir categoria com IA"
+                    >
+                      {aiBusyIds[t.id] ? "IA..." : "IA"}
+                    </button>
 
                     <button
                       onClick={() => startEdit(t)}
