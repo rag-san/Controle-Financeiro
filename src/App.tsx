@@ -3,8 +3,8 @@ import { Card } from "./components/Card";
 import { useCategories } from "./hooks/useCategories";
 import { useCsvImport } from "./hooks/useCsvImport";
 import { useTransactions } from "./hooks/useTransactions";
-import { suggestCategoryWithAI } from "./utils/ai";
 import {
+  autoCategorize,
   buildTransactionsCsv,
   ensureDefaultCategory,
   formatBRL,
@@ -37,7 +37,6 @@ export default function App() {
   const [category, setCategory] = useState<Category>("Outros");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [categoryInput, setCategoryInput] = useState("");
-  const [aiBusyIds, setAiBusyIds] = useState<Record<string, boolean>>({});
 
   // FILTROS
   const [filterType, setFilterType] = useState<"todos" | TransactionType>(
@@ -319,28 +318,12 @@ export default function App() {
     }
   }
 
-  async function handleAiSuggestCategory(transaction: Transaction) {
-    setAiBusyIds((prev) => ({ ...prev, [transaction.id]: true }));
-
-    try {
-      const suggested = await suggestCategoryWithAI({
-        title: transaction.title,
-        categories: categoriesForSelect,
-      });
-
-      await handleUpdateTransaction({
-        ...transaction,
-        category: suggested,
-      });
-    } catch (error) {
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível obter sugestão da IA."
-      );
-    } finally {
-      setAiBusyIds((prev) => ({ ...prev, [transaction.id]: false }));
-    }
+  async function handleAutoSuggestCategory(transaction: Transaction) {
+    const suggested = autoCategorize(transaction.title, categoriesForSelect);
+    await handleUpdateTransaction({
+      ...transaction,
+      category: suggested,
+    });
   }
 
   return (
@@ -866,12 +849,11 @@ export default function App() {
                     </select>
 
                     <button
-                      onClick={() => void handleAiSuggestCategory(t)}
+                      onClick={() => void handleAutoSuggestCategory(t)}
                       className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
-                      disabled={aiBusyIds[t.id]}
-                      title="Sugerir categoria com IA"
+                      title="Sugerir categoria automaticamente"
                     >
-                      {aiBusyIds[t.id] ? "IA..." : "IA"}
+                      Auto
                     </button>
 
                     <button

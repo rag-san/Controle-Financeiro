@@ -6,7 +6,6 @@ export default defineConfig({
   base: "/Controle-Financeiro/",
   server: {
     proxy: {
-      "/suggest-category": "http://localhost:3001",
       "/api": "http://localhost:3001",
     },
   },
