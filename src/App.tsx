@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Card } from "./components/Card";
 import { useCategories } from "./hooks/useCategories";
 import { useCsvImport } from "./hooks/useCsvImport";
 import { useTransactions } from "./hooks/useTransactions";
+import { getAuthToken, requestJson, setAuthToken } from "./utils/api";
 import {
   autoCategorize,
   buildTransactionsCsv,
@@ -16,8 +17,21 @@ import {
 } from "./utils/transactions";
 
 export default function App() {
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authName, setAuthName] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(
+    null
+  );
+
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const isAuthenticated = Boolean(user);
 
   const {
     transactions,
@@ -28,7 +42,7 @@ export default function App() {
     removeTransaction,
     clearTransactions,
     importTransactions,
-  } = useTransactions();
+  } = useTransactions({ enabled: isAuthenticated });
 
   // FORM (manual)
   const [title, setTitle] = useState("");
@@ -54,7 +68,7 @@ export default function App() {
     addCategory,
     removeCategory,
     resetCategories,
-  } = useCategories();
+  } = useCategories({ enabled: isAuthenticated });
 
   const categoriesForSelect = useMemo(
     () =>
@@ -96,6 +110,23 @@ export default function App() {
     onImport: importTransactions,
     categories: categoriesForSelect,
   });
+
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) {
+      setAuthReady(true);
+      return;
+    }
+
+    requestJson<{ id: string; name: string; email: string }>("/api/auth/me")
+      .then((profile) => {
+        setUser(profile);
+      })
+      .catch(() => {
+        setAuthToken(null);
+      })
+      .finally(() => setAuthReady(true));
+  }, []);
 
   const filteredTransactions = useMemo(() => {
     const normalizedQuery = normalizeSpaces(searchQuery).toLowerCase();
@@ -326,152 +357,391 @@ export default function App() {
     });
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold">Controle Financeiro</h1>
-            <p className="text-sm text-slate-500">
-              MVP · Entradas, Saídas, Categorias e Importação CSV (mapeamento)
-            </p>
-          </div>
+  async function handleLoginSubmit(event: FormEvent) {
+    event.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
 
-          <span className="w-fit text-xs rounded-full border px-3 py-1 text-slate-600">
-            {monthLabel}
-          </span>
-        </div>
-      </header>
+    try {
+      const data = await requestJson<{
+        token: string;
+        user: { id: string; name: string; email: string };
+      }>("/api/auth/login", {
+        method: "POST",
+        body: { email: authEmail, password: authPassword },
+        auth: false,
+      });
+      setAuthToken(data.token);
+      setUser(data.user);
+      setAuthPassword("");
+    } catch (error) {
+      setAuthError(
+        error instanceof Error ? error.message : "Não foi possível entrar."
+      );
+    } finally {
+      setAuthLoading(false);
+    }
+  }
 
-      <main className="mx-auto max-w-5xl px-6 py-6 space-y-6">
-        <section className="grid gap-4 sm:grid-cols-3">
-          <Card title="Resultado do mês">
-            <p className={`text-2xl font-bold ${balanceTone}`}>
-              {formatBRL(summary.balance)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Entradas - Saídas (filtro atual)
-            </p>
-          </Card>
+  async function handleRegisterSubmit(event: FormEvent) {
+    event.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
 
-          <Card title="Entradas (filtrado)">
-            <p className="text-xl font-semibold text-emerald-600">
-              {formatBRL(summary.income)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">No mês</p>
-          </Card>
+    try {
+      await requestJson<{ ok: boolean }>("/api/auth/register", {
+        method: "POST",
+        body: { name: authName, email: authEmail, password: authPassword },
+        auth: false,
+      });
+      setAuthMode("login");
+      setAuthPassword("");
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível criar a conta."
+      );
+    } finally {
+      setAuthLoading(false);
+    }
+  }
 
-          <Card title="Saídas (filtrado)">
-            <p className="text-xl font-semibold text-rose-600">
-              {formatBRL(summary.expense)}
-            </p>
-            <p className="mt-1 text-xs text-slate-500">No mês</p>
-          </Card>
-        </section>
+  async function handleLogout() {
+    try {
+      await requestJson<{ ok: boolean }>("/api/auth/logout", {
+        method: "POST",
+      });
+    } catch {
+      // ignore
+    }
+    setAuthToken(null);
+    setUser(null);
+  }
 
-        <section className="grid gap-4 lg:grid-cols-[2fr,3fr]">
-          <Card title="Categorias (top gastos)">
-            {totalsByCategory.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Sem dados de saídas. Adicione gastos para gerar insights.
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-700 flex items-center justify-center">
+        Carregando...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900">
+        <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 px-6 py-12 lg:flex-row">
+          <div className="w-full max-w-md space-y-4">
+            <div className="rounded-3xl bg-gradient-to-br from-indigo-500 via-sky-500 to-emerald-400 p-6 text-white shadow-lg">
+              <h1 className="text-2xl font-semibold">Controle Financeiro</h1>
+              <p className="mt-2 text-sm text-white/90">
+                Entre para acompanhar seus gastos com segurança.
               </p>
-            ) : (
-              <div className="space-y-3">
-                {totalsByCategory.map(([cat, total]) => {
-                  const percentage =
-                    maxCategoryTotal > 0 ? (total / maxCategoryTotal) * 100 : 0;
-                  return (
-                    <div key={cat} className="space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-medium">{cat}</span>
-                        <span className="text-slate-500">
-                          {formatBRL(total)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-100">
-                        <div
-                          className="h-2 rounded-full bg-emerald-500"
-                          style={{ width: `${percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-
-          <Card title="Evolução de gastos (últimos 6 meses)">
-            {monthlyTotals.every((m) => m.total === 0) ? (
-              <p className="text-sm text-slate-500">
-                Sem dados de gastos no período selecionado.
-              </p>
-            ) : (
-              <div className="grid gap-3">
-                {monthlyTotals.map((m) => {
-                  const percentage =
-                    maxMonthTotal > 0 ? (m.total / maxMonthTotal) * 100 : 0;
-                  return (
-                    <div key={m.key} className="space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span className="font-medium">{m.label}</span>
-                        <span className="text-slate-500">
-                          {formatBRL(m.total)}
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-100">
-                        <div
-                          className="h-2 rounded-full bg-sky-500"
-                          style={{ width: `${percentage}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        </section>
-
-        <Card
-          title="Transações"
-          right={
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={toggleForm}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 active:bg-slate-900"
-              >
-                {isFormOpen ? "Fechar" : "+ Nova"}
-              </button>
-
-              <button
-                onClick={() =>
-                  isImportOpen ? closeImport() : setIsImportOpen(true)
-                }
-                className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
-                title="Importar extrato"
-              >
-                Importar CSV
-              </button>
-
-              <button
-                onClick={handleExportCsv}
-                className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
-                title="Exportar transações filtradas"
-              >
-                Exportar CSV
-              </button>
-
-              <button
-                onClick={() => void clearAll()}
-                className="rounded-xl border border-rose-200 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
-                title="Apagar tudo (ação irreversível)"
-              >
-                Limpar
-              </button>
             </div>
-          }
-        >
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAuthMode("login")}
+                  className={`flex-1 rounded-full px-4 py-2 text-sm ${
+                    authMode === "login"
+                      ? "bg-slate-900 text-white"
+                      : "border border-slate-200 text-slate-600"
+                  }`}
+                >
+                  Entrar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode("register")}
+                  className={`flex-1 rounded-full px-4 py-2 text-sm ${
+                    authMode === "register"
+                      ? "bg-slate-900 text-white"
+                      : "border border-slate-200 text-slate-600"
+                  }`}
+                >
+                  Criar conta
+                </button>
+              </div>
+
+              {authMode === "login" ? (
+                <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium uppercase text-slate-500">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium uppercase text-slate-500">
+                      Senha
+                    </label>
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      required
+                    />
+                  </div>
+                  {authError && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                      {authError}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {authLoading ? "Entrando..." : "Entrar"}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleRegisterSubmit} className="mt-6 space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium uppercase text-slate-500">
+                      Nome
+                    </label>
+                    <input
+                      type="text"
+                      value={authName}
+                      onChange={(e) => setAuthName(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium uppercase text-slate-500">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium uppercase text-slate-500">
+                      Senha
+                    </label>
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      required
+                    />
+                  </div>
+                  {authError && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                      {authError}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {authLoading ? "Criando..." : "Criar conta"}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="flex min-h-screen">
+        <aside className="hidden w-20 flex-col items-center gap-6 bg-white py-6 shadow-sm md:flex">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white">
+            $
+          </div>
+          <nav className="flex flex-col gap-4 text-slate-400">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+              ⌁
+            </span>
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+              📈
+            </span>
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+              📂
+            </span>
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+              ⚙️
+            </span>
+          </nav>
+        </aside>
+
+        <div className="flex-1">
+          <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
+            <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div>
+                <h1 className="text-xl font-semibold">Dashboard</h1>
+                <p className="text-sm text-slate-500">
+                  Bem-vindo(a), {user.name}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="rounded-full border bg-white px-3 py-1 text-xs text-slate-600">
+                  {monthLabel}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  Sair
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Card title="Saldo do mês">
+                <p className={`text-2xl font-bold ${balanceTone}`}>
+                  {formatBRL(summary.balance)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">Resultado atual</p>
+              </Card>
+              <Card title="Receitas">
+                <p className="text-xl font-semibold text-emerald-600">
+                  {formatBRL(summary.income)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">Entradas</p>
+              </Card>
+              <Card title="Despesas">
+                <p className="text-xl font-semibold text-rose-600">
+                  {formatBRL(summary.expense)}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">Saídas</p>
+              </Card>
+              <Card title="Categorias">
+                <p className="text-xl font-semibold text-slate-900">
+                  {categoriesForSelect.length}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">Ativas</p>
+              </Card>
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-[2fr,3fr]">
+              <Card title="Categorias (top gastos)">
+                {totalsByCategory.length === 0 ? (
+                  <p className="text-sm text-slate-500">
+                    Sem dados de saídas. Adicione gastos para gerar insights.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {totalsByCategory.map(([cat, total]) => {
+                      const percentage =
+                        maxCategoryTotal > 0
+                          ? (total / maxCategoryTotal) * 100
+                          : 0;
+                      return (
+                        <div key={cat} className="space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span className="font-medium">{cat}</span>
+                            <span className="text-slate-500">
+                              {formatBRL(total)}
+                            </span>
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-100">
+                            <div
+                              className="h-2 rounded-full bg-emerald-500"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Evolução de gastos (últimos 6 meses)">
+                {monthlyTotals.every((m) => m.total === 0) ? (
+                  <p className="text-sm text-slate-500">
+                    Sem dados de gastos no período selecionado.
+                  </p>
+                ) : (
+                  <div className="grid gap-3">
+                    {monthlyTotals.map((m) => {
+                      const percentage =
+                        maxMonthTotal > 0 ? (m.total / maxMonthTotal) * 100 : 0;
+                      return (
+                        <div key={m.key} className="space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span className="font-medium">{m.label}</span>
+                            <span className="text-slate-500">
+                              {formatBRL(m.total)}
+                            </span>
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-100">
+                            <div
+                              className="h-2 rounded-full bg-sky-500"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            </section>
+
+            <Card
+              title="Transações"
+              right={
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={toggleForm}
+                    className="rounded-full bg-indigo-600 px-4 py-2 text-xs text-white hover:bg-indigo-500"
+                  >
+                    {isFormOpen ? "Fechar" : "+ Nova"}
+                  </button>
+
+                  <button
+                    onClick={() =>
+                      isImportOpen ? closeImport() : setIsImportOpen(true)
+                    }
+                    className="rounded-full border px-4 py-2 text-xs hover:bg-slate-50"
+                    title="Importar extrato"
+                  >
+                    Importar CSV
+                  </button>
+
+                  <button
+                    onClick={handleExportCsv}
+                    className="rounded-full border px-4 py-2 text-xs hover:bg-slate-50"
+                    title="Exportar transações filtradas"
+                  >
+                    Exportar CSV
+                  </button>
+
+                  <button
+                    onClick={() => void clearAll()}
+                    className="rounded-full border border-rose-200 px-4 py-2 text-xs text-rose-700 hover:bg-rose-50"
+                    title="Apagar tudo (ação irreversível)"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              }
+            >
           {/* IMPORTAÇÃO CSV */}
           {isImportOpen && (
             <div className="mb-4 grid gap-3 rounded-2xl border p-4">
@@ -876,8 +1146,10 @@ export default function App() {
               ))}
             </div>
           )}
-        </Card>
-      </main>
+            </Card>
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

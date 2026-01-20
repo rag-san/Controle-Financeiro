@@ -6,12 +6,21 @@ type ImportResult = {
   added: number;
 };
 
-export function useTransactions() {
+type UseTransactionsOptions = {
+  enabled?: boolean;
+};
+
+export function useTransactions(options: UseTransactionsOptions = {}) {
+  const { enabled = true } = options;
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadTransactions = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -23,7 +32,7 @@ export function useTransactions() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     void loadTransactions();

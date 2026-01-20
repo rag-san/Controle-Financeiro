@@ -6,12 +6,21 @@ type CategoriesResponse = {
   categories: Category[];
 };
 
-export function useCategories() {
+type UseCategoriesOptions = {
+  enabled?: boolean;
+};
+
+export function useCategories(options: UseCategoriesOptions = {}) {
+  const { enabled = true } = options;
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadCategories = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -23,7 +32,7 @@ export function useCategories() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     void loadCategories();

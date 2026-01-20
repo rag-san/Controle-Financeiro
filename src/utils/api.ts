@@ -1,4 +1,5 @@
 type JsonValue = Record<string, unknown> | unknown[] | string | number | null;
+const AUTH_TOKEN_KEY = "cf_auth_token";
 
 export function normalizeBaseUrl(baseUrl?: string) {
   if (!baseUrl) return "";
@@ -9,18 +10,32 @@ export function getApiBaseUrl(baseUrl?: string) {
   return normalizeBaseUrl(baseUrl ?? import.meta.env.VITE_API_BASE_URL);
 }
 
+export function getAuthToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function setAuthToken(token: string | null) {
+  if (!token) {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    return;
+  }
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
 type RequestOptions = {
   method?: string;
   body?: JsonValue;
   headers?: Record<string, string>;
   baseUrl?: string;
+  auth?: boolean;
 };
 
 export async function requestJson<T>(
   path: string,
-  { method = "GET", body, headers, baseUrl }: RequestOptions = {}
+  { method = "GET", body, headers, baseUrl, auth = true }: RequestOptions = {}
 ) {
   const resolvedBaseUrl = getApiBaseUrl(baseUrl);
+  const token = auth ? getAuthToken() : null;
 
   let response: Response;
 
@@ -29,6 +44,7 @@ export async function requestJson<T>(
       method,
       headers: {
         "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
