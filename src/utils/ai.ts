@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from "./api";
 import type { Category } from "./transactions";
 
 type SuggestCategoryParams = {
@@ -7,20 +8,13 @@ type SuggestCategoryParams = {
   baseUrl?: string;
 };
 
-function normalizeBaseUrl(baseUrl?: string) {
-  if (!baseUrl) return "";
-  return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-}
-
 export async function suggestCategoryWithAI({
   title,
   categories,
   fallback = "Outros",
   baseUrl,
 }: SuggestCategoryParams) {
-  const resolvedBaseUrl = normalizeBaseUrl(
-    baseUrl ?? import.meta.env.VITE_API_BASE_URL
-  );
+  const resolvedBaseUrl = getApiBaseUrl(baseUrl);
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return fallback;
 

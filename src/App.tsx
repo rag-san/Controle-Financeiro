@@ -21,11 +21,13 @@ export default function App() {
 
   const {
     transactions,
-    setTransactions,
+    loading: transactionsLoading,
+    error: transactionsError,
     addTransaction,
     updateTransaction,
     removeTransaction,
     clearTransactions,
+    importTransactions,
   } = useTransactions();
 
   // FORM (manual)
@@ -46,8 +48,14 @@ export default function App() {
   );
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { categories, addCategory, removeCategory, resetCategories } =
-    useCategories();
+  const {
+    categories,
+    loading: categoriesLoading,
+    error: categoriesError,
+    addCategory,
+    removeCategory,
+    resetCategories,
+  } = useCategories();
 
   const categoriesForSelect = useMemo(
     () =>
@@ -86,7 +94,7 @@ export default function App() {
     closeImport,
   } = useCsvImport({
     existingTransactions: transactions,
-    onImport: (items) => setTransactions((prev) => [...items, ...prev]),
+    onImport: importTransactions,
     categories: categoriesForSelect,
   });
 
@@ -188,7 +196,7 @@ export default function App() {
     setIsFormOpen(true);
   }
 
-  function handleSave() {
+  async function handleSave() {
     const numericAmount = parseAmount(amount);
 
     if (!title.trim()) return alert("Digite um título!");
@@ -205,10 +213,19 @@ export default function App() {
       category,
     };
 
-    if (editingId) {
-      updateTransaction(payload);
-    } else {
-      addTransaction(payload);
+    try {
+      if (editingId) {
+        await updateTransaction(payload);
+      } else {
+        await addTransaction(payload);
+      }
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível salvar a transação."
+      );
+      return;
     }
 
     setEditingId(null);
@@ -232,11 +249,19 @@ export default function App() {
     setIsFormOpen(false);
   }
 
-  function clearAll() {
-    clearTransactions();
-    setIsFormOpen(false);
-    setEditingId(null);
-    closeImport();
+  async function clearAll() {
+    try {
+      await clearTransactions();
+      setIsFormOpen(false);
+      setEditingId(null);
+      closeImport();
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível limpar as transações."
+      );
+    }
   }
 
   function handleExportCsv() {
@@ -257,9 +282,41 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  function handleAddCategory() {
-    addCategory(categoryInput);
-    setCategoryInput("");
+  async function handleAddCategory() {
+    try {
+      await addCategory(categoryInput);
+      setCategoryInput("");
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível adicionar categoria."
+      );
+    }
+  }
+
+  async function handleUpdateTransaction(next: Transaction) {
+    try {
+      await updateTransaction(next);
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível atualizar a transação."
+      );
+    }
+  }
+
+  async function handleRemoveTransaction(id: string) {
+    try {
+      await removeTransaction(id);
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível excluir a transação."
+      );
+    }
   }
 
   async function handleAiSuggestCategory(transaction: Transaction) {
@@ -271,7 +328,7 @@ export default function App() {
         categories: categoriesForSelect,
       });
 
-      updateTransaction({
+      await handleUpdateTransaction({
         ...transaction,
         category: suggested,
       });
@@ -289,7 +346,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-5xl px-6 py-4 flex items-center justify-between">
+        <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-xl sm:text-2xl font-bold">Controle Financeiro</h1>
             <p className="text-sm text-slate-500">
@@ -297,7 +354,7 @@ export default function App() {
             </p>
           </div>
 
-          <span className="text-xs rounded-full border px-3 py-1 text-slate-600">
+          <span className="w-fit text-xs rounded-full border px-3 py-1 text-slate-600">
             {monthLabel}
           </span>
         </div>
@@ -423,7 +480,7 @@ export default function App() {
               </button>
 
               <button
-                onClick={clearAll}
+                onClick={() => void clearAll()}
                 className="rounded-xl border border-rose-200 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
                 title="Apagar tudo (ação irreversível)"
               >
@@ -520,7 +577,7 @@ export default function App() {
                         <b>{importPreview.length}</b> linhas (mostrando até 200)
                       </p>
                       <button
-                        onClick={importPreviewIntoApp}
+                        onClick={() => void importPreviewIntoApp()}
                         className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
                       >
                         Importar agora
@@ -589,6 +646,7 @@ export default function App() {
                   setFilterCategory(e.target.value as "todas" | Category)
                 }
                 className="rounded-lg border px-3 py-2"
+                disabled={categoriesLoading}
               >
                 <option value="todas">Todas</option>
                 {categoriesForSelect.map((c) => (
@@ -609,6 +667,18 @@ export default function App() {
               />
             </div>
           </div>
+
+          {(transactionsLoading || categoriesLoading) && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Carregando dados do backend...
+            </div>
+          )}
+
+          {(transactionsError || categoriesError) && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {transactionsError ?? categoriesError}
+            </div>
+          )}
 
           {/* FORM (manual) */}
           {isFormOpen && (
@@ -673,7 +743,7 @@ export default function App() {
 
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={handleSave}
+                  onClick={() => void handleSave()}
                   className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
                 >
                   {editingId ? "Atualizar" : "Salvar"}
@@ -701,7 +771,7 @@ export default function App() {
                 </p>
               </div>
               <button
-                onClick={resetCategories}
+                onClick={() => void resetCategories()}
                 className="rounded-xl border px-3 py-1 text-xs hover:bg-slate-50"
               >
                 Restaurar padrão
@@ -712,7 +782,7 @@ export default function App() {
               {categories.map((c) => (
                 <button
                   key={c}
-                  onClick={() => removeCategory(c)}
+                  onClick={() => void removeCategory(c)}
                   className={
                     "rounded-full border px-3 py-1 text-xs " +
                     (c === "Outros"
@@ -735,7 +805,7 @@ export default function App() {
                 placeholder="Nova categoria"
               />
               <button
-                onClick={handleAddCategory}
+                onClick={() => void handleAddCategory()}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
               >
                 Adicionar
@@ -756,7 +826,7 @@ export default function App() {
               {filteredTransactions.map((t) => (
                 <div
                   key={t.id}
-                  className="flex items-center justify-between rounded-xl border p-3"
+                  className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="font-medium">{t.title}</p>
@@ -765,7 +835,7 @@ export default function App() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     <p
                       className={
                         "font-semibold " +
@@ -780,7 +850,7 @@ export default function App() {
                     <select
                       value={t.category}
                       onChange={(e) =>
-                        updateTransaction({
+                        void handleUpdateTransaction({
                           ...t,
                           category: e.target.value as Category,
                         })
@@ -796,7 +866,7 @@ export default function App() {
                     </select>
 
                     <button
-                      onClick={() => handleAiSuggestCategory(t)}
+                      onClick={() => void handleAiSuggestCategory(t)}
                       className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
                       disabled={aiBusyIds[t.id]}
                       title="Sugerir categoria com IA"
@@ -813,7 +883,7 @@ export default function App() {
                     </button>
 
                     <button
-                      onClick={() => removeTransaction(t.id)}
+                      onClick={() => void handleRemoveTransaction(t.id)}
                       className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
                       title="Excluir"
                     >

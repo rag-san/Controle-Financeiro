@@ -1,53 +1,67 @@
-import { useEffect, useState } from "react";
-import {
-  CATEGORY_STORAGE_KEY,
-  DEFAULT_CATEGORIES,
-  ensureDefaultCategory,
-  type Category,
-} from "../utils/transactions";
+import { useCallback, useEffect, useState } from "react";
+import { requestJson } from "../utils/api";
+import type { Category } from "../utils/transactions";
 
-type UseCategoriesOptions = {
-  storageKey?: string;
+type CategoriesResponse = {
+  categories: Category[];
 };
 
-export function useCategories(options: UseCategoriesOptions = {}) {
-  const storageKey = options.storageKey ?? CATEGORY_STORAGE_KEY;
+export function useCategories() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [categories, setCategories] = useState<Category[]>(() => {
+  const loadCategories = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
     try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) return DEFAULT_CATEGORIES;
-      const parsed = JSON.parse(raw) as Category[];
-      if (!Array.isArray(parsed)) return DEFAULT_CATEGORIES;
-      return ensureDefaultCategory(parsed);
-    } catch {
-      return DEFAULT_CATEGORIES;
+      const data = await requestJson<CategoriesResponse>("/api/categories");
+      setCategories(data.categories);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar dados.");
+    } finally {
+      setLoading(false);
     }
-  });
+  }, []);
 
   useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(categories));
-  }, [storageKey, categories]);
+    void loadCategories();
+  }, [loadCategories]);
 
-  function addCategory(value: string) {
+  async function addCategory(value: string) {
     const normalized = value.trim();
     if (!normalized) return;
-    setCategories((prev) => ensureDefaultCategory([...prev, normalized]));
+    const data = await requestJson<CategoriesResponse>("/api/categories", {
+      method: "POST",
+      body: { name: normalized },
+    });
+    setCategories(data.categories);
   }
 
-  function removeCategory(value: Category) {
+  async function removeCategory(value: Category) {
     if (value === "Outros") return;
-    setCategories((prev) =>
-      ensureDefaultCategory(prev.filter((item) => item !== value))
+    const data = await requestJson<CategoriesResponse>(
+      `/api/categories/${encodeURIComponent(value)}`,
+      {
+        method: "DELETE",
+      }
     );
+    setCategories(data.categories);
   }
 
-  function resetCategories() {
-    setCategories(DEFAULT_CATEGORIES);
+  async function resetCategories() {
+    const data = await requestJson<CategoriesResponse>("/api/categories/reset", {
+      method: "POST",
+    });
+    setCategories(data.categories);
   }
 
   return {
     categories,
+    loading,
+    error,
+    reload: loadCategories,
     addCategory,
     removeCategory,
     resetCategories,

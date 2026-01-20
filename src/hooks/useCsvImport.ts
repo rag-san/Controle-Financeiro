@@ -17,7 +17,7 @@ type ImportStatus = "idle" | "reading" | "mapping" | "ready" | "error";
 
 type UseCsvImportParams = {
   existingTransactions: Transaction[];
-  onImport: (transactions: Transaction[]) => void;
+  onImport: (transactions: Transaction[]) => Promise<number>;
   categories: Category[];
 };
 
@@ -158,7 +158,7 @@ export function useCsvImport({
     mapValueIdx,
   ]);
 
-  function importPreviewIntoApp() {
+  async function importPreviewIntoApp() {
     if (importPreview.length === 0) {
       alert("Prévia vazia. Ajuste o mapeamento (Data/Descrição/Valor).");
       return;
@@ -196,8 +196,17 @@ export function useCsvImport({
       return;
     }
 
-    onImport(toAdd);
-    alert(`Importei ${toAdd.length} transações!`);
+    try {
+      const added = await onImport(toAdd);
+      alert(`Importei ${added} transações!`);
+    } catch (error) {
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível importar as transações."
+      );
+      return;
+    }
 
     setIsImportOpen(false);
     resetImportState();

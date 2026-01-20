@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/suggest-category": "http://localhost:3001",
+      "/api": "http://localhost:3001",
     },
   },
 });
