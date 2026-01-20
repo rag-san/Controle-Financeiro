@@ -167,25 +167,31 @@ export default function App() {
     }
     return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
   }, [filteredTransactions]);
-  const totalExpenseAmount = totalsByCategory.reduce(
-    (acc, [, total]) => acc + total,
-    0
+  const categoryPalette = useMemo(
+    () => [
+      { dotClass: "bg-emerald-500", color: "#10b981" },
+      { dotClass: "bg-sky-500", color: "#0ea5e9" },
+      { dotClass: "bg-amber-500", color: "#f59e0b" },
+      { dotClass: "bg-rose-500", color: "#f43f5e" },
+      { dotClass: "bg-indigo-500", color: "#6366f1" },
+      { dotClass: "bg-violet-500", color: "#8b5cf6" },
+      { dotClass: "bg-lime-500", color: "#84cc16" },
+      { dotClass: "bg-orange-500", color: "#f97316" },
+    ],
+    []
   );
-  const categoryPalette = [
-    { dotClass: "bg-emerald-500", color: "#10b981" },
-    { dotClass: "bg-sky-500", color: "#0ea5e9" },
-    { dotClass: "bg-amber-500", color: "#f59e0b" },
-    { dotClass: "bg-rose-500", color: "#f43f5e" },
-    { dotClass: "bg-indigo-500", color: "#6366f1" },
-    { dotClass: "bg-violet-500", color: "#8b5cf6" },
-    { dotClass: "bg-lime-500", color: "#84cc16" },
-    { dotClass: "bg-orange-500", color: "#f97316" },
-  ];
-  const categoryPieStops = useMemo(() => {
-    if (totalExpenseAmount <= 0) return [];
+  const { totalExpenseAmount, categoryPieStops } = useMemo(() => {
+    const totalExpense = totalsByCategory.reduce(
+      (acc, [, total]) => acc + total,
+      0
+    );
+    if (totalExpense <= 0) {
+      return { totalExpenseAmount: 0, categoryPieStops: [] };
+    }
+
     let current = 0;
-    return totalsByCategory.map(([category, total], index) => {
-      const percentage = (total / totalExpenseAmount) * 100;
+    const stops = totalsByCategory.map(([category, total], index) => {
+      const percentage = (total / totalExpense) * 100;
       const start = current;
       current += percentage;
       const palette = categoryPalette[index % categoryPalette.length];
@@ -198,7 +204,9 @@ export default function App() {
         color: palette.color,
       };
     });
-  }, [totalExpenseAmount, totalsByCategory]);
+
+    return { totalExpenseAmount: totalExpense, categoryPieStops: stops };
+  }, [categoryPalette, totalsByCategory]);
 
   const months = useMemo(() => {
     const now = new Date();
