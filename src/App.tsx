@@ -17,6 +17,7 @@ import {
 } from "./utils/transactions";
 
 export default function App() {
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -112,6 +113,45 @@ export default function App() {
     onImport: importTransactions,
     categories: categoriesForSelect,
   });
+
+  useEffect(() => {
+    const THEME_KEY = "cf_theme";
+    const storedTheme = localStorage.getItem(THEME_KEY);
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const initialDark =
+      storedTheme === "dark" ? true : storedTheme === "light" ? false : mediaQuery.matches;
+
+    setIsDarkMode(initialDark);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (localStorage.getItem(THEME_KEY)) return;
+      setIsDarkMode(event.matches);
+    };
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+    } else {
+      mediaQuery.addListener(handleChange);
+    }
+
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener("change", handleChange);
+      } else {
+        mediaQuery.removeListener(handleChange);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDarkMode);
+  }, [isDarkMode]);
+
+  function toggleTheme() {
+    const next = !isDarkMode;
+    localStorage.setItem("cf_theme", next ? "dark" : "light");
+    setIsDarkMode(next);
+  }
 
   useEffect(() => {
     const token = getAuthToken();
@@ -481,7 +521,7 @@ export default function App() {
 
   if (!authReady) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-700 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 text-slate-700 flex items-center justify-center dark:bg-slate-950 dark:text-slate-200">
         Carregando...
       </div>
     );
@@ -489,7 +529,7 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
         <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 px-6 py-12 lg:flex-row">
           <div className="w-full max-w-md space-y-4">
             <div className="rounded-3xl bg-gradient-to-br from-indigo-500 via-sky-500 to-emerald-400 p-6 text-white shadow-lg">
@@ -498,15 +538,16 @@ export default function App() {
                 Entre para acompanhar seus gastos com segurança.
               </p>
             </div>
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex gap-2">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/80">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={() => setAuthMode("login")}
                   className={`flex-1 rounded-full px-4 py-2 text-sm ${
                     authMode === "login"
                       ? "bg-slate-900 text-white"
-                      : "border border-slate-200 text-slate-600"
+                      : "border border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300"
                   }`}
                 >
                   Entrar
@@ -517,48 +558,56 @@ export default function App() {
                   className={`flex-1 rounded-full px-4 py-2 text-sm ${
                     authMode === "register"
                       ? "bg-slate-900 text-white"
-                      : "border border-slate-200 text-slate-600"
+                      : "border border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300"
                   }`}
                 >
                   Criar conta
+                </button>
+              </div>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  {isDarkMode ? "Modo claro" : "Modo escuro"}
                 </button>
               </div>
 
               {authMode === "login" ? (
                 <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
+                    <label className="text-xs font-medium uppercase text-slate-500 dark:text-slate-400">
                       Usuário
                     </label>
                     <input
                       type="text"
                       value={authUsername}
                       onChange={(e) => setAuthUsername(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
+                    <label className="text-xs font-medium uppercase text-slate-500 dark:text-slate-400">
                       Senha
                     </label>
                     <input
                       type="password"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       required
                     />
                   </div>
                   {authError && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-200">
                       {authError}
                     </div>
                   )}
                   <button
                     type="submit"
                     disabled={authLoading}
-                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                   >
                     {authLoading ? "Entrando..." : "Entrar"}
                   </button>
@@ -566,38 +615,38 @@ export default function App() {
               ) : (
                 <form onSubmit={handleRegisterSubmit} className="mt-6 space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
+                    <label className="text-xs font-medium uppercase text-slate-500 dark:text-slate-400">
                       Usuário
                     </label>
                     <input
                       type="text"
                       value={authUsername}
                       onChange={(e) => setAuthUsername(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
+                    <label className="text-xs font-medium uppercase text-slate-500 dark:text-slate-400">
                       Senha
                     </label>
                     <input
                       type="password"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                       required
                     />
                   </div>
                   {authError && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-200">
                       {authError}
                     </div>
                   )}
                   <button
                     type="submit"
                     disabled={authLoading}
-                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
                   >
                     {authLoading ? "Criando..." : "Criar conta"}
                   </button>
@@ -611,47 +660,53 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
+    <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="flex min-h-screen">
-        <aside className="hidden w-20 flex-col items-center gap-6 bg-white py-6 shadow-sm md:flex">
+        <aside className="hidden w-20 flex-col items-center gap-6 bg-white py-6 shadow-sm md:flex dark:bg-slate-900">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white">
             $
           </div>
           <nav className="flex flex-col gap-4 text-slate-400">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
               ⌁
             </span>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800">
               📈
             </span>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800">
               📂
             </span>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800">
               ⚙️
             </span>
           </nav>
         </aside>
 
         <div className="flex-1">
-          <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
+          <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80">
             <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <div>
                 <h1 className="text-xl font-semibold">Dashboard</h1>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
                   Bem-vindo(a), {user.name}
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded-full border bg-white px-3 py-1 text-xs text-slate-600">
+                <span className="rounded-full border bg-white px-3 py-1 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                   {monthLabel}
                 </span>
                 <button
                   onClick={handleLogout}
-                  className="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                  className="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
                   Sair
+                </button>
+                <button
+                  onClick={toggleTheme}
+                  className="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  {isDarkMode ? "Modo claro" : "Modo escuro"}
                 </button>
               </div>
             </div>
