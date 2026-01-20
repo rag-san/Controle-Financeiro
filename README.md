@@ -1,73 +1,94 @@
-# React + TypeScript + Vite
+# Controle Financeiro
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicação web para acompanhar receitas e despesas, com autenticação, categorias personalizadas e importação/exportação de CSV.
 
-Currently, two official plugins are available:
+## ✨ Funcionalidades
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Cadastro e login** com sessão persistida via token.
+- **Dashboard** com saldo, entradas, saídas e análises por categoria e por mês.
+- **CRUD de transações** (criar, editar, excluir e limpar tudo).
+- **Categorias personalizadas** com restauração ao padrão.
+- **Importação de extrato (CSV)** com mapeamento de colunas.
+- **Exportação de CSV** das transações filtradas.
 
-## React Compiler
+## 🧰 Tecnologias
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend:** React + TypeScript + Vite + Tailwind CSS.
+- **Backend:** Node.js + Express.
+- **Armazenamento:** arquivo JSON local (por usuário).
 
-## Expanding the ESLint configuration
+## ✅ Requisitos
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Node.js 18+ (recomendado).
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## ▶️ Como rodar localmente
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 1) Backend
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd server
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+O servidor sobe em `http://localhost:3001`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### 2) Frontend
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd ..
+npm install
+npm run dev
 ```
+
+O app Vite sobe em `http://localhost:5173`.
+
+## ⚙️ Variáveis de ambiente
+
+### Frontend
+
+Crie um arquivo `.env` na raiz, se necessário:
+
+```bash
+VITE_API_BASE_URL=http://localhost:3001
+```
+
+### Backend
+
+O servidor aceita variáveis opcionais:
+
+```bash
+PORT=3001
+DATA_FILE=./data.json
+```
+
+- `PORT`: porta do servidor.
+- `DATA_FILE`: caminho do arquivo JSON de dados.
+
+## 🧪 Scripts úteis
+
+### Frontend
+
+- `npm run dev` – ambiente de desenvolvimento.
+- `npm run build` – build de produção.
+- `npm run lint` – lints.
+- `npm run test` – testes (Vitest).
+
+### Backend
+
+- `npm run dev` – servidor Express.
+- `npm start` – servidor Express.
+
+## 🗂️ Estrutura resumida
+
+```
+.
+├── src/            # UI React
+├── server/         # API Express
+└── public/
+```
+
+## 📝 Notas
+
+- Os dados são persistidos localmente em arquivo JSON no backend.
+- A autenticação usa tokens armazenados no `localStorage`.
