@@ -79,6 +79,25 @@ DATA_FILE=./data.json
 - `npm run dev` – servidor Express.
 - `npm start` – servidor Express.
 
+## ☁️ Deploy no Render
+
+Este repositório já inclui um `render.yaml` com dois serviços (API e Frontend).
+
+### Passo a passo
+
+1. **Faça login no Render** e conecte o GitHub/GitLab com este repositório.
+2. No dashboard, clique em **New + → Blueprint** e selecione o repo.
+3. O Render vai detectar o `render.yaml` e criar:
+   - **controle-financeiro-api** (Node/Express).
+   - **controle-financeiro-web** (Static Site).
+4. Após criar, ajuste a variável **VITE_API_BASE_URL** do frontend para a URL pública do backend.
+5. Rode o deploy.
+
+### Observações
+
+- A API usa um **disco persistente** em `/data` para armazenar o `data.json`.
+- Se quiser trocar o domínio/URL do backend, atualize a variável `VITE_API_BASE_URL`.
+
 ## 🗂️ Estrutura resumida
 
 ```
