@@ -61,6 +61,7 @@ export default function App() {
     "todas"
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [monthsToShow, setMonthsToShow] = useState(6);
 
   const {
     categories,
@@ -251,8 +252,12 @@ export default function App() {
 
   const maxCategoryTotal =
     totalsByCategory.length > 0 ? totalsByCategory[0][1] : 0;
+  const visibleMonthlyTotals = useMemo(
+    () => monthlyTotalsByType.slice(-monthsToShow),
+    [monthlyTotalsByType, monthsToShow]
+  );
   const maxMonthValue = Math.max(
-    ...monthlyTotalsByType.map((m) => Math.max(m.income, m.expense)),
+    ...visibleMonthlyTotals.map((m) => Math.max(m.income, m.expense)),
     0
   );
   const balanceTone =
@@ -743,24 +748,40 @@ export default function App() {
                 )}
               </Card>
 
-              <Card title="Resumo mensal (últimos 6 meses)">
+              <Card title={`Resumo mensal (últimos ${monthsToShow} meses)`}>
                 <div className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
                     <p>Comparativo de entradas e saídas por mês.</p>
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                        <span>Entradas</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="h-2 w-2 rounded-full bg-rose-500" />
-                        <span>Saídas</span>
-                      </div>
+                      {[3, 6, 12].map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setMonthsToShow(option)}
+                          className={`rounded-full px-3 py-1 text-[11px] font-medium ${
+                            monthsToShow === option
+                              ? "bg-slate-900 text-white"
+                              : "border border-slate-200 text-slate-500 hover:bg-slate-50"
+                          }`}
+                        >
+                          {option} meses
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-500">
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      <span>Entradas</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-rose-500" />
+                      <span>Saídas</span>
                     </div>
                   </div>
 
                   <div className="space-y-3">
-                    {monthlyTotalsByType.map((m) => {
+                    {visibleMonthlyTotals.map((m) => {
                       const incomePercentage =
                         maxMonthValue > 0 ? (m.income / maxMonthValue) * 100 : 0;
                       const expensePercentage =
