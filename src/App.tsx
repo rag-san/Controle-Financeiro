@@ -167,6 +167,38 @@ export default function App() {
     }
     return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
   }, [filteredTransactions]);
+  const totalExpenseAmount = totalsByCategory.reduce(
+    (acc, [, total]) => acc + total,
+    0
+  );
+  const categoryPalette = [
+    { dotClass: "bg-emerald-500", color: "#10b981" },
+    { dotClass: "bg-sky-500", color: "#0ea5e9" },
+    { dotClass: "bg-amber-500", color: "#f59e0b" },
+    { dotClass: "bg-rose-500", color: "#f43f5e" },
+    { dotClass: "bg-indigo-500", color: "#6366f1" },
+    { dotClass: "bg-violet-500", color: "#8b5cf6" },
+    { dotClass: "bg-lime-500", color: "#84cc16" },
+    { dotClass: "bg-orange-500", color: "#f97316" },
+  ];
+  const categoryPieStops = useMemo(() => {
+    if (totalExpenseAmount <= 0) return [];
+    let current = 0;
+    return totalsByCategory.map(([category, total], index) => {
+      const percentage = (total / totalExpenseAmount) * 100;
+      const start = current;
+      current += percentage;
+      const palette = categoryPalette[index % categoryPalette.length];
+      return {
+        category,
+        total,
+        start,
+        end: current,
+        dotClass: palette.dotClass,
+        color: palette.color,
+      };
+    });
+  }, [totalExpenseAmount, totalsByCategory]);
 
   const months = useMemo(() => {
     const now = new Date();
@@ -682,29 +714,58 @@ export default function App() {
                     Sem dados de saídas. Adicione gastos para gerar insights.
                   </p>
                 ) : (
-                  <div className="space-y-3">
-                    {totalsByCategory.map(([cat, total]) => {
-                      const percentage =
-                        maxCategoryTotal > 0
-                          ? (total / maxCategoryTotal) * 100
-                          : 0;
-                      return (
-                        <div key={cat} className="space-y-1">
-                          <div className="flex justify-between text-sm">
-                            <span className="font-medium">{cat}</span>
-                            <span className="text-slate-500">
-                              {formatBRL(total)}
-                            </span>
-                          </div>
-                          <div className="h-2 rounded-full bg-slate-100">
-                            <div
-                              className="h-2 rounded-full bg-emerald-500"
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
+                  <div className="grid gap-6 lg:grid-cols-[200px,1fr] lg:items-center">
+                    <div className="flex items-center justify-center">
+                      <div
+                        className="relative h-40 w-40 rounded-full"
+                        style={{
+                          backgroundImage: `conic-gradient(${categoryPieStops
+                            .map(
+                              (slice) =>
+                                `${slice.color} ${slice.start}% ${slice.end}%`
+                            )
+                            .join(",")})`,
+                        }}
+                      >
+                        <div className="absolute inset-6 rounded-full bg-white" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                          <span className="text-xs text-slate-500">Total</span>
+                          <span className="text-sm font-semibold text-slate-900">
+                            {formatBRL(totalExpenseAmount)}
+                          </span>
                         </div>
-                      );
-                    })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {totalsByCategory.map(([cat, total], index) => {
+                        const percentage =
+                          maxCategoryTotal > 0
+                            ? (total / maxCategoryTotal) * 100
+                            : 0;
+                        const palette =
+                          categoryPalette[index % categoryPalette.length];
+                        return (
+                          <div key={cat} className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className={`h-3 w-3 rounded-full ${palette.dotClass}`} />
+                                <span className="font-medium">{cat}</span>
+                              </div>
+                              <span className="text-slate-500">
+                                {formatBRL(total)}
+                              </span>
+                            </div>
+                            <div className="h-2 rounded-full bg-slate-100">
+                              <div
+                                className="h-2 rounded-full bg-emerald-500"
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </Card>
