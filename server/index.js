@@ -147,25 +147,31 @@ function requireAuth(req, res, next) {
 
 app.post("/api/auth/register", async (req, res) => {
   const { name, email, password } = req.body ?? {};
-  if (!email || !password || typeof email !== "string") {
+  if (!name || !password || typeof name !== "string") {
     return res.status(400).json({ error: "Dados inválidos." });
   }
 
   const data = await loadData();
-  const normalizedEmail = normalizeText(email);
-  const exists = data.users.some(
-    (user) => normalizeText(user.email) === normalizedEmail
-  );
+  const normalizedName = normalizeText(name);
+  const normalizedEmail = email ? normalizeText(email) : "";
+  const exists = data.users.some((user) => {
+    if (normalizedEmail) {
+      return normalizeText(user.email ?? "") === normalizedEmail;
+    }
+    return normalizeText(user.name ?? "") === normalizedName;
+  });
   if (exists) {
-    return res.status(400).json({ error: "Email já cadastrado." });
+    return res
+      .status(400)
+      .json({ error: "Usuário ou email já cadastrado." });
   }
 
   const { salt, hash } = createPasswordHash(password);
   const userId = randomUUID();
   const user = {
     id: userId,
-    name: typeof name === "string" && name.trim() ? name.trim() : "Usuário",
-    email: email.trim(),
+    name: name.trim(),
+    email: typeof email === "string" && email.trim() ? email.trim() : null,
     passwordHash: hash,
     passwordSalt: salt,
   };
@@ -186,15 +192,24 @@ app.post("/api/auth/register", async (req, res) => {
 });
 
 app.post("/api/auth/login", async (req, res) => {
-  const { email, password } = req.body ?? {};
-  if (!email || !password || typeof email !== "string") {
+  const { name, email, password } = req.body ?? {};
+  const identifier =
+    typeof email === "string" && email.trim()
+      ? email.trim()
+      : typeof name === "string"
+      ? name.trim()
+      : "";
+  if (!identifier || !password || typeof password !== "string") {
     return res.status(400).json({ error: "Dados inválidos." });
   }
 
   const data = await loadData();
-  const user = data.users.find(
-    (item) => normalizeText(item.email) === normalizeText(email)
-  );
+  const user = data.users.find((item) => {
+    if (email) {
+      return normalizeText(item.email ?? "") === normalizeText(identifier);
+    }
+    return normalizeText(item.name ?? "") === normalizeText(identifier);
+  });
   if (!user || !user.passwordHash) {
     return res.status(400).json({ error: "Credenciais inválidas." });
   }

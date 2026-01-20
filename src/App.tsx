@@ -18,15 +18,16 @@ import {
 
 export default function App() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [authEmail, setAuthEmail] = useState("");
+  const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
-  const [authName, setAuthName] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(
-    null
-  );
+  const [user, setUser] = useState<{
+    id: string;
+    name: string;
+    email?: string | null;
+  } | null>(null);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -118,7 +119,9 @@ export default function App() {
       return;
     }
 
-    requestJson<{ id: string; name: string; email: string }>("/api/auth/me")
+    requestJson<{ id: string; name: string; email?: string | null }>(
+      "/api/auth/me"
+    )
       .then((profile) => {
         setUser(profile);
       })
@@ -264,7 +267,13 @@ export default function App() {
       : "text-slate-500";
   function getMonthTotalChange(current: number, previous: number) {
     if (previous <= 0) return current > 0 ? 100 : 0;
-    return Math.round((current / previous) * 100);
+    return Math.round(((current - previous) / previous) * 100);
+  }
+
+  function formatDelta(value: number) {
+    const clamped = Math.min(Math.abs(value), 999);
+    const prefix = value > 0 ? "+" : value < 0 ? "-" : "";
+    return `${prefix}${clamped}%`;
   }
 
   const currentMonthKey = months[months.length - 1]?.key ?? "";
@@ -443,10 +452,10 @@ export default function App() {
     try {
       const data = await requestJson<{
         token: string;
-        user: { id: string; name: string; email: string };
+        user: { id: string; name: string; email?: string | null };
       }>("/api/auth/login", {
         method: "POST",
-        body: { email: authEmail, password: authPassword },
+        body: { name: authUsername, password: authPassword },
         auth: false,
       });
       setAuthToken(data.token);
@@ -469,7 +478,7 @@ export default function App() {
     try {
       await requestJson<{ ok: boolean }>("/api/auth/register", {
         method: "POST",
-        body: { name: authName, email: authEmail, password: authPassword },
+        body: { name: authUsername, password: authPassword },
         auth: false,
       });
       setAuthMode("login");
@@ -546,12 +555,12 @@ export default function App() {
                 <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-medium uppercase text-slate-500">
-                      Email
+                      Usuário
                     </label>
                     <input
-                      type="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
+                      type="text"
+                      value={authUsername}
+                      onChange={(e) => setAuthUsername(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2"
                       required
                     />
@@ -585,24 +594,12 @@ export default function App() {
                 <form onSubmit={handleRegisterSubmit} className="mt-6 space-y-4">
                   <div className="space-y-2">
                     <label className="text-xs font-medium uppercase text-slate-500">
-                      Nome
+                      Usuário
                     </label>
                     <input
                       type="text"
-                      value={authName}
-                      onChange={(e) => setAuthName(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
+                      value={authUsername}
+                      onChange={(e) => setAuthUsername(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2"
                       required
                     />
@@ -794,13 +791,13 @@ export default function App() {
                         className="relative flex h-16 w-16 items-center justify-center rounded-full"
                         style={{
                           background: `conic-gradient(#10b981 ${Math.min(
-                            incomeChange,
+                            Math.abs(incomeChange),
                             100
                           )}%, #e2e8f0 0)`,
                         }}
                       >
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-sm font-semibold text-emerald-700">
-                          {incomeChange}%
+                          {formatDelta(incomeChange)}
                         </div>
                       </div>
                     </div>
@@ -812,9 +809,12 @@ export default function App() {
                             ? (m.income / maxMonthIncome) * 100
                             : 0;
                         return (
-                          <div key={`income-${m.key}`} className="space-y-1">
+                          <div
+                            key={`income-${m.key}`}
+                            className="space-y-1"
+                          >
                             <div className="flex justify-between text-xs text-emerald-800">
-                              <span className="font-medium">{m.label}</span>
+                              <span className="font-medium">Receita</span>
                               <span className="text-emerald-700/70">
                                 {formatBRL(m.income)}
                               </span>
@@ -845,13 +845,13 @@ export default function App() {
                         className="relative flex h-16 w-16 items-center justify-center rounded-full"
                         style={{
                           background: `conic-gradient(#f43f5e ${Math.min(
-                            expenseChange,
+                            Math.abs(expenseChange),
                             100
                           )}%, #e2e8f0 0)`,
                         }}
                       >
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-sm font-semibold text-rose-700">
-                          {expenseChange}%
+                          {formatDelta(expenseChange)}
                         </div>
                       </div>
                     </div>
@@ -863,9 +863,12 @@ export default function App() {
                             ? (m.expense / maxMonthExpense) * 100
                             : 0;
                         return (
-                          <div key={`expense-${m.key}`} className="space-y-1">
+                          <div
+                            key={`expense-${m.key}`}
+                            className="space-y-1"
+                          >
                             <div className="flex justify-between text-xs text-rose-800">
-                              <span className="font-medium">{m.label}</span>
+                              <span className="font-medium">Despesa</span>
                               <span className="text-rose-700/70">
                                 {formatBRL(m.expense)}
                               </span>
