@@ -61,7 +61,7 @@ export default function App() {
     "todas"
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const [monthsToShow, setMonthsToShow] = useState(6);
+  const [monthsToShow, setMonthsToShow] = useState(3);
 
   const {
     categories,
