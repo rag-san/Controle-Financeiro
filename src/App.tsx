@@ -251,12 +251,8 @@ export default function App() {
 
   const maxCategoryTotal =
     totalsByCategory.length > 0 ? totalsByCategory[0][1] : 0;
-  const maxMonthIncome = Math.max(
-    ...monthlyTotalsByType.map((m) => m.income),
-    0
-  );
-  const maxMonthExpense = Math.max(
-    ...monthlyTotalsByType.map((m) => m.expense),
+  const maxMonthValue = Math.max(
+    ...monthlyTotalsByType.map((m) => Math.max(m.income, m.expense)),
     0
   );
   const balanceTone =
@@ -265,34 +261,6 @@ export default function App() {
       : summary.balance < 0
       ? "text-rose-600"
       : "text-slate-500";
-  function getMonthTotalChange(current: number, previous: number) {
-    if (previous <= 0) return current > 0 ? 100 : 0;
-    return Math.round(((current - previous) / previous) * 100);
-  }
-
-  function formatDelta(value: number) {
-    const clamped = Math.min(Math.abs(value), 999);
-    const prefix = value > 0 ? "+" : value < 0 ? "-" : "";
-    return `${prefix}${clamped}%`;
-  }
-
-  const currentMonthKey = months[months.length - 1]?.key ?? "";
-  const previousMonthKey = months[months.length - 2]?.key ?? "";
-  const currentMonthTotals = monthlyTotalsByType.find(
-    (m) => m.key === currentMonthKey
-  );
-  const previousMonthTotals = monthlyTotalsByType.find(
-    (m) => m.key === previousMonthKey
-  );
-
-  const incomeChange = getMonthTotalChange(
-    currentMonthTotals?.income ?? 0,
-    previousMonthTotals?.income ?? 0
-  );
-  const expenseChange = getMonthTotalChange(
-    currentMonthTotals?.expense ?? 0,
-    previousMonthTotals?.expense ?? 0
-  );
 
   function resetForm() {
     setTitle("");
@@ -776,113 +744,65 @@ export default function App() {
               </Card>
 
               <Card title="Resumo mensal (últimos 6 meses)">
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-emerald-700">
-                          Receitas
-                        </p>
-                        <p className="mt-1 text-xs text-emerald-700/70">
-                          Comparação com o mês anterior
-                        </p>
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                    <p>Comparativo de entradas e saídas por mês.</p>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span>Entradas</span>
                       </div>
-                      <div
-                        className="relative flex h-16 w-16 items-center justify-center rounded-full"
-                        style={{
-                          background: `conic-gradient(#10b981 ${Math.min(
-                            Math.abs(incomeChange),
-                            100
-                          )}%, #e2e8f0 0)`,
-                        }}
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-sm font-semibold text-emerald-700">
-                          {formatDelta(incomeChange)}
-                        </div>
+                      <div className="flex items-center gap-1">
+                        <span className="h-2 w-2 rounded-full bg-rose-500" />
+                        <span>Saídas</span>
                       </div>
-                    </div>
-
-                    <div className="mt-4 space-y-3">
-                      {monthlyTotalsByType.map((m) => {
-                        const percentage =
-                          maxMonthIncome > 0
-                            ? (m.income / maxMonthIncome) * 100
-                            : 0;
-                        return (
-                          <div
-                            key={`income-${m.key}`}
-                            className="space-y-1"
-                          >
-                            <div className="flex justify-between text-xs text-emerald-800">
-                              <span className="font-medium">Receita</span>
-                              <span className="text-emerald-700/70">
-                                {formatBRL(m.income)}
-                              </span>
-                            </div>
-                            <div className="h-2 rounded-full bg-emerald-100">
-                              <div
-                                className="h-2 rounded-full bg-emerald-500"
-                                style={{ width: `${percentage}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-rose-100 bg-rose-50/40 p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-semibold text-rose-700">
-                          Despesas
-                        </p>
-                        <p className="mt-1 text-xs text-rose-700/70">
-                          Comparação com o mês anterior
-                        </p>
-                      </div>
-                      <div
-                        className="relative flex h-16 w-16 items-center justify-center rounded-full"
-                        style={{
-                          background: `conic-gradient(#f43f5e ${Math.min(
-                            Math.abs(expenseChange),
-                            100
-                          )}%, #e2e8f0 0)`,
-                        }}
-                      >
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-sm font-semibold text-rose-700">
-                          {formatDelta(expenseChange)}
-                        </div>
-                      </div>
-                    </div>
+                  <div className="space-y-3">
+                    {monthlyTotalsByType.map((m) => {
+                      const incomePercentage =
+                        maxMonthValue > 0 ? (m.income / maxMonthValue) * 100 : 0;
+                      const expensePercentage =
+                        maxMonthValue > 0 ? (m.expense / maxMonthValue) * 100 : 0;
 
-                    <div className="mt-4 space-y-3">
-                      {monthlyTotalsByType.map((m) => {
-                        const percentage =
-                          maxMonthExpense > 0
-                            ? (m.expense / maxMonthExpense) * 100
-                            : 0;
-                        return (
-                          <div
-                            key={`expense-${m.key}`}
-                            className="space-y-1"
-                          >
-                            <div className="flex justify-between text-xs text-rose-800">
-                              <span className="font-medium">Despesa</span>
-                              <span className="text-rose-700/70">
-                                {formatBRL(m.expense)}
+                      return (
+                        <div key={m.key} className="grid gap-2">
+                          <div className="flex items-center justify-between text-xs text-slate-500">
+                            <span className="font-medium text-slate-700">
+                              {m.label}
+                            </span>
+                            <span>
+                              {formatBRL(m.income)} · {formatBRL(m.expense)}
+                            </span>
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-[1fr,1fr]">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-emerald-600">
+                                Entradas
                               </span>
+                              <div className="h-2 flex-1 rounded-full bg-emerald-50">
+                                <div
+                                  className="h-2 rounded-full bg-emerald-500"
+                                  style={{ width: `${incomePercentage}%` }}
+                                />
+                              </div>
                             </div>
-                            <div className="h-2 rounded-full bg-rose-100">
-                              <div
-                                className="h-2 rounded-full bg-rose-500"
-                                style={{ width: `${percentage}%` }}
-                              />
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-rose-600">
+                                Saídas
+                              </span>
+                              <div className="h-2 flex-1 rounded-full bg-rose-50">
+                                <div
+                                  className="h-2 rounded-full bg-rose-500"
+                                  style={{ width: `${expensePercentage}%` }}
+                                />
+                              </div>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </Card>
