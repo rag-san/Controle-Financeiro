@@ -96,6 +96,7 @@ Este repositório já inclui um `render.yaml` com dois serviços (API e Frontend
 ### Observações
 
 - O plano **free** do Render não permite disco persistente. Se quiser persistência, use um plano pago ou migre para um banco externo.
+- Em alguns planos, o **Static Site** não aceita `plan: free` no `render.yaml`. Se ocorrer erro, remova o campo `plan` do serviço `controle-financeiro-web`.
 - Se quiser trocar o domínio/URL do backend, atualize a variável `VITE_API_BASE_URL`.
 
 ## 🗂️ Estrutura resumida
