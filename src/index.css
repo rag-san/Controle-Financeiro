@@ -1,3 +1,118 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #F5F7FB;
+    --bg-secondary: #FFFFFF;
+    --bg-tertiary: #EEF1F8;
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-muted: #94A3B8;
+    --primary-main: #4F46E5;
+    --primary-hover: #4338CA;
+    --success-main: #16A34A;
+    --danger-main: #DC2626;
+    --warning-main: #D97706;
+    --info-main: #0284C7;
+    --border-default: #E2E8F0;
+    --border-muted: #CBD5E1;
+    --chart-income: #16A34A;
+    --chart-expense: #DC2626;
+    --chart-grid: #E5E7EB;
+    --chart-bg: #FFFFFF;
+  }
+
+  .dark {
+    --bg-primary: #0B1020;
+    --bg-secondary: #121832;
+    --bg-tertiary: #1A2142;
+    --text-primary: #E6E9F2;
+    --text-secondary: #AAB0D6;
+    --text-muted: #6E7399;
+    --primary-main: #6C7CFF;
+    --primary-hover: #5A6BFF;
+    --success-main: #22C55E;
+    --danger-main: #EF4444;
+    --warning-main: #F59E0B;
+    --info-main: #38BDF8;
+    --border-default: #242B4A;
+    --border-muted: #1B2240;
+    --chart-income: #22C55E;
+    --chart-expense: #EF4444;
+    --chart-grid: #2A3158;
+    --chart-bg: #0B1020;
+  }
+}
+
+@layer components {
+  .app-bg-primary {
+    background-color: var(--bg-primary);
+  }
+  .app-bg-secondary {
+    background-color: var(--bg-secondary);
+  }
+  .app-bg-tertiary {
+    background-color: var(--bg-tertiary);
+  }
+  .app-text-primary {
+    color: var(--text-primary);
+  }
+  .app-text-secondary {
+    color: var(--text-secondary);
+  }
+  .app-text-muted {
+    color: var(--text-muted);
+  }
+  .app-border {
+    border-color: var(--border-default);
+  }
+  .app-border-muted {
+    border-color: var(--border-muted);
+  }
+  .app-btn-primary {
+    background-color: var(--primary-main);
+    color: #fff;
+  }
+  .app-btn-primary:hover {
+    background-color: var(--primary-hover);
+  }
+  .app-btn-outline {
+    border-color: var(--border-default);
+    color: var(--text-secondary);
+  }
+  .app-btn-outline:hover {
+    background-color: var(--bg-tertiary);
+  }
+  .app-chart-income {
+    background-color: var(--chart-income);
+  }
+  .app-chart-expense {
+    background-color: var(--chart-expense);
+  }
+  .app-chart-info {
+    background-color: var(--info-main);
+  }
+  .app-chart-warning {
+    background-color: var(--warning-main);
+  }
+  .app-chart-primary {
+    background-color: var(--primary-main);
+  }
+  .app-chart-muted {
+    background-color: var(--text-muted);
+  }
+  .app-chart-secondary {
+    background-color: var(--text-secondary);
+  }
+  .app-chart-border {
+    background-color: var(--border-default);
+  }
+  .app-chart-grid {
+    background-color: var(--chart-grid);
+  }
+  .app-chart-bg {
+    background-color: var(--chart-bg);
+  }
+}
