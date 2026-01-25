@@ -17,16 +17,18 @@ import {
 } from "./utils/transactions";
 
 export default function App() {
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
-  const [authEmail, setAuthEmail] = useState("");
+  const [authUsername, setAuthUsername] = useState("");
   const [authPassword, setAuthPassword] = useState("");
-  const [authName, setAuthName] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authReady, setAuthReady] = useState(false);
-  const [user, setUser] = useState<{ id: string; name: string; email: string } | null>(
-    null
-  );
+  const [user, setUser] = useState<{
+    id: string;
+    name: string;
+    email?: string | null;
+  } | null>(null);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -60,6 +62,7 @@ export default function App() {
     "todas"
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [monthsToShow, setMonthsToShow] = useState(3);
 
   const {
     categories,
@@ -112,13 +115,54 @@ export default function App() {
   });
 
   useEffect(() => {
+    const THEME_KEY = "cf_theme";
+    const storedTheme = localStorage.getItem(THEME_KEY);
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const initialDark =
+      storedTheme === "dark" ? true : storedTheme === "light" ? false : mediaQuery.matches;
+
+    setIsDarkMode(initialDark);
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      if (localStorage.getItem(THEME_KEY)) return;
+      setIsDarkMode(event.matches);
+    };
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+    } else {
+      mediaQuery.addListener(handleChange);
+    }
+
+    return () => {
+      if (mediaQuery.removeEventListener) {
+        mediaQuery.removeEventListener("change", handleChange);
+      } else {
+        mediaQuery.removeListener(handleChange);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", isDarkMode);
+  }, [isDarkMode]);
+
+  function toggleTheme() {
+    const next = !isDarkMode;
+    localStorage.setItem("cf_theme", next ? "dark" : "light");
+    setIsDarkMode(next);
+  }
+
+  useEffect(() => {
     const token = getAuthToken();
     if (!token) {
       setAuthReady(true);
       return;
     }
 
-    requestJson<{ id: string; name: string; email: string }>("/api/auth/me")
+    requestJson<{ id: string; name: string; email?: string | null }>(
+      "/api/auth/me"
+    )
       .then((profile) => {
         setUser(profile);
       })
@@ -167,10 +211,50 @@ export default function App() {
     }
     return Array.from(totals.entries()).sort((a, b) => b[1] - a[1]);
   }, [filteredTransactions]);
+  const categoryPalette = useMemo(
+    () => [
+      { dotClass: "app-chart-income", color: "var(--success-main)" },
+      { dotClass: "app-chart-expense", color: "var(--danger-main)" },
+      { dotClass: "app-chart-info", color: "var(--info-main)" },
+      { dotClass: "app-chart-warning", color: "var(--warning-main)" },
+      { dotClass: "app-chart-primary", color: "var(--primary-main)" },
+      { dotClass: "app-chart-secondary", color: "var(--text-secondary)" },
+      { dotClass: "app-chart-muted", color: "var(--text-muted)" },
+      { dotClass: "app-chart-border", color: "var(--border-default)" },
+    ],
+    []
+  );
+  const { totalExpenseAmount, categoryPieStops } = useMemo(() => {
+    const totalExpense = totalsByCategory.reduce(
+      (acc, [, total]) => acc + total,
+      0
+    );
+    if (totalExpense <= 0) {
+      return { totalExpenseAmount: 0, categoryPieStops: [] };
+    }
 
-  const monthlyTotals = useMemo(() => {
+    let current = 0;
+    const stops = totalsByCategory.map(([category, total], index) => {
+      const percentage = (total / totalExpense) * 100;
+      const start = current;
+      current += percentage;
+      const palette = categoryPalette[index % categoryPalette.length];
+      return {
+        category,
+        total,
+        start,
+        end: current,
+        dotClass: palette.dotClass,
+        color: palette.color,
+      };
+    });
+
+    return { totalExpenseAmount: totalExpense, categoryPieStops: stops };
+  }, [categoryPalette, totalsByCategory]);
+
+  const months = useMemo(() => {
     const now = new Date();
-    const months = Array.from({ length: 6 }, (_, index) => {
+    return Array.from({ length: 6 }, (_, index) => {
       const d = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
         2,
@@ -181,31 +265,47 @@ export default function App() {
         label: d.toLocaleString("pt-BR", { month: "short", year: "2-digit" }),
       };
     });
+  }, []);
 
-    const totals = new Map(months.map((m) => [m.key, 0]));
+  const monthlyTotalsByType = useMemo(() => {
+    const totals = new Map(
+      months.map((m) => [m.key, { income: 0, expense: 0 }])
+    );
+
     for (const t of filteredTransactions) {
-      if (t.type !== "saida") continue;
       const key = t.date.slice(0, 7);
-      if (totals.has(key)) {
-        totals.set(key, (totals.get(key) ?? 0) + t.amount);
+      const current = totals.get(key);
+      if (!current) continue;
+      if (t.type === "entrada") {
+        current.income += t.amount;
+      } else {
+        current.expense += t.amount;
       }
     }
 
     return months.map((m) => ({
       ...m,
-      total: totals.get(m.key) ?? 0,
+      income: totals.get(m.key)?.income ?? 0,
+      expense: totals.get(m.key)?.expense ?? 0,
     }));
-  }, [filteredTransactions]);
+  }, [filteredTransactions, months]);
 
   const maxCategoryTotal =
     totalsByCategory.length > 0 ? totalsByCategory[0][1] : 0;
-  const maxMonthTotal = Math.max(...monthlyTotals.map((m) => m.total), 0);
+  const visibleMonthlyTotals = useMemo(
+    () => monthlyTotalsByType.slice(-monthsToShow),
+    [monthlyTotalsByType, monthsToShow]
+  );
+  const maxMonthValue = Math.max(
+    ...visibleMonthlyTotals.map((m) => Math.max(m.income, m.expense)),
+    0
+  );
   const balanceTone =
     summary.balance > 0
-      ? "text-emerald-600"
+      ? "text-[color:var(--success-main)]"
       : summary.balance < 0
-      ? "text-rose-600"
-      : "text-slate-500";
+      ? "text-[color:var(--danger-main)]"
+      : "app-text-muted";
 
   function resetForm() {
     setTitle("");
@@ -365,10 +465,10 @@ export default function App() {
     try {
       const data = await requestJson<{
         token: string;
-        user: { id: string; name: string; email: string };
+        user: { id: string; name: string; email?: string | null };
       }>("/api/auth/login", {
         method: "POST",
-        body: { email: authEmail, password: authPassword },
+        body: { name: authUsername, password: authPassword },
         auth: false,
       });
       setAuthToken(data.token);
@@ -391,7 +491,7 @@ export default function App() {
     try {
       await requestJson<{ ok: boolean }>("/api/auth/register", {
         method: "POST",
-        body: { name: authName, email: authEmail, password: authPassword },
+        body: { name: authUsername, password: authPassword },
         auth: false,
       });
       setAuthMode("login");
@@ -421,7 +521,7 @@ export default function App() {
 
   if (!authReady) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-700 flex items-center justify-center">
+      <div className="app-bg-primary app-text-secondary flex min-h-screen items-center justify-center">
         Carregando...
       </div>
     );
@@ -429,76 +529,91 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="app-bg-primary app-text-primary min-h-screen">
         <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 px-6 py-12 lg:flex-row">
           <div className="w-full max-w-md space-y-4">
-            <div className="rounded-3xl bg-gradient-to-br from-indigo-500 via-sky-500 to-emerald-400 p-6 text-white shadow-lg">
+            <div
+              className="rounded-3xl p-6 text-white shadow-lg"
+              style={{
+                backgroundImage:
+                  "linear-gradient(135deg, var(--primary-main), var(--info-main), var(--success-main))",
+              }}
+            >
               <h1 className="text-2xl font-semibold">Controle Financeiro</h1>
               <p className="mt-2 text-sm text-white/90">
                 Entre para acompanhar seus gastos com segurança.
               </p>
             </div>
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex gap-2">
+            <div className="app-bg-secondary app-border rounded-3xl border p-6 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("login")}
+                    className={`flex-1 rounded-full px-4 py-2 text-sm ${
+                      authMode === "login"
+                        ? "app-btn-primary"
+                        : "app-btn-outline border"
+                    }`}
+                  >
+                    Entrar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("register")}
+                    className={`flex-1 rounded-full px-4 py-2 text-sm ${
+                      authMode === "register"
+                        ? "app-btn-primary"
+                        : "app-btn-outline border"
+                    }`}
+                  >
+                    Criar conta
+                  </button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setAuthMode("login")}
-                  className={`flex-1 rounded-full px-4 py-2 text-sm ${
-                    authMode === "login"
-                      ? "bg-slate-900 text-white"
-                      : "border border-slate-200 text-slate-600"
-                  }`}
+                  onClick={toggleTheme}
+                  className="app-btn-outline rounded-full border px-3 py-1 text-xs"
                 >
-                  Entrar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAuthMode("register")}
-                  className={`flex-1 rounded-full px-4 py-2 text-sm ${
-                    authMode === "register"
-                      ? "bg-slate-900 text-white"
-                      : "border border-slate-200 text-slate-600"
-                  }`}
-                >
-                  Criar conta
+                  {isDarkMode ? "Modo claro" : "Modo escuro"}
                 </button>
               </div>
 
               {authMode === "login" ? (
                 <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
-                      Email
+                    <label className="app-text-muted text-xs font-medium uppercase">
+                      Usuário
                     </label>
                     <input
-                      type="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      type="text"
+                      value={authUsername}
+                      onChange={(e) => setAuthUsername(e.target.value)}
+                      className="app-bg-secondary app-border app-text-primary w-full rounded-xl border px-3 py-2"
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
+                    <label className="app-text-muted text-xs font-medium uppercase">
                       Senha
                     </label>
                     <input
                       type="password"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      className="app-bg-secondary app-border app-text-primary w-full rounded-xl border px-3 py-2"
                       required
                     />
                   </div>
                   {authError && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <div className="rounded-xl border px-3 py-2 text-sm text-[color:var(--danger-main)]" style={{ borderColor: "var(--danger-main)", backgroundColor: "color-mix(in srgb, var(--danger-main) 10%, transparent)" }}>
                       {authError}
                     </div>
                   )}
                   <button
                     type="submit"
                     disabled={authLoading}
-                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="app-btn-primary w-full rounded-xl px-4 py-2 text-sm disabled:opacity-60"
                   >
                     {authLoading ? "Entrando..." : "Entrar"}
                   </button>
@@ -506,50 +621,38 @@ export default function App() {
               ) : (
                 <form onSubmit={handleRegisterSubmit} className="mt-6 space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
-                      Nome
+                    <label className="app-text-muted text-xs font-medium uppercase">
+                      Usuário
                     </label>
                     <input
                       type="text"
-                      value={authName}
-                      onChange={(e) => setAuthName(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      value={authUsername}
+                      onChange={(e) => setAuthUsername(e.target.value)}
+                      className="app-bg-secondary app-border app-text-primary w-full rounded-xl border px-3 py-2"
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      value={authEmail}
-                      onChange={(e) => setAuthEmail(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-medium uppercase text-slate-500">
+                    <label className="app-text-muted text-xs font-medium uppercase">
                       Senha
                     </label>
                     <input
                       type="password"
                       value={authPassword}
                       onChange={(e) => setAuthPassword(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2"
+                      className="app-bg-secondary app-border app-text-primary w-full rounded-xl border px-3 py-2"
                       required
                     />
                   </div>
                   {authError && (
-                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    <div className="rounded-xl border px-3 py-2 text-sm text-[color:var(--danger-main)]" style={{ borderColor: "var(--danger-main)", backgroundColor: "color-mix(in srgb, var(--danger-main) 10%, transparent)" }}>
                       {authError}
                     </div>
                   )}
                   <button
                     type="submit"
                     disabled={authLoading}
-                    className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-60"
+                    className="app-btn-primary w-full rounded-xl px-4 py-2 text-sm disabled:opacity-60"
                   >
                     {authLoading ? "Criando..." : "Criar conta"}
                   </button>
@@ -563,47 +666,56 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
+    <div className="app-bg-primary app-text-primary min-h-screen">
       <div className="flex min-h-screen">
-        <aside className="hidden w-20 flex-col items-center gap-6 bg-white py-6 shadow-sm md:flex">
-          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-600 text-white">
+        <aside className="app-bg-secondary hidden w-20 flex-col items-center gap-6 py-6 shadow-sm md:flex">
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-2xl text-white"
+            style={{ backgroundColor: "var(--primary-main)" }}
+          >
             $
           </div>
-          <nav className="flex flex-col gap-4 text-slate-400">
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+          <nav className="app-text-muted flex flex-col gap-4">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl" style={{ backgroundColor: "color-mix(in srgb, var(--primary-main) 12%, transparent)", color: "var(--primary-main)" }}>
               ⌁
             </span>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-[var(--bg-tertiary)]">
               📈
             </span>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-[var(--bg-tertiary)]">
               📂
             </span>
-            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-slate-100">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl hover:bg-[var(--bg-tertiary)]">
               ⚙️
             </span>
           </nav>
         </aside>
 
         <div className="flex-1">
-          <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
+          <header className="app-border app-bg-secondary sticky top-0 z-10 border-b/60 backdrop-blur">
             <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <div>
                 <h1 className="text-xl font-semibold">Dashboard</h1>
-                <p className="text-sm text-slate-500">
+                <p className="app-text-secondary text-sm">
                   Bem-vindo(a), {user.name}
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded-full border bg-white px-3 py-1 text-xs text-slate-600">
+                <span className="app-bg-secondary app-border app-text-secondary rounded-full border px-3 py-1 text-xs">
                   {monthLabel}
                 </span>
                 <button
                   onClick={handleLogout}
-                  className="rounded-full border px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                  className="app-btn-outline rounded-full border px-3 py-1 text-xs"
                 >
                   Sair
+                </button>
+                <button
+                  onClick={toggleTheme}
+                  className="app-btn-outline rounded-full border px-3 py-1 text-xs"
+                >
+                  {isDarkMode ? "Modo claro" : "Modo escuro"}
                 </button>
               </div>
             </div>
@@ -615,91 +727,181 @@ export default function App() {
                 <p className={`text-2xl font-bold ${balanceTone}`}>
                   {formatBRL(summary.balance)}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Resultado atual</p>
+                <p className="app-text-muted mt-1 text-xs">Resultado atual</p>
               </Card>
               <Card title="Receitas">
-                <p className="text-xl font-semibold text-emerald-600">
+                <p className="text-xl font-semibold text-[color:var(--success-main)]">
                   {formatBRL(summary.income)}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Entradas</p>
+                <p className="app-text-muted mt-1 text-xs">Entradas</p>
               </Card>
               <Card title="Despesas">
-                <p className="text-xl font-semibold text-rose-600">
+                <p className="text-xl font-semibold text-[color:var(--danger-main)]">
                   {formatBRL(summary.expense)}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Saídas</p>
+                <p className="app-text-muted mt-1 text-xs">Saídas</p>
               </Card>
               <Card title="Categorias">
-                <p className="text-xl font-semibold text-slate-900">
+                <p className="text-xl font-semibold app-text-primary">
                   {categoriesForSelect.length}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Ativas</p>
+                <p className="app-text-muted mt-1 text-xs">Ativas</p>
               </Card>
             </section>
 
             <section className="grid gap-4 lg:grid-cols-[2fr,3fr]">
               <Card title="Categorias (top gastos)">
                 {totalsByCategory.length === 0 ? (
-                  <p className="text-sm text-slate-500">
+                  <p className="app-text-muted text-sm">
                     Sem dados de saídas. Adicione gastos para gerar insights.
                   </p>
                 ) : (
-                  <div className="space-y-3">
-                    {totalsByCategory.map(([cat, total]) => {
-                      const percentage =
-                        maxCategoryTotal > 0
-                          ? (total / maxCategoryTotal) * 100
-                          : 0;
-                      return (
-                        <div key={cat} className="space-y-1">
-                          <div className="flex justify-between text-sm">
-                            <span className="font-medium">{cat}</span>
-                            <span className="text-slate-500">
-                              {formatBRL(total)}
-                            </span>
-                          </div>
-                          <div className="h-2 rounded-full bg-slate-100">
-                            <div
-                              className="h-2 rounded-full bg-emerald-500"
-                              style={{ width: `${percentage}%` }}
-                            />
-                          </div>
+                  <div className="grid gap-6 lg:grid-cols-[200px,1fr] lg:items-center">
+                    <div className="flex items-center justify-center">
+                      <div
+                        className="relative h-40 w-40 rounded-full"
+                        style={{
+                          backgroundImage: `conic-gradient(${categoryPieStops
+                            .map(
+                              (slice) =>
+                                `${slice.color} ${slice.start}% ${slice.end}%`
+                            )
+                            .join(",")})`,
+                        }}
+                      >
+                        <div className="app-bg-secondary absolute inset-6 rounded-full" />
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                          <span className="app-text-muted text-xs">Total</span>
+                          <span className="app-text-primary text-sm font-semibold">
+                            {formatBRL(totalExpenseAmount)}
+                          </span>
                         </div>
-                      );
-                    })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {totalsByCategory.map(([cat, total], index) => {
+                        const percentage =
+                          maxCategoryTotal > 0
+                            ? (total / maxCategoryTotal) * 100
+                            : 0;
+                        const palette =
+                          categoryPalette[index % categoryPalette.length];
+                        return (
+                          <div key={cat} className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <div className="flex items-center gap-2">
+                                <span className={`h-3 w-3 rounded-full ${palette.dotClass}`} />
+                                <span className="font-medium">{cat}</span>
+                              </div>
+                              <span className="app-text-secondary">
+                                {formatBRL(total)}
+                              </span>
+                            </div>
+                            <div className="app-chart-grid h-2 rounded-full">
+                              <div
+                                className="h-2 rounded-full app-chart-income"
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </Card>
 
-              <Card title="Evolução de gastos (últimos 6 meses)">
-                {monthlyTotals.every((m) => m.total === 0) ? (
-                  <p className="text-sm text-slate-500">
-                    Sem dados de gastos no período selecionado.
-                  </p>
-                ) : (
-                  <div className="grid gap-3">
-                    {monthlyTotals.map((m) => {
-                      const percentage =
-                        maxMonthTotal > 0 ? (m.total / maxMonthTotal) * 100 : 0;
+              <Card title={`Resumo mensal (últimos ${monthsToShow} meses)`}>
+                <div className="space-y-4">
+                  <div className="app-text-muted flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <p>Comparativo de entradas e saídas por mês.</p>
+                    <div className="flex items-center gap-3">
+                      {[3, 6, 12].map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setMonthsToShow(option)}
+                          className={`rounded-full px-3 py-1 text-[11px] font-medium ${
+                            monthsToShow === option
+                              ? "app-btn-primary"
+                              : "app-btn-outline border"
+                          }`}
+                        >
+                          {option} meses
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="app-text-muted flex items-center gap-3 text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full app-chart-income" />
+                      <span>Entradas</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full app-chart-expense" />
+                      <span>Saídas</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {visibleMonthlyTotals.map((m) => {
+                      const incomePercentage =
+                        maxMonthValue > 0 ? (m.income / maxMonthValue) * 100 : 0;
+                      const expensePercentage =
+                        maxMonthValue > 0 ? (m.expense / maxMonthValue) * 100 : 0;
+
                       return (
-                        <div key={m.key} className="space-y-1">
-                          <div className="flex justify-between text-sm">
-                            <span className="font-medium">{m.label}</span>
-                            <span className="text-slate-500">
-                              {formatBRL(m.total)}
+                        <div key={m.key} className="grid gap-2">
+                          <div className="app-text-muted flex items-center justify-between text-xs">
+                            <span className="app-text-secondary font-medium">
+                              {m.label}
+                            </span>
+                            <span>
+                              {formatBRL(m.income)} · {formatBRL(m.expense)}
                             </span>
                           </div>
-                          <div className="h-2 rounded-full bg-slate-100">
-                            <div
-                              className="h-2 rounded-full bg-sky-500"
-                              style={{ width: `${percentage}%` }}
-                            />
+                          <div className="grid gap-2 sm:grid-cols-[1fr,1fr]">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-[color:var(--success-main)]">
+                                Entradas
+                              </span>
+                              <div
+                                className="h-2 flex-1 rounded-full"
+                                style={{
+                                  backgroundColor:
+                                    "color-mix(in srgb, var(--chart-grid) 20%, transparent)",
+                                }}
+                              >
+                                <div
+                                  className="h-2 rounded-full app-chart-income"
+                                  style={{ width: `${incomePercentage}%` }}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] uppercase text-[color:var(--danger-main)]">
+                                Saídas
+                              </span>
+                              <div
+                                className="h-2 flex-1 rounded-full"
+                                style={{
+                                  backgroundColor:
+                                    "color-mix(in srgb, var(--chart-grid) 20%, transparent)",
+                                }}
+                              >
+                                <div
+                                  className="h-2 rounded-full app-chart-expense"
+                                  style={{ width: `${expensePercentage}%` }}
+                                />
+                              </div>
+                            </div>
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                )}
+                </div>
               </Card>
             </section>
 
@@ -709,7 +911,7 @@ export default function App() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={toggleForm}
-                    className="rounded-full bg-indigo-600 px-4 py-2 text-xs text-white hover:bg-indigo-500"
+                    className="app-btn-primary rounded-full px-4 py-2 text-xs"
                   >
                     {isFormOpen ? "Fechar" : "+ Nova"}
                   </button>
@@ -718,7 +920,7 @@ export default function App() {
                     onClick={() =>
                       isImportOpen ? closeImport() : setIsImportOpen(true)
                     }
-                    className="rounded-full border px-4 py-2 text-xs hover:bg-slate-50"
+                    className="app-btn-outline rounded-full border px-4 py-2 text-xs"
                     title="Importar extrato"
                   >
                     Importar CSV
@@ -726,7 +928,7 @@ export default function App() {
 
                   <button
                     onClick={handleExportCsv}
-                    className="rounded-full border px-4 py-2 text-xs hover:bg-slate-50"
+                    className="app-btn-outline rounded-full border px-4 py-2 text-xs"
                     title="Exportar transações filtradas"
                   >
                     Exportar CSV
@@ -734,7 +936,8 @@ export default function App() {
 
                   <button
                     onClick={() => void clearAll()}
-                    className="rounded-full border border-rose-200 px-4 py-2 text-xs text-rose-700 hover:bg-rose-50"
+                    className="rounded-full border px-4 py-2 text-xs text-[color:var(--danger-main)]"
+                    style={{ borderColor: "var(--danger-main)", backgroundColor: "transparent" }}
                     title="Apagar tudo (ação irreversível)"
                   >
                     Limpar
@@ -744,10 +947,10 @@ export default function App() {
             >
           {/* IMPORTAÇÃO CSV */}
           {isImportOpen && (
-            <div className="mb-4 grid gap-3 rounded-2xl border p-4">
+            <div className="app-bg-secondary app-border mb-4 grid gap-3 rounded-2xl border p-4">
               <div>
                 <p className="text-sm font-medium">Importar extrato (CSV)</p>
-                <p className="text-sm text-slate-500">
+                <p className="app-text-muted text-sm">
                   O app lê o arquivo e você escolhe quais colunas são{" "}
                   <b>Data</b>, <b>Descrição</b> e <b>Valor</b>.
                 </p>
@@ -761,11 +964,11 @@ export default function App() {
               />
 
               {importStatus === "reading" && (
-                <p className="text-sm text-slate-500">Lendo arquivo…</p>
+                <p className="app-text-muted text-sm">Lendo arquivo…</p>
               )}
 
               {importStatus === "error" && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                <div className="rounded-xl border p-3 text-sm text-[color:var(--danger-main)]" style={{ borderColor: "var(--danger-main)", backgroundColor: "color-mix(in srgb, var(--danger-main) 10%, transparent)" }}>
                   {importError}
                 </div>
               )}
@@ -779,7 +982,7 @@ export default function App() {
                         <select
                           value={mapDateIdx}
                           onChange={(e) => setMapDateIdx(Number(e.target.value))}
-                          className="rounded-lg border px-3 py-2"
+                          className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                         >
                           {csvHeaders.map((h, idx) => (
                             <option key={h + idx} value={idx}>
@@ -796,7 +999,7 @@ export default function App() {
                         <select
                           value={mapDescIdx}
                           onChange={(e) => setMapDescIdx(Number(e.target.value))}
-                          className="rounded-lg border px-3 py-2"
+                          className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                         >
                           {csvHeaders.map((h, idx) => (
                             <option key={h + idx} value={idx}>
@@ -813,7 +1016,7 @@ export default function App() {
                           onChange={(e) =>
                             setMapValueIdx(Number(e.target.value))
                           }
-                          className="rounded-lg border px-3 py-2"
+                          className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                         >
                           {csvHeaders.map((h, idx) => (
                             <option key={h + idx} value={idx}>
@@ -825,41 +1028,42 @@ export default function App() {
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <p className="text-sm text-slate-600">
+                      <p className="app-text-secondary text-sm">
                         Separador detectado: <b>{csvDelimiter}</b> · Prévia:{" "}
                         <b>{importPreview.length}</b> linhas (mostrando até 200)
                       </p>
                       <button
                         onClick={() => void importPreviewIntoApp()}
-                        className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                        className="rounded-xl px-4 py-2 text-sm text-white"
+                        style={{ backgroundColor: "var(--success-main)" }}
                       >
                         Importar agora
                       </button>
                     </div>
 
                     {importPreview.length === 0 ? (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      <div className="rounded-xl border p-3 text-sm text-[color:var(--warning-main)]" style={{ borderColor: "var(--warning-main)", backgroundColor: "color-mix(in srgb, var(--warning-main) 10%, transparent)" }}>
                         Não consegui montar a prévia. Troque o mapeamento das
                         colunas (Data/Descrição/Valor) até aparecerem linhas.
                       </div>
                     ) : (
-                      <div className="max-h-64 overflow-auto rounded-xl border">
+                      <div className="app-border max-h-64 overflow-auto rounded-xl border">
                         {importPreview.slice(0, 50).map((t) => (
                           <div
                             key={t.id}
-                            className="flex items-center justify-between border-b p-3 last:border-b-0"
+                            className="app-border flex items-center justify-between border-b p-3 last:border-b-0"
                           >
                             <div>
                               <p className="font-medium">{t.title}</p>
-                              <p className="text-xs text-slate-500">{t.date}</p>
+                              <p className="app-text-muted text-xs">{t.date}</p>
                             </div>
 
                             <p
                               className={
                                 "font-semibold " +
-                                (t.type === "entrada"
-                                  ? "text-emerald-600"
-                                  : "text-rose-600")
+                              (t.type === "entrada"
+                                  ? "text-[color:var(--success-main)]"
+                                  : "text-[color:var(--danger-main)]")
                               }
                             >
                               {t.type === "entrada" ? "+" : "-"}{" "}
@@ -883,7 +1087,7 @@ export default function App() {
                 onChange={(e) =>
                   setFilterType(e.target.value as "todos" | TransactionType)
                 }
-                className="rounded-lg border px-3 py-2"
+                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
               >
                 <option value="todos">Todos</option>
                 <option value="entrada">Entrada</option>
@@ -898,7 +1102,7 @@ export default function App() {
                 onChange={(e) =>
                   setFilterCategory(e.target.value as "todas" | Category)
                 }
-                className="rounded-lg border px-3 py-2"
+                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                 disabled={categoriesLoading}
               >
                 <option value="todas">Todas</option>
@@ -915,33 +1119,33 @@ export default function App() {
               <input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="rounded-lg border px-3 py-2"
+                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                 placeholder="Ex: Mercado"
               />
             </div>
           </div>
 
           {(transactionsLoading || categoriesLoading) && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="app-bg-tertiary app-border app-text-secondary rounded-xl border px-4 py-3 text-sm">
               Carregando dados do backend...
             </div>
           )}
 
           {(transactionsError || categoriesError) && (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div className="rounded-xl border px-4 py-3 text-sm text-[color:var(--danger-main)]" style={{ borderColor: "var(--danger-main)", backgroundColor: "color-mix(in srgb, var(--danger-main) 10%, transparent)" }}>
               {transactionsError ?? categoriesError}
             </div>
           )}
 
           {/* FORM (manual) */}
           {isFormOpen && (
-            <div className="mb-4 grid gap-3 rounded-2xl border p-4">
+            <div className="app-bg-secondary app-border mb-4 grid gap-3 rounded-2xl border p-4">
               <div className="grid gap-2">
                 <label className="text-sm font-medium">Título</label>
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="rounded-lg border px-3 py-2"
+                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                   placeholder="Ex: Mercado"
                 />
               </div>
@@ -951,7 +1155,7 @@ export default function App() {
                 <input
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="rounded-lg border px-3 py-2"
+                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                   placeholder="Ex: 150"
                   inputMode="numeric"
                 />
@@ -962,7 +1166,7 @@ export default function App() {
                 <select
                   value={type}
                   onChange={(e) => setType(e.target.value as TransactionType)}
-                  className="rounded-lg border px-3 py-2"
+                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                 >
                   <option value="entrada">Entrada</option>
                   <option value="saida">Saída</option>
@@ -974,7 +1178,7 @@ export default function App() {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as Category)}
-                  className="rounded-lg border px-3 py-2"
+                  className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                 >
                   {categoriesForSelect.map((c) => (
                     <option key={c} value={c}>
@@ -990,14 +1194,15 @@ export default function App() {
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  className="rounded-lg border px-3 py-2"
+                  className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                 />
               </div>
 
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => void handleSave()}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-700"
+                  className="rounded-xl px-4 py-2 text-sm text-white"
+                  style={{ backgroundColor: "var(--success-main)" }}
                 >
                   {editingId ? "Atualizar" : "Salvar"}
                 </button>
@@ -1005,7 +1210,7 @@ export default function App() {
                 {editingId && (
                   <button
                     onClick={cancelEdit}
-                    className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
+                    className="app-btn-outline rounded-xl border px-4 py-2 text-sm"
                   >
                     Cancelar edição
                   </button>
@@ -1014,18 +1219,18 @@ export default function App() {
             </div>
           )}
 
-          <div className="mb-4 grid gap-3 rounded-2xl border p-4">
+          <div className="app-bg-secondary app-border mb-4 grid gap-3 rounded-2xl border p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">Categorias personalizadas</p>
-                <p className="text-sm text-slate-500">
+                <p className="app-text-muted text-sm">
                   Adicione categorias novas para classificar transações e
                   melhorar a importação automática.
                 </p>
               </div>
               <button
                 onClick={() => void resetCategories()}
-                className="rounded-xl border px-3 py-1 text-xs hover:bg-slate-50"
+                className="app-btn-outline rounded-xl border px-3 py-1 text-xs"
               >
                 Restaurar padrão
               </button>
@@ -1039,8 +1244,8 @@ export default function App() {
                   className={
                     "rounded-full border px-3 py-1 text-xs " +
                     (c === "Outros"
-                      ? "cursor-not-allowed bg-slate-50 text-slate-400"
-                      : "hover:bg-slate-50")
+                      ? "cursor-not-allowed app-bg-tertiary app-text-muted"
+                      : "app-btn-outline")
                   }
                   title={c === "Outros" ? "Categoria padrão" : "Remover"}
                   disabled={c === "Outros"}
@@ -1054,12 +1259,12 @@ export default function App() {
               <input
                 value={categoryInput}
                 onChange={(e) => setCategoryInput(e.target.value)}
-                className="rounded-lg border px-3 py-2 text-sm"
+                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2 text-sm"
                 placeholder="Nova categoria"
               />
               <button
                 onClick={() => void handleAddCategory()}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+                className="app-btn-primary rounded-xl px-4 py-2 text-sm"
               >
                 Adicionar
               </button>
@@ -1068,9 +1273,9 @@ export default function App() {
 
           {/* LISTA */}
           {filteredTransactions.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-6 text-center">
+            <div className="app-border rounded-xl border border-dashed p-6 text-center">
               <p className="text-sm font-medium">Nenhuma transação encontrada</p>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="app-text-muted mt-1 text-sm">
                 Tente mudar os filtros, importar um CSV ou cadastrar uma nova.
               </p>
             </div>
@@ -1079,11 +1284,11 @@ export default function App() {
               {filteredTransactions.map((t) => (
                 <div
                   key={t.id}
-                  className="flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between"
+                  className="app-bg-secondary app-border flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
                     <p className="font-medium">{t.title}</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="app-text-muted text-xs">
                       {t.date} · {t.category}
                     </p>
                   </div>
@@ -1093,8 +1298,8 @@ export default function App() {
                       className={
                         "font-semibold " +
                         (t.type === "entrada"
-                          ? "text-emerald-600"
-                          : "text-rose-600")
+                          ? "text-[color:var(--success-main)]"
+                          : "text-[color:var(--danger-main)]")
                       }
                     >
                       {t.type === "entrada" ? "+" : "-"} {formatBRL(t.amount)}
@@ -1108,7 +1313,7 @@ export default function App() {
                           category: e.target.value as Category,
                         })
                       }
-                      className="rounded-lg border px-2 py-1 text-xs"
+                      className="app-bg-secondary app-border app-text-primary rounded-lg border px-2 py-1 text-xs"
                       aria-label="Alterar categoria"
                     >
                       {categoriesForSelect.map((c) => (
@@ -1120,7 +1325,7 @@ export default function App() {
 
                     <button
                       onClick={() => void handleAutoSuggestCategory(t)}
-                      className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
+                      className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
                       title="Sugerir categoria automaticamente"
                     >
                       Auto
@@ -1128,7 +1333,7 @@ export default function App() {
 
                     <button
                       onClick={() => startEdit(t)}
-                      className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
+                      className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
                       title="Editar"
                     >
                       Editar
@@ -1136,7 +1341,7 @@ export default function App() {
 
                     <button
                       onClick={() => void handleRemoveTransaction(t.id)}
-                      className="rounded-lg border px-3 py-1 text-xs hover:bg-slate-50"
+                      className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
                       title="Excluir"
                     >
                       Excluir
