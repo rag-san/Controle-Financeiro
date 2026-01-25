@@ -4,11 +4,14 @@ type CardProps = {
   title: string;
   children: ReactNode;
   right?: ReactNode;
+  className?: string;
 };
 
-export function Card({ title, children, right }: CardProps) {
+export function Card({ title, children, right, className }: CardProps) {
   return (
-    <section className="app-bg-secondary app-border rounded-2xl border p-4 shadow-sm">
+    <section
+      className={`app-card-surface app-border rounded-2xl border p-4 shadow-sm ${className ?? ""}`}
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="app-text-muted text-sm font-medium">
           {title}

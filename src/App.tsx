@@ -63,6 +63,7 @@ export default function App() {
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [monthsToShow, setMonthsToShow] = useState(3);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const {
     categories,
@@ -306,6 +307,24 @@ export default function App() {
       : summary.balance < 0
       ? "text-[color:var(--danger-main)]"
       : "app-text-muted";
+  const categoryIcons: Record<string, string> = {
+    Alimentação: "🍽️",
+    Mercado: "🛒",
+    Transporte: "🚌",
+    Moradia: "🏠",
+    Saúde: "🩺",
+    Educação: "📚",
+    Lazer: "🎮",
+    Viagem: "✈️",
+    Trabalho: "💼",
+    Assinaturas: "🧾",
+    Investimentos: "📈",
+    Outros: "🏷️",
+  };
+
+  function getCategoryIcon(categoryName: string) {
+    return categoryIcons[categoryName] ?? "🏷️";
+  }
 
   function resetForm() {
     setTitle("");
@@ -323,6 +342,13 @@ export default function App() {
       return;
     }
 
+    setIsFormOpen(true);
+  }
+
+  function openFormWithType(nextType: TransactionType) {
+    setEditingId(null);
+    resetForm();
+    setType(nextType);
     setIsFormOpen(true);
   }
 
@@ -521,7 +547,7 @@ export default function App() {
 
   if (!authReady) {
     return (
-      <div className="app-bg-primary app-text-secondary flex min-h-screen items-center justify-center">
+      <div className="app-bg-primary app-bg-gradient app-text-secondary flex min-h-screen items-center justify-center">
         Carregando...
       </div>
     );
@@ -529,7 +555,7 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="app-bg-primary app-text-primary min-h-screen">
+      <div className="app-bg-primary app-bg-gradient app-text-primary min-h-screen">
         <div className="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 px-6 py-12 lg:flex-row">
           <div className="w-full max-w-md space-y-4">
             <div
@@ -666,7 +692,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-bg-primary app-text-primary min-h-screen">
+    <div className="app-bg-primary app-bg-gradient app-text-primary min-h-screen">
       <div className="flex min-h-screen">
         <aside className="app-bg-secondary hidden w-20 flex-col items-center gap-6 py-6 shadow-sm md:flex">
           <div
@@ -693,7 +719,7 @@ export default function App() {
 
         <div className="flex-1">
           <header className="app-border app-bg-secondary sticky top-0 z-10 border-b/60 backdrop-blur">
-            <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <div>
                 <h1 className="text-xl font-semibold">Dashboard</h1>
                 <p className="app-text-secondary text-sm">
@@ -721,66 +747,85 @@ export default function App() {
             </div>
           </header>
 
-          <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
-            <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Card title="Saldo do mês">
-                <p className={`text-2xl font-bold ${balanceTone}`}>
+          <main className="mx-auto max-w-7xl space-y-8 px-4 pb-28 pt-8 sm:px-6">
+            <section className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+              <Card
+                title="Quanto você tem disponível"
+                className="md:col-span-2 xl:col-span-2"
+              >
+                <p className={`text-3xl font-semibold sm:text-4xl ${balanceTone}`}>
                   {formatBRL(summary.balance)}
                 </p>
-                <p className="app-text-muted mt-1 text-xs">Resultado atual</p>
+                <p className="app-text-muted mt-2 text-sm">
+                  Saldo consolidado do mês em andamento.
+                </p>
               </Card>
-              <Card title="Receitas">
-                <p className="text-xl font-semibold text-[color:var(--success-main)]">
+              <Card title="O que entrou">
+                <p className="text-2xl font-semibold text-[color:var(--success-main)]">
                   {formatBRL(summary.income)}
                 </p>
-                <p className="app-text-muted mt-1 text-xs">Entradas</p>
+                <p className="app-text-muted mt-2 text-sm">Entradas deste mês</p>
               </Card>
-              <Card title="Despesas">
-                <p className="text-xl font-semibold text-[color:var(--danger-main)]">
+              <Card title="O que saiu">
+                <p className="text-2xl font-semibold text-[color:var(--danger-main)]">
                   {formatBRL(summary.expense)}
                 </p>
-                <p className="app-text-muted mt-1 text-xs">Saídas</p>
+                <p className="app-text-muted mt-2 text-sm">Pagamentos deste mês</p>
               </Card>
-              <Card title="Categorias">
-                <p className="text-xl font-semibold app-text-primary">
+              <Card title="Categorias ativas">
+                <p className="text-2xl font-semibold app-text-primary">
                   {categoriesForSelect.length}
                 </p>
-                <p className="app-text-muted mt-1 text-xs">Ativas</p>
+                <p className="app-text-muted mt-2 text-sm">Personalize como quiser</p>
               </Card>
             </section>
 
-            <section className="grid gap-4 lg:grid-cols-[2fr,3fr]">
-              <Card title="Categorias (top gastos)">
-                {totalsByCategory.length === 0 ? (
-                  <p className="app-text-muted text-sm">
-                    Sem dados de saídas. Adicione gastos para gerar insights.
-                  </p>
-                ) : (
-                  <div className="grid gap-6 lg:grid-cols-[200px,1fr] lg:items-center">
-                    <div className="flex items-center justify-center">
-                      <div
-                        className="relative h-40 w-40 rounded-full"
-                        style={{
-                          backgroundImage: `conic-gradient(${categoryPieStops
-                            .map(
-                              (slice) =>
-                                `${slice.color} ${slice.start}% ${slice.end}%`
-                            )
-                            .join(",")})`,
-                        }}
-                      >
-                        <div className="app-bg-secondary absolute inset-6 rounded-full" />
-                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                          <span className="app-text-muted text-xs">Total</span>
-                          <span className="app-text-primary text-sm font-semibold">
-                            {formatBRL(totalExpenseAmount)}
-                          </span>
-                        </div>
+            <section className="grid gap-6 lg:grid-cols-[2fr,3fr]">
+              <Card title="Onde seu dinheiro foi">
+                <div className="grid gap-6 lg:grid-cols-[220px,1fr] lg:items-center">
+                  <div className="flex items-center justify-center">
+                    <div
+                      className="relative h-44 w-44 rounded-full"
+                      style={{
+                        backgroundImage:
+                          totalsByCategory.length === 0
+                            ? "conic-gradient(var(--chart-grid) 0% 60%, color-mix(in srgb, var(--chart-grid) 60%, transparent) 60% 100%)"
+                            : `conic-gradient(${categoryPieStops
+                                .map(
+                                  (slice) =>
+                                    `${slice.color} ${slice.start}% ${slice.end}%`
+                                )
+                                .join(",")})`,
+                      }}
+                    >
+                      <div className="app-card-surface absolute inset-6 rounded-full border" style={{ borderColor: "color-mix(in srgb, var(--border-default) 60%, transparent)" }} />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                        <span className="app-text-muted text-xs">
+                          {totalsByCategory.length === 0 ? "Sem gastos ainda" : "Total"}
+                        </span>
+                        <span className="app-text-primary text-sm font-semibold">
+                          {formatBRL(totalExpenseAmount)}
+                        </span>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="space-y-3">
-                      {totalsByCategory.map(([cat, total], index) => {
+                  <div className="space-y-4">
+                    {totalsByCategory.length === 0 ? (
+                      <div className="app-text-muted space-y-3 text-sm">
+                        <p>
+                          Adicione seus primeiros gastos para ver insights aqui.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => openFormWithType("saida")}
+                          className="app-btn-primary rounded-full px-4 py-2 text-xs"
+                        >
+                          Adicionar gasto
+                        </button>
+                      </div>
+                    ) : (
+                      totalsByCategory.map(([cat, total], index) => {
                         const percentage =
                           maxCategoryTotal > 0
                             ? (total / maxCategoryTotal) * 100
@@ -806,16 +851,16 @@ export default function App() {
                             </div>
                           </div>
                         );
-                      })}
-                    </div>
+                      })
+                    )}
                   </div>
-                )}
+                </div>
               </Card>
 
               <Card title={`Resumo mensal (últimos ${monthsToShow} meses)`}>
-                <div className="space-y-4">
+                <div className="space-y-5">
                   <div className="app-text-muted flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <p>Comparativo de entradas e saídas por mês.</p>
+                    <p>Veja a tendência de entradas e saídas rapidamente.</p>
                     <div className="flex items-center gap-3">
                       {[3, 6, 12].map((option) => (
                         <button
@@ -836,70 +881,48 @@ export default function App() {
                   <div className="app-text-muted flex items-center gap-3 text-xs">
                     <div className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full app-chart-income" />
-                      <span>Entradas</span>
+                      <span>O que entrou</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="h-2 w-2 rounded-full app-chart-expense" />
-                      <span>Saídas</span>
+                      <span>O que saiu</span>
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    {visibleMonthlyTotals.map((m) => {
-                      const incomePercentage =
-                        maxMonthValue > 0 ? (m.income / maxMonthValue) * 100 : 0;
-                      const expensePercentage =
-                        maxMonthValue > 0 ? (m.expense / maxMonthValue) * 100 : 0;
+                  <div className="grid gap-4">
+                    <div className="grid grid-cols-3 gap-4 sm:grid-cols-6 lg:grid-cols-12">
+                      {visibleMonthlyTotals.map((m) => {
+                        const incomeHeight =
+                          maxMonthValue > 0 ? (m.income / maxMonthValue) * 100 : 0;
+                        const expenseHeight =
+                          maxMonthValue > 0 ? (m.expense / maxMonthValue) * 100 : 0;
 
-                      return (
-                        <div key={m.key} className="grid gap-2">
-                          <div className="app-text-muted flex items-center justify-between text-xs">
-                            <span className="app-text-secondary font-medium">
-                              {m.label}
-                            </span>
-                            <span>
-                              {formatBRL(m.income)} · {formatBRL(m.expense)}
-                            </span>
-                          </div>
-                          <div className="grid gap-2 sm:grid-cols-[1fr,1fr]">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase text-[color:var(--success-main)]">
-                                Entradas
-                              </span>
-                              <div
-                                className="h-2 flex-1 rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    "color-mix(in srgb, var(--chart-grid) 20%, transparent)",
-                                }}
-                              >
+                        return (
+                          <div key={m.key} className="flex flex-col items-center gap-2">
+                            <div className="flex h-32 items-end gap-2">
+                              <div className="app-chart-grid flex h-full items-end rounded-full px-1">
                                 <div
-                                  className="h-2 rounded-full app-chart-income"
-                                  style={{ width: `${incomePercentage}%` }}
+                                  className="w-3 rounded-full app-chart-income"
+                                  style={{ height: `${incomeHeight}%` }}
+                                />
+                              </div>
+                              <div className="app-chart-grid flex h-full items-end rounded-full px-1">
+                                <div
+                                  className="w-3 rounded-full app-chart-expense"
+                                  style={{ height: `${expenseHeight}%` }}
                                 />
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] uppercase text-[color:var(--danger-main)]">
-                                Saídas
-                              </span>
-                              <div
-                                className="h-2 flex-1 rounded-full"
-                                style={{
-                                  backgroundColor:
-                                    "color-mix(in srgb, var(--chart-grid) 20%, transparent)",
-                                }}
-                              >
-                                <div
-                                  className="h-2 rounded-full app-chart-expense"
-                                  style={{ width: `${expensePercentage}%` }}
-                                />
-                              </div>
+                            <div className="text-center text-[11px]">
+                              <p className="app-text-secondary font-medium">{m.label}</p>
+                              <p className="app-text-muted">
+                                {formatBRL(m.income)} · {formatBRL(m.expense)}
+                              </p>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </Card>
@@ -945,414 +968,506 @@ export default function App() {
                 </div>
               }
             >
-          {/* IMPORTAÇÃO CSV */}
-          {isImportOpen && (
-            <div className="app-bg-secondary app-border mb-4 grid gap-3 rounded-2xl border p-4">
-              <div>
-                <p className="text-sm font-medium">Importar extrato (CSV)</p>
-                <p className="app-text-muted text-sm">
-                  O app lê o arquivo e você escolhe quais colunas são{" "}
-                  <b>Data</b>, <b>Descrição</b> e <b>Valor</b>.
-                </p>
-              </div>
+              {/* IMPORTAÇÃO CSV */}
+              {isImportOpen && (
+                <div className="app-card-surface app-border mb-6 grid gap-3 rounded-2xl border p-4">
+                  <div>
+                    <p className="text-sm font-medium">Importar extrato (CSV)</p>
+                    <p className="app-text-muted text-sm">
+                      O app lê o arquivo e você escolhe quais colunas são{" "}
+                      <b>Data</b>, <b>Descrição</b> e <b>Valor</b>.
+                    </p>
+                  </div>
 
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                onChange={(e) => handleCSVFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm"
-              />
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(e) => handleCSVFile(e.target.files?.[0] ?? null)}
+                    className="block w-full text-sm"
+                  />
 
-              {importStatus === "reading" && (
-                <p className="app-text-muted text-sm">Lendo arquivo…</p>
-              )}
+                  {importStatus === "reading" && (
+                    <p className="app-text-muted text-sm">Lendo arquivo…</p>
+                  )}
 
-              {importStatus === "error" && (
-                <div className="rounded-xl border p-3 text-sm text-[color:var(--danger-main)]" style={{ borderColor: "var(--danger-main)", backgroundColor: "color-mix(in srgb, var(--danger-main) 10%, transparent)" }}>
-                  {importError}
+                  {importStatus === "error" && (
+                    <div
+                      className="rounded-xl border p-3 text-sm text-[color:var(--danger-main)]"
+                      style={{
+                        borderColor: "var(--danger-main)",
+                        backgroundColor:
+                          "color-mix(in srgb, var(--danger-main) 10%, transparent)",
+                      }}
+                    >
+                      {importError}
+                    </div>
+                  )}
+
+                  {(importStatus === "mapping" || importStatus === "ready") &&
+                    csvHeaders.length > 0 && (
+                      <div className="grid gap-3">
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <div className="grid gap-2">
+                            <label className="text-sm font-medium">
+                              Coluna Data
+                            </label>
+                            <select
+                              value={mapDateIdx}
+                              onChange={(e) =>
+                                setMapDateIdx(Number(e.target.value))
+                              }
+                              className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                            >
+                              {csvHeaders.map((h, idx) => (
+                                <option key={h + idx} value={idx}>
+                                  {h}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="grid gap-2">
+                            <label className="text-sm font-medium">
+                              Coluna Descrição
+                            </label>
+                            <select
+                              value={mapDescIdx}
+                              onChange={(e) =>
+                                setMapDescIdx(Number(e.target.value))
+                              }
+                              className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                            >
+                              {csvHeaders.map((h, idx) => (
+                                <option key={h + idx} value={idx}>
+                                  {h}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="grid gap-2">
+                            <label className="text-sm font-medium">
+                              Coluna Valor
+                            </label>
+                            <select
+                              value={mapValueIdx}
+                              onChange={(e) =>
+                                setMapValueIdx(Number(e.target.value))
+                              }
+                              className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                            >
+                              {csvHeaders.map((h, idx) => (
+                                <option key={h + idx} value={idx}>
+                                  {h}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <p className="app-text-secondary text-sm">
+                            Separador detectado: <b>{csvDelimiter}</b> · Prévia:{" "}
+                            <b>{importPreview.length}</b> linhas (mostrando até
+                            200)
+                          </p>
+                          <button
+                            onClick={() => void importPreviewIntoApp()}
+                            className="rounded-xl px-4 py-2 text-sm text-white"
+                            style={{ backgroundColor: "var(--success-main)" }}
+                          >
+                            Importar agora
+                          </button>
+                        </div>
+
+                        {importPreview.length === 0 ? (
+                          <div
+                            className="rounded-xl border p-3 text-sm text-[color:var(--warning-main)]"
+                            style={{
+                              borderColor: "var(--warning-main)",
+                              backgroundColor:
+                                "color-mix(in srgb, var(--warning-main) 10%, transparent)",
+                            }}
+                          >
+                            Não consegui montar a prévia. Troque o mapeamento das
+                            colunas (Data/Descrição/Valor) até aparecerem linhas.
+                          </div>
+                        ) : (
+                          <div className="app-border max-h-64 overflow-auto rounded-xl border">
+                            {importPreview.slice(0, 50).map((t) => (
+                              <div
+                                key={t.id}
+                                className="app-border flex items-center justify-between border-b p-3 last:border-b-0"
+                              >
+                                <div>
+                                  <p className="font-medium">{t.title}</p>
+                                  <p className="app-text-muted text-xs">
+                                    {t.date}
+                                  </p>
+                                </div>
+
+                                <p
+                                  className={
+                                    "font-semibold " +
+                                    (t.type === "entrada"
+                                      ? "text-[color:var(--success-main)]"
+                                      : "text-[color:var(--danger-main)]")
+                                  }
+                                >
+                                  {t.type === "entrada" ? "+" : "-"}{" "}
+                                  {formatBRL(t.amount)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                 </div>
               )}
 
-              {(importStatus === "mapping" || importStatus === "ready") &&
-                csvHeaders.length > 0 && (
-                  <div className="grid gap-3">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <div className="grid gap-2">
-                        <label className="text-sm font-medium">Coluna Data</label>
-                        <select
-                          value={mapDateIdx}
-                          onChange={(e) => setMapDateIdx(Number(e.target.value))}
-                          className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                        >
-                          {csvHeaders.map((h, idx) => (
-                            <option key={h + idx} value={idx}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <label className="text-sm font-medium">
-                          Coluna Descrição
-                        </label>
-                        <select
-                          value={mapDescIdx}
-                          onChange={(e) => setMapDescIdx(Number(e.target.value))}
-                          className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                        >
-                          {csvHeaders.map((h, idx) => (
-                            <option key={h + idx} value={idx}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <label className="text-sm font-medium">Coluna Valor</label>
-                        <select
-                          value={mapValueIdx}
-                          onChange={(e) =>
-                            setMapValueIdx(Number(e.target.value))
-                          }
-                          className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                        >
-                          {csvHeaders.map((h, idx) => (
-                            <option key={h + idx} value={idx}>
-                              {h}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <p className="app-text-secondary text-sm">
-                        Separador detectado: <b>{csvDelimiter}</b> · Prévia:{" "}
-                        <b>{importPreview.length}</b> linhas (mostrando até 200)
-                      </p>
+              {/* FILTROS */}
+              <div className="app-card-surface app-border mb-6 grid gap-4 rounded-2xl border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      { value: "todos", label: "Todos" },
+                      { value: "entrada", label: "Entradas" },
+                      { value: "saida", label: "Saídas" },
+                    ].map((option) => (
                       <button
-                        onClick={() => void importPreviewIntoApp()}
-                        className="rounded-xl px-4 py-2 text-sm text-white"
-                        style={{ backgroundColor: "var(--success-main)" }}
+                        key={option.value}
+                        type="button"
+                        onClick={() =>
+                          setFilterType(
+                            option.value as "todos" | TransactionType
+                          )
+                        }
+                        className={`rounded-full px-4 py-2 text-xs font-medium ${
+                          filterType === option.value
+                            ? "app-btn-primary"
+                            : "app-btn-outline border"
+                        }`}
                       >
-                        Importar agora
+                        {option.label}
                       </button>
-                    </div>
-
-                    {importPreview.length === 0 ? (
-                      <div className="rounded-xl border p-3 text-sm text-[color:var(--warning-main)]" style={{ borderColor: "var(--warning-main)", backgroundColor: "color-mix(in srgb, var(--warning-main) 10%, transparent)" }}>
-                        Não consegui montar a prévia. Troque o mapeamento das
-                        colunas (Data/Descrição/Valor) até aparecerem linhas.
-                      </div>
-                    ) : (
-                      <div className="app-border max-h-64 overflow-auto rounded-xl border">
-                        {importPreview.slice(0, 50).map((t) => (
-                          <div
-                            key={t.id}
-                            className="app-border flex items-center justify-between border-b p-3 last:border-b-0"
-                          >
-                            <div>
-                              <p className="font-medium">{t.title}</p>
-                              <p className="app-text-muted text-xs">{t.date}</p>
-                            </div>
-
-                            <p
-                              className={
-                                "font-semibold " +
-                              (t.type === "entrada"
-                                  ? "text-[color:var(--success-main)]"
-                                  : "text-[color:var(--danger-main)]")
-                              }
-                            >
-                              {t.type === "entrada" ? "+" : "-"}{" "}
-                              {formatBRL(t.amount)}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-            </div>
-          )}
-
-          {/* FILTROS */}
-          <div className="mb-4 grid gap-3 sm:grid-cols-3">
-            <div className="grid gap-2">
-              <label className="text-sm font-medium">Filtrar por tipo</label>
-              <select
-                value={filterType}
-                onChange={(e) =>
-                  setFilterType(e.target.value as "todos" | TransactionType)
-                }
-                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-              >
-                <option value="todos">Todos</option>
-                <option value="entrada">Entrada</option>
-                <option value="saida">Saída</option>
-              </select>
-            </div>
-
-            <div className="grid gap-2">
-              <label className="text-sm font-medium">Filtrar por categoria</label>
-              <select
-                value={filterCategory}
-                onChange={(e) =>
-                  setFilterCategory(e.target.value as "todas" | Category)
-                }
-                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                disabled={categoriesLoading}
-              >
-                <option value="todas">Todas</option>
-                {categoriesForSelect.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid gap-2">
-              <label className="text-sm font-medium">Buscar</label>
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                placeholder="Ex: Mercado"
-              />
-            </div>
-          </div>
-
-          {(transactionsLoading || categoriesLoading) && (
-            <div className="app-bg-tertiary app-border app-text-secondary rounded-xl border px-4 py-3 text-sm">
-              Carregando dados do backend...
-            </div>
-          )}
-
-          {(transactionsError || categoriesError) && (
-            <div className="rounded-xl border px-4 py-3 text-sm text-[color:var(--danger-main)]" style={{ borderColor: "var(--danger-main)", backgroundColor: "color-mix(in srgb, var(--danger-main) 10%, transparent)" }}>
-              {transactionsError ?? categoriesError}
-            </div>
-          )}
-
-          {/* FORM (manual) */}
-          {isFormOpen && (
-            <div className="app-bg-secondary app-border mb-4 grid gap-3 rounded-2xl border p-4">
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Título</label>
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                  placeholder="Ex: Mercado"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Valor</label>
-                <input
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                  placeholder="Ex: 150"
-                  inputMode="numeric"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Tipo</label>
-                <select
-                  value={type}
-                  onChange={(e) => setType(e.target.value as TransactionType)}
-                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                >
-                  <option value="entrada">Entrada</option>
-                  <option value="saida">Saída</option>
-                </select>
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Categoria</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as Category)}
-                  className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                >
-                  {categoriesForSelect.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Data</label>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => void handleSave()}
-                  className="rounded-xl px-4 py-2 text-sm text-white"
-                  style={{ backgroundColor: "var(--success-main)" }}
-                >
-                  {editingId ? "Atualizar" : "Salvar"}
-                </button>
-
-                {editingId && (
-                  <button
-                    onClick={cancelEdit}
-                    className="app-btn-outline rounded-xl border px-4 py-2 text-sm"
-                  >
-                    Cancelar edição
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="app-bg-secondary app-border mb-4 grid gap-3 rounded-2xl border p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium">Categorias personalizadas</p>
-                <p className="app-text-muted text-sm">
-                  Adicione categorias novas para classificar transações e
-                  melhorar a importação automática.
-                </p>
-              </div>
-              <button
-                onClick={() => void resetCategories()}
-                className="app-btn-outline rounded-xl border px-3 py-1 text-xs"
-              >
-                Restaurar padrão
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {categories.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => void removeCategory(c)}
-                  className={
-                    "rounded-full border px-3 py-1 text-xs " +
-                    (c === "Outros"
-                      ? "cursor-not-allowed app-bg-tertiary app-text-muted"
-                      : "app-btn-outline")
-                  }
-                  title={c === "Outros" ? "Categoria padrão" : "Remover"}
-                  disabled={c === "Outros"}
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <input
-                value={categoryInput}
-                onChange={(e) => setCategoryInput(e.target.value)}
-                className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2 text-sm"
-                placeholder="Nova categoria"
-              />
-              <button
-                onClick={() => void handleAddCategory()}
-                className="app-btn-primary rounded-xl px-4 py-2 text-sm"
-              >
-                Adicionar
-              </button>
-            </div>
-          </div>
-
-          {/* LISTA */}
-          {filteredTransactions.length === 0 ? (
-            <div className="app-border rounded-xl border border-dashed p-6 text-center">
-              <p className="text-sm font-medium">Nenhuma transação encontrada</p>
-              <p className="app-text-muted mt-1 text-sm">
-                Tente mudar os filtros, importar um CSV ou cadastrar uma nova.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {filteredTransactions.map((t) => (
-                <div
-                  key={t.id}
-                  className="app-bg-secondary app-border flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="font-medium">{t.title}</p>
-                    <p className="app-text-muted text-xs">
-                      {t.date} · {t.category}
-                    </p>
+                    ))}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <p
-                      className={
-                        "font-semibold " +
-                        (t.type === "entrada"
-                          ? "text-[color:var(--success-main)]"
-                          : "text-[color:var(--danger-main)]")
-                      }
+                    <input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="app-bg-secondary app-border app-text-primary rounded-full border px-4 py-2 text-xs"
+                      placeholder="Buscar por nome ou categoria"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                      className="app-btn-outline rounded-full border px-4 py-2 text-xs"
                     >
-                      {t.type === "entrada" ? "+" : "-"} {formatBRL(t.amount)}
-                    </p>
+                      {showAdvancedFilters
+                        ? "Ocultar filtros"
+                        : "Filtros avançados"}
+                    </button>
+                  </div>
+                </div>
 
+                {showAdvancedFilters && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2">
+                      <label className="text-sm font-medium">
+                        Filtrar por categoria
+                      </label>
+                      <select
+                        value={filterCategory}
+                        onChange={(e) =>
+                          setFilterCategory(e.target.value as "todas" | Category)
+                        }
+                        className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                        disabled={categoriesLoading}
+                      >
+                        <option value="todas">Todas</option>
+                        {categoriesForSelect.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {(transactionsLoading || categoriesLoading) && (
+                <div className="app-bg-tertiary app-border app-text-secondary rounded-xl border px-4 py-3 text-sm">
+                  Carregando dados do backend...
+                </div>
+              )}
+
+              {(transactionsError || categoriesError) && (
+                <div
+                  className="rounded-xl border px-4 py-3 text-sm text-[color:var(--danger-main)]"
+                  style={{
+                    borderColor: "var(--danger-main)",
+                    backgroundColor:
+                      "color-mix(in srgb, var(--danger-main) 10%, transparent)",
+                  }}
+                >
+                  {transactionsError ?? categoriesError}
+                </div>
+              )}
+
+              {/* FORM (manual) */}
+              {isFormOpen && (
+                <div className="app-card-surface app-border mb-6 grid gap-3 rounded-2xl border p-4">
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">Título</label>
+                    <input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                      placeholder="Ex: Mercado"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">Valor</label>
+                    <input
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                      placeholder="Ex: 150"
+                      inputMode="numeric"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">Tipo</label>
                     <select
-                      value={t.category}
+                      value={type}
                       onChange={(e) =>
-                        void handleUpdateTransaction({
-                          ...t,
-                          category: e.target.value as Category,
-                        })
+                        setType(e.target.value as TransactionType)
                       }
-                      className="app-bg-secondary app-border app-text-primary rounded-lg border px-2 py-1 text-xs"
-                      aria-label="Alterar categoria"
+                      className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                    >
+                      <option value="entrada">Entrada</option>
+                      <option value="saida">Saída</option>
+                    </select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">Categoria</label>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value as Category)}
+                      className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
                     >
                       {categoriesForSelect.map((c) => (
-                        <option key={`${t.id}-${c}`} value={c}>
+                        <option key={c} value={c}>
                           {c}
                         </option>
                       ))}
                     </select>
+                  </div>
 
+                  <div className="grid gap-2">
+                    <label className="text-sm font-medium">Data</label>
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2"
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
                     <button
-                      onClick={() => void handleAutoSuggestCategory(t)}
-                      className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
-                      title="Sugerir categoria automaticamente"
+                      onClick={() => void handleSave()}
+                      className="rounded-xl px-4 py-2 text-sm text-white"
+                      style={{ backgroundColor: "var(--success-main)" }}
                     >
-                      Auto
+                      {editingId ? "Atualizar" : "Salvar"}
                     </button>
 
-                    <button
-                      onClick={() => startEdit(t)}
-                      className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
-                      title="Editar"
-                    >
-                      Editar
-                    </button>
-
-                    <button
-                      onClick={() => void handleRemoveTransaction(t.id)}
-                      className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
-                      title="Excluir"
-                    >
-                      Excluir
-                    </button>
+                    {editingId && (
+                      <button
+                        onClick={cancelEdit}
+                        className="app-btn-outline rounded-xl border px-4 py-2 text-sm"
+                      >
+                        Cancelar edição
+                      </button>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              )}
+
+              <div className="app-card-surface app-border mb-6 grid gap-4 rounded-2xl border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      Categorias personalizadas
+                    </p>
+                    <p className="app-text-muted text-sm">
+                      Adicione categorias novas para classificar transações e
+                      melhorar a importação automática.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void resetCategories()}
+                    className="app-btn-outline rounded-xl border px-3 py-1 text-xs"
+                  >
+                    Restaurar padrão
+                  </button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {categories.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => void removeCategory(c)}
+                      className={
+                        "flex min-h-[44px] items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm " +
+                        (c === "Outros"
+                          ? "cursor-not-allowed app-bg-tertiary app-text-muted"
+                          : "app-btn-outline")
+                      }
+                      title={c === "Outros" ? "Categoria padrão" : "Remover"}
+                      disabled={c === "Outros"}
+                    >
+                      <span className="text-lg">{getCategoryIcon(c)}</span>
+                      <span className="font-medium">{c}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    value={categoryInput}
+                    onChange={(e) => setCategoryInput(e.target.value)}
+                    className="app-bg-secondary app-border app-text-primary rounded-lg border px-3 py-2 text-sm"
+                    placeholder="Nova categoria"
+                  />
+                  <button
+                    onClick={() => void handleAddCategory()}
+                    className="app-btn-primary rounded-xl px-4 py-2 text-sm"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </div>
+
+              {/* LISTA */}
+              {filteredTransactions.length === 0 ? (
+                <div className="app-card-surface app-border rounded-2xl border border-dashed p-6 text-center">
+                  <p className="text-sm font-medium">
+                    Comece adicionando sua primeira transação 🎯
+                  </p>
+                  <p className="app-text-muted mt-2 text-sm">
+                    Registre entradas e saídas para acompanhar seu orçamento com
+                    clareza.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openFormWithType("entrada")}
+                    className="app-btn-primary mt-4 rounded-full px-5 py-2 text-xs"
+                  >
+                    Adicionar transação
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredTransactions.map((t) => (
+                    <div
+                      key={t.id}
+                      className="app-card-surface app-border flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div>
+                        <p className="font-medium">{t.title}</p>
+                        <p className="app-text-muted text-xs">
+                          {t.date} · {t.category}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p
+                          className={
+                            "font-semibold " +
+                            (t.type === "entrada"
+                              ? "text-[color:var(--success-main)]"
+                              : "text-[color:var(--danger-main)]")
+                          }
+                        >
+                          {t.type === "entrada" ? "+" : "-"}{" "}
+                          {formatBRL(t.amount)}
+                        </p>
+
+                        <select
+                          value={t.category}
+                          onChange={(e) =>
+                            void handleUpdateTransaction({
+                              ...t,
+                              category: e.target.value as Category,
+                            })
+                          }
+                          className="app-bg-secondary app-border app-text-primary rounded-lg border px-2 py-1 text-xs"
+                          aria-label="Alterar categoria"
+                        >
+                          {categoriesForSelect.map((c) => (
+                            <option key={`${t.id}-${c}`} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+
+                        <button
+                          onClick={() => void handleAutoSuggestCategory(t)}
+                          className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
+                          title="Sugerir categoria automaticamente"
+                        >
+                          Auto
+                        </button>
+
+                        <button
+                          onClick={() => startEdit(t)}
+                          className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
+                          title="Editar"
+                        >
+                          Editar
+                        </button>
+
+                        <button
+                          onClick={() => void handleRemoveTransaction(t.id)}
+                          className="app-btn-outline rounded-lg border px-3 py-1 text-xs"
+                          title="Excluir"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           </main>
+
+          <div className="fixed bottom-6 left-1/2 z-20 flex -translate-x-1/2 gap-3">
+            <button
+              type="button"
+              onClick={() => openFormWithType("entrada")}
+              className="app-btn-primary rounded-full px-5 py-3 text-sm shadow-lg"
+            >
+              Adicionar
+            </button>
+            <button
+              type="button"
+              onClick={() => openFormWithType("saida")}
+              className="rounded-full px-5 py-3 text-sm text-white shadow-lg"
+              style={{ backgroundColor: "var(--danger-main)" }}
+            >
+              Pagar
+            </button>
+          </div>
         </div>
       </div>
     </div>

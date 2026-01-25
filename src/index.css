@@ -7,6 +7,7 @@
     --bg-primary: #F5F7FB;
     --bg-secondary: #FFFFFF;
     --bg-tertiary: #EEF1F8;
+    --card-bg: #FFFFFF;
     --text-primary: #0F172A;
     --text-secondary: #475569;
     --text-muted: #94A3B8;
@@ -25,9 +26,10 @@
   }
 
   .dark {
-    --bg-primary: #0B1020;
-    --bg-secondary: #121832;
-    --bg-tertiary: #1A2142;
+    --bg-primary: #111827;
+    --bg-secondary: #1F2937;
+    --bg-tertiary: #111827;
+    --card-bg: rgba(31, 41, 55, 0.5);
     --text-primary: #E6E9F2;
     --text-secondary: #AAB0D6;
     --text-muted: #6E7399;
@@ -50,11 +52,21 @@
   .app-bg-primary {
     background-color: var(--bg-primary);
   }
+  .app-bg-gradient {
+    background-image: none;
+  }
+  .dark .app-bg-gradient {
+    background-image: linear-gradient(180deg, #1F2937 0%, #111827 100%);
+  }
   .app-bg-secondary {
     background-color: var(--bg-secondary);
   }
   .app-bg-tertiary {
     background-color: var(--bg-tertiary);
+  }
+  .app-card-surface {
+    background-color: var(--card-bg);
+    backdrop-filter: blur(12px);
   }
   .app-text-primary {
     color: var(--text-primary);
