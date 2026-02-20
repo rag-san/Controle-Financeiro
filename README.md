@@ -1,114 +1,130 @@
-# Controle Financeiro
+# Controle Financeiro (Next.js + SQLite local)
 
-Aplicação web para acompanhar receitas e despesas, com autenticação, categorias personalizadas e importação/exportação de CSV.
+Aplicativo de controle financeiro com App Router, NextAuth e persistência local em SQLite via `better-sqlite3` (sem Prisma/ORM).
 
-## ✨ Funcionalidades
+## Stack
 
-- **Cadastro e login** com sessão persistida via token.
-- **Dashboard** com saldo, entradas, saídas e análises por categoria e por mês.
-- **CRUD de transações** (criar, editar, excluir e limpar tudo).
-- **Categorias personalizadas** com restauração ao padrão.
-- **Importação de extrato (CSV)** com mapeamento de colunas.
-- **Exportação de CSV** das transações filtradas.
+- Next.js (App Router)
+- NextAuth (Credentials)
+- SQLite local (`better-sqlite3`)
+- Tailwind CSS
+- Recharts
+- Zod
 
-## 🧰 Tecnologias
+## Estrutura do projeto
 
-- **Frontend:** React + TypeScript + Vite + Tailwind CSS.
-- **Backend:** Node.js + Express.
-- **Armazenamento:** arquivo JSON local (por usuário).
+```txt
+app/                 # pages e rotas API (Next App Router)
+components/          # componentes de UI e blocos de tela
+lib/
+  db/                # conexão SQLite, migração e init
+  server/            # repositórios SQL (accounts, transactions, dashboard, ...)
+  *.ts               # utilitários compartilhados (auth, cache, parse, normalize, etc)
+styles/              # estilos globais
+types/               # tipos globais (NextAuth e afins)
+data/                # banco local finance.db (criado em runtime)
+```
 
-## ✅ Requisitos
+## Onde fica o banco
 
-- Node.js 18+ (recomendado).
+- Arquivo: `data/finance.db`
+- O diretório `data/` é criado automaticamente.
+- Tabelas e índices são criados automaticamente na inicialização da API.
 
-## ▶️ Como rodar localmente
-
-### 1) Backend
+## Como rodar
 
 ```bash
-cd server
 npm install
 npm run dev
 ```
 
-O servidor sobe em `http://localhost:3001`.
-
-### 2) Frontend
+## Ciclo rapido (dia a dia)
 
 ```bash
-cd ..
-npm install
-npm run dev
+npm run verify
 ```
 
-O app Vite sobe em `http://localhost:5173`.
+- `verify` roda apenas TypeScript + ESLint (bem mais rapido que build completo).
 
-## ⚙️ Variáveis de ambiente
-
-### Frontend
-
-Crie um arquivo `.env` na raiz, se necessário:
+## Build
 
 ```bash
-VITE_API_BASE_URL=http://localhost:3001
+npm run verify
+npm run build
+npm run start
 ```
 
-### Backend
-
-O servidor aceita variáveis opcionais:
+- `build` agora roda com `--no-lint` para reduzir tempo.
+- Se quiser validação e build em um comando:
 
 ```bash
-PORT=3001
-DATA_FILE=./data.json
+npm run build:full
 ```
 
-- `PORT`: porta do servidor.
-- `DATA_FILE`: caminho do arquivo JSON de dados.
+## Resetar o banco
 
-## 🧪 Scripts úteis
+Pare o servidor e apague o arquivo:
 
-### Frontend
-
-- `npm run dev` – ambiente de desenvolvimento.
-- `npm run build` – build de produção.
-- `npm run lint` – lints.
-- `npm run test` – testes (Vitest).
-
-### Backend
-
-- `npm run dev` – servidor Express.
-- `npm start` – servidor Express.
-
-## ☁️ Deploy no Render
-
-Este repositório já inclui um `render.yaml` com dois serviços (API e Frontend).
-
-### Passo a passo
-
-1. **Faça login no Render** e conecte o GitHub/GitLab com este repositório.
-2. No dashboard, clique em **New + → Blueprint** e selecione o repo.
-3. O Render vai detectar o `render.yaml` e criar:
-   - **controle-financeiro-api** (Node/Express).
-   - **controle-financeiro-web** (Static Site).
-4. Após criar, ajuste a variável **VITE_API_BASE_URL** do frontend para a URL pública do backend.
-5. Rode o deploy.
-
-### Observações
-
-- O plano **free** do Render não permite disco persistente. Se quiser persistência, use um plano pago ou migre para um banco externo.
-- Em alguns planos, o **Static Site** não aceita `plan: free` no `render.yaml`. Se ocorrer erro, remova o campo `plan` do serviço `controle-financeiro-web`.
-- Se quiser trocar o domínio/URL do backend, atualize a variável `VITE_API_BASE_URL`.
-
-## 🗂️ Estrutura resumida
-
-```
-.
-├── src/            # UI React
-├── server/         # API Express
-└── public/
+```bash
+rm data/finance.db
 ```
 
-## 📝 Notas
+No Windows PowerShell:
 
-- Os dados são persistidos localmente em arquivo JSON no backend.
-- A autenticação usa tokens armazenados no `localStorage`.
+```powershell
+Remove-Item .\data\finance.db -Force
+```
+
+Ao iniciar novamente, o schema é recriado automaticamente.
+
+## Endpoints principais
+
+- `GET|POST /api/transactions`
+- `PATCH|DELETE /api/transactions/:id`
+- `GET|POST /api/categories`
+- `PATCH|DELETE /api/categories/:id`
+- `GET /api/dashboard`
+- `GET /api/dashboard/summary?from=ISO&to=ISO`
+- `POST /api/categories/bootstrap` (restaura categorias/regras padrao)
+
+## Exemplos (curl)
+
+Obs: endpoints autenticados exigem sessão (cookie do NextAuth).
+
+Criar categoria:
+
+```bash
+curl -X POST http://localhost:3000/api/categories \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Mercado","color":"#22c55e","icon":"ShoppingCart"}'
+```
+
+Criar transação:
+
+```bash
+curl -X POST http://localhost:3000/api/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"accountId":"<account-id>","date":"2026-02-15","description":"Supermercado","amount":-189.90,"categoryId":"<category-id>"}'
+```
+
+Resumo dashboard por período:
+
+```bash
+curl "http://localhost:3000/api/dashboard/summary?from=2026-02-01T00:00:00.000Z&to=2026-02-28T23:59:59.999Z"
+```
+
+Restaurar categorias padrao:
+
+```bash
+curl -X POST http://localhost:3000/api/categories/bootstrap
+```
+
+## IA local opcional (Ollama)
+
+- No import wizard, habilite `Usar IA local (opcional)`.
+- Configure no `.env`:
+  - `OLLAMA_URL`
+  - `OLLAMA_MODEL`
+  - `LOCAL_AI_TIMEOUT_MS`
+  - `LOCAL_AI_MIN_CONFIDENCE`
+- A IA local so e usada quando nenhuma regra (`contains/regex`) casar.

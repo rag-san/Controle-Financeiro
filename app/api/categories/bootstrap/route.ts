@@ -1,0 +1,52 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/api-auth";
+import { getCache, setCache } from "@/lib/cache";
+import { invalidateFinanceCaches } from "@/lib/cache-keys";
+import { privateCacheHeaders } from "@/lib/http";
+import { withRouteProfiling } from "@/lib/profiling";
+import { categoriesRepo } from "@/lib/server/categories.repo";
+import { categoryRulesRepo } from "@/lib/server/category-rules.repo";
+import { accountsRepo } from "@/lib/server/accounts.repo";
+import { restoreDefaultCategoriesForUser } from "@/lib/server/default-categories.service";
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  return withRouteProfiling(request, "/api/categories/bootstrap.GET", async () => {
+  const auth = await requireUser(request);
+  if (auth instanceof NextResponse) return auth;
+
+  const cacheKey = `bootstrap:${auth.userId}:categories`;
+  const cached = getCache(cacheKey);
+  if (cached) {
+    return NextResponse.json(cached, { headers: privateCacheHeaders });
+  }
+
+  const [categories, rules, accounts] = await Promise.all([
+    Promise.resolve(categoriesRepo.listByUser(auth.userId, true)),
+    Promise.resolve(categoryRulesRepo.listByUser(auth.userId, true)),
+    Promise.resolve(accountsRepo.listByUser(auth.userId))
+  ]);
+
+  const payload = {
+    categories,
+    rules,
+    accounts
+  };
+
+  setCache(cacheKey, payload, 20_000);
+
+  return NextResponse.json(payload, { headers: privateCacheHeaders });
+  });
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  return withRouteProfiling(request, "/api/categories/bootstrap.POST", async () => {
+    const auth = await requireUser(request);
+    if (auth instanceof NextResponse) return auth;
+
+    const result = restoreDefaultCategoriesForUser(auth.userId);
+    invalidateFinanceCaches(auth.userId);
+
+    return NextResponse.json(result, { status: 200 });
+  });
+}
+

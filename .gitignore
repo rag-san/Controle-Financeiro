@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+.next
+tsconfig.tsbuildinfo
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -25,3 +30,6 @@ dist-ssr
 
 # Backend data
 server/data.json
+data/*.db
+data/*.db-shm
+data/*.db-wal
