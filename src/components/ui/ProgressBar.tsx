@@ -22,7 +22,7 @@ export function ProgressBar({ percentage, color = "blue" }: ProgressBarProps): R
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(normalizedValue)}
-      className="h-2.5 w-full rounded-full bg-slate-200"
+      className="h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-700/70"
     >
       <div
         style={style}
@@ -31,4 +31,3 @@ export function ProgressBar({ percentage, color = "blue" }: ProgressBarProps): R
     </div>
   );
 }
-

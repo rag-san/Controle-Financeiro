@@ -7,9 +7,13 @@ interface CardProps {
 
 export function Card({ children, className }: CardProps): React.JSX.Element {
   return (
-    <section className={cn("rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm", className)}>
+    <section
+      className={cn(
+        "rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm dark:border-slate-700/70 dark:bg-slate-900",
+        className
+      )}
+    >
       {children}
     </section>
   );
 }
-

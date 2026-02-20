@@ -64,10 +64,19 @@ export function TopCategoriesCard({ categorias, hrefVerMais }: TopCategoriesCard
       </div>
 
       <div className="space-y-3">
+        {categorias.length === 0 ? (
+          <div
+            role="status"
+            className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300"
+          >
+            Nenhuma categoria disponivel para o periodo selecionado.
+          </div>
+        ) : null}
+
         {categorias.map((categoria) => (
           <article
             key={categoria.id}
-            className="grid gap-3 rounded-xl border border-slate-200/70 p-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] md:items-center"
+            className="grid gap-3 rounded-xl border border-slate-200/70 p-4 md:grid-cols-[minmax(0,1.6fr)_minmax(0,0.9fr)_minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,0.9fr)] md:items-center dark:border-slate-700/70"
           >
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: categoria.corDot }} aria-hidden="true" />
@@ -102,4 +111,3 @@ export function TopCategoriesCard({ categorias, hrefVerMais }: TopCategoriesCard
     </Card>
   );
 }
-
