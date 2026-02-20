@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import Link from "next/link";
 import { Clock3 } from "lucide-react";
 import { Badge } from "@/src/components/ui/Badge";
@@ -38,6 +39,35 @@ export function NetWorthCard({
   onFilterChange,
   hrefVerTodas
 }: NetWorthCardProps): React.JSX.Element {
+  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const focusFilterByIndex = (targetIndex: number): void => {
+    const safeIndex = (targetIndex + FILTERS.length) % FILTERS.length;
+    buttonRefs.current[safeIndex]?.focus();
+  };
+
+  const handleFilterKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number): void => {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      focusFilterByIndex(currentIndex + 1);
+    }
+
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      focusFilterByIndex(currentIndex - 1);
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusFilterByIndex(0);
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      focusFilterByIndex(FILTERS.length - 1);
+    }
+  };
+
   return (
     <Card className="flex h-full flex-col justify-between gap-6">
       <div className="space-y-4">
@@ -69,16 +99,20 @@ export function NetWorthCard({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {FILTERS.map((filter) => {
+      <div role="group" aria-label="Filtros de periodo do patrimonio" className="flex flex-wrap gap-2">
+        {FILTERS.map((filter, index) => {
           const isActive = filter === activeFilter;
 
           return (
             <button
               key={filter}
+              ref={(node) => {
+                buttonRefs.current[index] = node;
+              }}
               type="button"
               aria-pressed={isActive}
               onClick={() => onFilterChange?.(filter)}
+              onKeyDown={(event) => handleFilterKeyDown(event, index)}
               className={`rounded-full px-3 py-1.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
                 isActive ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
@@ -91,4 +125,3 @@ export function NetWorthCard({
     </Card>
   );
 }
-
