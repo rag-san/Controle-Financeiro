@@ -47,6 +47,7 @@ export function TransactionsTable({
               <Checkbox
                 checked={allSelected}
                 onChange={(event) => onToggleSelectAll(Boolean(event.target.checked))}
+                aria-label={allSelected ? "Desmarcar todas as transacoes" : "Selecionar todas as transacoes"}
               />
             </TableHead>
             <TableHead>Descricao</TableHead>
@@ -75,6 +76,7 @@ export function TransactionsTable({
                     <Checkbox
                       checked={checked}
                       onChange={(event) => onToggleSelect(transaction.id, Boolean(event.target.checked))}
+                      aria-label={checked ? `Desmarcar ${transaction.description}` : `Selecionar ${transaction.description}`}
                     />
                   </TableCell>
                   <TableCell>
@@ -89,6 +91,7 @@ export function TransactionsTable({
                       <Select
                         className="h-8 text-xs"
                         value={transaction.categoryId ?? ""}
+                        aria-label={`Categoria da transacao ${transaction.description}`}
                         onChange={(event) =>
                           onCategoryChange(transaction.id, event.target.value || null)
                         }

@@ -33,3 +33,4 @@ server/data.json
 data/*.db
 data/*.db-shm
 data/*.db-wal
+artifacts/

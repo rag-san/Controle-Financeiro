@@ -60,3 +60,29 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+@layer components {
+  .surface-card {
+    @apply rounded-2xl border border-border bg-card;
+  }
+
+  .feedback-message {
+    @apply rounded-xl border p-3 text-sm;
+  }
+
+  .feedback-message--info {
+    @apply border-border bg-muted/30 text-muted-foreground;
+  }
+
+  .feedback-message--success {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300;
+  }
+
+  .feedback-message--warning {
+    @apply border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300;
+  }
+
+  .feedback-message--error {
+    @apply border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300;
+  }
+}

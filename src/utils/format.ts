@@ -3,6 +3,13 @@ const brlFormatter = new Intl.NumberFormat("pt-BR", {
   currency: "BRL"
 });
 
+const brlCompactFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 1
+});
+
 const percentFormatter = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1
@@ -21,13 +28,29 @@ export function formatBRL(value: number): string {
   return brlFormatter.format(numeric);
 }
 
+export function formatBRLCompact(value: number): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return brlCompactFormatter.format(0);
+  }
+  return brlCompactFormatter.format(numeric);
+}
+
 export function formatPercent(value: number): string {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
     return "0,0%";
   }
-
   return `${percentFormatter.format(numeric)}%`;
+}
+
+export function formatSignedPercent(value: number): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "0,0%";
+  }
+  const prefix = numeric > 0 ? "+" : "";
+  return `${prefix}${formatPercent(numeric)}`;
 }
 
 export function formatMonthLabel(iso: string): string {

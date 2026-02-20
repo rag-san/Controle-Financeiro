@@ -13,6 +13,7 @@ type CategoryComparison = {
   categoryId: string;
   name: string;
   color: string;
+  icon: string | null;
   current: number;
   previous: number;
   variation: number;
@@ -171,38 +172,57 @@ export const dashboardRepo = {
           categoryId,
           name: category?.name ?? "Sem categoria",
           color: category?.color ?? "#94a3b8",
+          icon: category?.icon ?? null,
           current: round2(total),
           previous: round2(previous),
           variation: round2(safeVariation(total, previous))
         };
       });
 
-    const monthlyAccumulator = monthlyTransactions.reduce<Record<string, { income: number; expense: number }>>(
-      (acc, tx) => {
-        const key = monthKey(tx.date);
-        if (!acc[key]) {
-          acc[key] = { income: 0, expense: 0 };
-        }
-        if (tx.amount >= 0) acc[key].income += tx.amount;
-        else acc[key].expense += Math.abs(tx.amount);
-        return acc;
-      },
-      {}
-    );
+    const monthlyAccumulator = new Map<string, { income: number; expense: number }>();
+    for (const tx of monthlyTransactions) {
+      const key = monthKey(tx.date);
+      const current = monthlyAccumulator.get(key) ?? { income: 0, expense: 0 };
 
-    const cashflow = Object.entries(monthlyAccumulator)
+      if (tx.amount >= 0) {
+        current.income += Math.abs(tx.amount);
+      } else {
+        current.expense += tx.amount;
+      }
+
+      monthlyAccumulator.set(key, current);
+    }
+
+    const cashflow = [...monthlyAccumulator.entries()]
       .sort(([a], [b]) => (a > b ? 1 : -1))
-      .map(([month, values]) => ({
-        month,
-        income: round2(values.income),
-        expense: round2(values.expense),
-        balance: round2(values.income - values.expense)
+      .map(([month, values]) => {
+        const income = round2(values.income);
+        const expense = round2(values.expense);
+        return {
+          month,
+          income,
+          expense,
+          balance: round2(income + expense)
+        };
+      });
+
+    const netWorthSeriesByDate = new Map<string, number>();
+    for (const entry of netWorthRepo.listByUser(userId)) {
+      const key = format(entry.date, "yyyy-MM-dd");
+      const signedValue = entry.type === "asset" ? entry.value : -entry.value;
+      netWorthSeriesByDate.set(key, (netWorthSeriesByDate.get(key) ?? 0) + signedValue);
+    }
+
+    const netWorthSeries = [...netWorthSeriesByDate.entries()]
+      .sort(([a], [b]) => (a > b ? 1 : -1))
+      .map(([date, value]) => ({
+        date,
+        value: round2(value)
       }));
 
-    const latestNetWorthDate = netWorthRepo.latestDate(userId);
-    const netWorthByType = latestNetWorthDate ? netWorthRepo.sumByTypeAtDate(userId, latestNetWorthDate) : [];
-    const assets = netWorthByType.find((entry) => entry.type === "asset")?.value ?? 0;
-    const debts = netWorthByType.find((entry) => entry.type === "debt")?.value ?? 0;
+    const currentNetWorth = netWorthSeries[netWorthSeries.length - 1]?.value ?? 0;
+    const previousNetWorth = netWorthSeries[netWorthSeries.length - 2]?.value ?? currentNetWorth;
+    const netWorthDelta = round2(currentNetWorth - previousNetWorth);
 
     const currentResult = monthSummary.income - monthSummary.expense;
     const previousResult = previousSummary.income - previousSummary.expense;
@@ -214,10 +234,26 @@ export const dashboardRepo = {
         income: round2(monthSummary.income),
         expense: round2(monthSummary.expense),
         result: round2(currentResult),
-        netWorth: round2(assets - debts),
+        netWorth: currentNetWorth,
         spendPaceDelta: round2(safeVariation(monthSummary.expense, previousSummary.expense)),
         resultDelta: round2(safeVariation(currentResult, previousResult))
       },
+      periodComparison: {
+        current: {
+          income: round2(monthSummary.income),
+          expense: round2(monthSummary.expense),
+          result: round2(currentResult),
+          excluded: 0
+        },
+        previous: {
+          income: round2(previousSummary.income),
+          expense: round2(previousSummary.expense),
+          result: round2(previousResult),
+          excluded: 0
+        }
+      },
+      netWorthDelta,
+      netWorthSeries,
       spendingTrend,
       topCategories,
       cashflow

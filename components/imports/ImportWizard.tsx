@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { UploadCloud } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { FileDropzone } from "@/components/imports/FileDropzone";
 import { MappingStep } from "@/components/imports/MappingStep";
@@ -12,6 +10,11 @@ import { PreviewStep } from "@/components/imports/PreviewStep";
 import { RulesStep } from "@/components/imports/RulesStep";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import type { AccountDTO } from "@/lib/types";
+import { Button } from "@/src/components/ui/Button";
+import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
+import { FormField } from "@/src/components/ui/FormField";
+import { Input } from "@/src/components/ui/Input";
+import { useToast } from "@/src/components/ui/ToastProvider";
 
 type ParsedRow = {
   date: string;
@@ -61,6 +64,7 @@ function formatShortDate(value: string): string {
 }
 
 export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportWizardProps): React.JSX.Element {
+  const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [parseData, setParseData] = useState<ParseResponse | null>(null);
   const [mapping, setMapping] = useState({
@@ -100,6 +104,22 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       setDefaultAccountId(mergedAccounts[0].id);
     }
   }, [defaultAccountId, mergedAccounts]);
+
+  useEffect(() => {
+    if (!showQuickAccountForm) return;
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setShowQuickAccountForm(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showQuickAccountForm]);
 
   const effectiveRows = parseData?.rows ?? parseData?.preview ?? [];
 
@@ -154,7 +174,9 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         setDefaultAccountId(mergedAccounts[0].id);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro inesperado");
+      const message = err instanceof Error ? err.message : "Erro inesperado";
+      setError(message);
+      toast({ variant: "error", title: "Falha na analise", description: message });
     } finally {
       setLoading(false);
     }
@@ -170,7 +192,9 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
   const handleCreateAccount = async (): Promise<void> => {
     const name = quickAccount.name.trim();
     if (name.length < 2) {
-      setError("Informe um nome de conta com pelo menos 2 caracteres.");
+      const message = "Informe um nome de conta com pelo menos 2 caracteres.";
+      setError(message);
+      toast({ variant: "error", title: "Conta invalida", description: message });
       return;
     }
 
@@ -211,12 +235,15 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       setDefaultAccountId(data.id);
       setQuickAccount((prev) => ({ ...prev, name: "", institution: "" }));
       setShowQuickAccountForm(false);
+      toast({ variant: "success", title: "Conta criada", description: `${data.name} pronta para uso na importacao.` });
 
       if (onAccountsRefresh) {
         await onAccountsRefresh();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao criar conta.");
+      const message = err instanceof Error ? err.message : "Erro ao criar conta.";
+      setError(message);
+      toast({ variant: "error", title: "Falha ao criar conta", description: message });
     } finally {
       setCreatingAccount(false);
     }
@@ -226,7 +253,9 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     if (!file || !parseData) return;
 
     if (!defaultAccountId && !effectiveRows.some((row) => row.accountId || row.accountHint)) {
-      setError("Selecione uma conta padrao para concluir a importacao.");
+      const message = "Selecione uma conta padrao para concluir a importacao.";
+      setError(message);
+      toast({ variant: "error", title: "Conta obrigatoria", description: message });
       return;
     }
 
@@ -250,14 +279,15 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         })
       });
       const { data, errorMessage } = await parseApiResponse<
-        ({
-          totalImported: number;
-          totalSkipped: number;
-          aiCategorizedCount?: number;
-          aiUnavailableReason?: string | null;
-          importedRange?: ImportCommitResult["importedRange"];
-          error?: string;
-        } | { error: string })
+        | {
+            totalImported: number;
+            totalSkipped: number;
+            aiCategorizedCount?: number;
+            aiUnavailableReason?: string | null;
+            importedRange?: ImportCommitResult["importedRange"];
+            error?: string;
+          }
+        | { error: string }
       >(response);
 
       if (errorMessage) {
@@ -279,9 +309,16 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         aiUnavailableReason: "aiUnavailableReason" in data ? data.aiUnavailableReason ?? null : null,
         importedRange: "importedRange" in data ? data.importedRange ?? null : null
       });
+      toast({
+        variant: "success",
+        title: "Importacao concluida",
+        description: `${data.totalImported} transacao(oes) importada(s).`
+      });
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro inesperado");
+      const message = err instanceof Error ? err.message : "Erro inesperado";
+      setError(message);
+      toast({ variant: "error", title: "Falha na importacao", description: message });
     } finally {
       setLoading(false);
     }
@@ -295,7 +332,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
           Importar extrato (CSV/OFX/PDF)
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4" aria-busy={loading || creatingAccount}>
         {steps === "upload" ? <FileDropzone onSelect={handleUpload} /> : null}
 
         {steps === "mapping" && parseData ? (
@@ -314,77 +351,112 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         {(steps === "preview" || steps === "done") && parseData ? (
           <>
             <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span>Conta padrao (fallback)</span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowQuickAccountForm((prev) => !prev)}
-                  >
-                    {showQuickAccountForm ? "Fechar" : "Criar conta"}
-                  </Button>
-                </div>
-                <Select value={defaultAccountId} onChange={(event) => setDefaultAccountId(event.target.value)}>
-                  <option value="">Sem conta padrao</option>
-                  {mergedAccounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+              <FormField id="import-default-account" label="Conta padrao (fallback)" hint="Usada quando a linha importada nao indicar conta.">
+                {(fieldProps) => (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm text-muted-foreground">Selecione uma conta para complementar dados faltantes.</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowQuickAccountForm((prev) => !prev)}
+                        aria-expanded={showQuickAccountForm}
+                        aria-controls="quick-account-form"
+                      >
+                        {showQuickAccountForm ? "Fechar" : "Criar conta"}
+                      </Button>
+                    </div>
+                    <Select {...fieldProps} value={defaultAccountId} onChange={(event) => setDefaultAccountId(event.target.value)}>
+                      <option value="">Sem conta padrao</option>
+                      {mergedAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                )}
+              </FormField>
 
-              <div className="rounded-xl border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+              <FeedbackMessage variant="info">
                 <p>Total detectado: {parseData.totalRows} linhas</p>
                 {typeof parseData.validRows === "number" ? <p>Linhas validas: {parseData.validRows}</p> : null}
                 <p>Tipo de origem: {parseData.sourceType.toUpperCase()}</p>
                 <p>Contas disponiveis: {mergedAccounts.length}</p>
-              </div>
+              </FeedbackMessage>
             </div>
 
             {showQuickAccountForm || mergedAccounts.length === 0 ? (
-              <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
-                <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+              <FeedbackMessage variant="warning" className="space-y-3 p-4" role="status">
+                <p className="font-medium">
                   {mergedAccounts.length === 0
                     ? "Nenhuma conta encontrada. Crie uma conta rapida para continuar a importacao."
                     : "Crie uma conta rapida sem sair do fluxo de importacao."}
                 </p>
-                <div className="grid gap-3 md:grid-cols-5">
-                  <Input
-                    placeholder="Nome da conta"
-                    value={quickAccount.name}
-                    onChange={(event) => setQuickAccount((prev) => ({ ...prev, name: event.target.value }))}
-                  />
-                  <Select
-                    value={quickAccount.type}
-                    onChange={(event) =>
-                      setQuickAccount((prev) => ({ ...prev, type: event.target.value as AccountDTO["type"] }))
-                    }
-                  >
-                    <option value="checking">Conta corrente</option>
-                    <option value="credit">Cartao de credito</option>
-                    <option value="cash">Dinheiro</option>
-                    <option value="investment">Investimento</option>
-                  </Select>
-                  <Input
-                    placeholder="Instituicao (opcional)"
-                    value={quickAccount.institution}
-                    onChange={(event) => setQuickAccount((prev) => ({ ...prev, institution: event.target.value }))}
-                  />
-                  <Input
-                    placeholder="Moeda"
-                    value={quickAccount.currency}
-                    onChange={(event) =>
-                      setQuickAccount((prev) => ({ ...prev, currency: event.target.value.toUpperCase() }))
-                    }
-                  />
-                  <Button onClick={() => void handleCreateAccount()} disabled={creatingAccount} className="w-full md:w-auto">
-                    {creatingAccount ? "Criando..." : "Criar conta"}
-                  </Button>
-                </div>
-              </div>
+                <form
+                  id="quick-account-form"
+                  className="grid gap-3 md:grid-cols-5"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleCreateAccount();
+                  }}
+                  aria-busy={creatingAccount}
+                >
+                  <FormField id="quick-account-name" label="Nome da conta" required>
+                    {(fieldProps) => (
+                      <Input
+                        {...fieldProps}
+                        value={quickAccount.name}
+                        onChange={(event) => setQuickAccount((prev) => ({ ...prev, name: event.target.value }))}
+                      />
+                    )}
+                  </FormField>
+                  <FormField id="quick-account-type" label="Tipo" required>
+                    {(fieldProps) => (
+                      <Select
+                        {...fieldProps}
+                        value={quickAccount.type}
+                        onChange={(event) =>
+                          setQuickAccount((prev) => ({ ...prev, type: event.target.value as AccountDTO["type"] }))
+                        }
+                      >
+                        <option value="checking">Conta corrente</option>
+                        <option value="credit">Cartao de credito</option>
+                        <option value="cash">Dinheiro</option>
+                        <option value="investment">Investimento</option>
+                      </Select>
+                    )}
+                  </FormField>
+                  <FormField id="quick-account-institution" label="Instituicao">
+                    {(fieldProps) => (
+                      <Input
+                        {...fieldProps}
+                        value={quickAccount.institution}
+                        onChange={(event) =>
+                          setQuickAccount((prev) => ({ ...prev, institution: event.target.value }))
+                        }
+                      />
+                    )}
+                  </FormField>
+                  <FormField id="quick-account-currency" label="Moeda" required>
+                    {(fieldProps) => (
+                      <Input
+                        {...fieldProps}
+                        value={quickAccount.currency}
+                        onChange={(event) =>
+                          setQuickAccount((prev) => ({ ...prev, currency: event.target.value.toUpperCase() }))
+                        }
+                      />
+                    )}
+                  </FormField>
+                  <div className="flex items-end">
+                    <Button type="submit" isLoading={creatingAccount} disabled={creatingAccount} className="w-full md:w-auto">
+                      {creatingAccount ? "Criando..." : "Criar conta"}
+                    </Button>
+                  </div>
+                </form>
+              </FeedbackMessage>
             ) : null}
 
             <RulesStep
@@ -397,7 +469,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
 
             {steps === "preview" ? (
               <div className="flex justify-end">
-                <Button onClick={handleCommit} disabled={loading} className="w-full sm:w-auto">
+                <Button onClick={handleCommit} isLoading={loading} disabled={loading} className="w-full sm:w-auto">
                   {loading ? "Importando..." : "Confirmar importacao"}
                 </Button>
               </div>
@@ -406,30 +478,26 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         ) : null}
 
         {result ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
-            Importacao concluida: {result.totalImported} novas transacoes e {result.totalSkipped} ignoradas.
+          <FeedbackMessage variant="success" className="space-y-1 p-4">
+            <p>
+              Importacao concluida: {result.totalImported} novas transacoes e {result.totalSkipped} ignoradas.
+            </p>
             {typeof result.aiCategorizedCount === "number" && result.aiCategorizedCount > 0 ? (
-              <p className="mt-1">IA local categorizou {result.aiCategorizedCount} transacoes sem regra.</p>
+              <p>IA local categorizou {result.aiCategorizedCount} transacoes sem regra.</p>
             ) : null}
             {result.importedRange ? (
-              <p className="mt-1">
-                Periodo importado: {formatShortDate(result.importedRange.from)} ate {formatShortDate(result.importedRange.to)}.
+              <p>
+                Periodo importado: {formatShortDate(result.importedRange.from)} ate{" "}
+                {formatShortDate(result.importedRange.to)}.
               </p>
             ) : null}
-            {result.aiUnavailableReason ? (
-              <p className="mt-1 text-amber-700 dark:text-amber-300">{result.aiUnavailableReason}</p>
-            ) : null}
-          </div>
+            {result.aiUnavailableReason ? <p className="text-amber-700 dark:text-amber-300">{result.aiUnavailableReason}</p> : null}
+          </FeedbackMessage>
         ) : null}
 
-        {error ? (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
-            {error}
-          </div>
-        ) : null}
+        {error ? <FeedbackMessage variant="error">{error}</FeedbackMessage> : null}
       </CardContent>
     </Card>
   );
 }
-
 
