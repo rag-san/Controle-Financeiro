@@ -13,9 +13,9 @@ import { IncomeVsExpensesChartCard } from "@/src/features/reports/components/Inc
 import { KpiGrid } from "@/src/features/reports/components/KpiGrid";
 import { RecurringDetectedCard } from "@/src/features/reports/components/RecurringDetectedCard";
 import { ReportsFilters } from "@/src/features/reports/components/ReportsFilters";
-import { SankeyPlaceholderCard } from "@/src/features/reports/components/SankeyPlaceholderCard";
 import { SpendingByCategoryCard } from "@/src/features/reports/components/SpendingByCategoryCard";
 import { TopMerchantsCard } from "@/src/features/reports/components/TopMerchantsCard";
+import { SankeyCard } from "@/src/features/reports/sankey/SankeyCard";
 import type { ReportsPeriodPreset } from "@/src/features/reports/types";
 import { buildPeriodComparison } from "@/src/features/reports/utils/period";
 
@@ -227,7 +227,7 @@ export function ReportsPage(): React.JSX.Element {
             </>
           )}
 
-          <SankeyPlaceholderCard endpointHint="/api/reports" />
+          <SankeyCard model={model.sankey} />
         </div>
       )}
     </PageShell>

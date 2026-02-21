@@ -1,3 +1,5 @@
+import type { SankeyModel } from "@/src/features/reports/sankey/types";
+
 export type ReportsSankeyNode = {
   name: string;
   kind: "income" | "balance" | "expense";
@@ -89,7 +91,10 @@ export type ReportPreparedTransaction = {
   type: "income" | "expense";
   description: string;
   accountId: string;
+  accountName: string;
   categoryId: string | null;
+  parentCategoryId: string | null;
+  parentCategoryName: string | null;
   categoryName: string;
   categoryColor: string;
   categoryIcon: string | null;
@@ -103,5 +108,6 @@ export type ReportsModel = {
   topMerchants: ReportsMerchantSpend[];
   recurringDetected: ReportsRecurringDetected[];
   timeSeries: ReportsTimeSeriesPoint[];
+  sankey: SankeyModel;
   hasCurrentData: boolean;
 };

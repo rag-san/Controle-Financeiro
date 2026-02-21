@@ -8,6 +8,7 @@ import type {
   ReportsPeriodComparison,
   ReportsTotals
 } from "@/src/features/reports/types";
+import { buildSankeyModel } from "@/src/features/reports/sankey/buildSankeyModel";
 import { detectRecurringMerchants } from "@/src/features/reports/utils/recurringDetection";
 import { buildIncomeExpenseSeries } from "@/src/features/reports/utils/timeSeries";
 import { extractMerchantKey } from "@/src/features/insights/utils/merchant";
@@ -46,18 +47,29 @@ function inRange(timestamp: number, start: Date, end: Date): boolean {
 function resolveCategoryData(
   transaction: TransactionDTO,
   categoriesById: Map<string, CategoryDTO>
-): { id: string | null; name: string; color: string; icon: string | null } {
+): {
+  id: string | null;
+  name: string;
+  color: string;
+  icon: string | null;
+  parentId: string | null;
+  parentName: string | null;
+} {
   const category =
     (transaction.categoryId ? categoriesById.get(transaction.categoryId) : null) ??
     transaction.category ??
     null;
 
   const name = category?.name?.trim() || "Sem categoria";
+  const parentId = category?.parentId ?? null;
+  const parentName = parentId ? categoriesById.get(parentId)?.name?.trim() ?? null : null;
   return {
     id: category?.id ?? transaction.categoryId ?? null,
     name,
     color: category?.color || getCategoryColor(name),
-    icon: category?.icon ?? null
+    icon: category?.icon ?? null,
+    parentId,
+    parentName
   };
 }
 
@@ -90,6 +102,7 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
   const categoriesById = new Map(input.categories.map((category) => [category.id, category]));
 
   const prepared: ReportPreparedTransaction[] = [];
+  const currentPeriodTransactions: ReportPreparedTransaction[] = [];
   const currentTotals = createEmptyTotals();
   const previousTotals = createEmptyTotals();
   const categoryById = new Map<string, CategoryAccumulator>();
@@ -118,7 +131,10 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
       type: transaction.type,
       description: transaction.description,
       accountId: transaction.accountId,
+      accountName: transaction.account?.name?.trim() || "Conta",
       categoryId: category.id,
+      parentCategoryId: category.parentId,
+      parentCategoryName: category.parentName,
       categoryName: category.name,
       categoryColor: category.color,
       categoryIcon: category.icon,
@@ -130,6 +146,8 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
     const inPrevious = inRange(timestamp, input.period.previous.start, input.period.previous.end);
 
     if (inCurrent) {
+      currentPeriodTransactions.push(preparedTx);
+
       if (preparedTx.type === "income") {
         currentTotals.income = round2(currentTotals.income + absAmount);
       } else {
@@ -194,6 +212,10 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
 
   const timeSeries = buildIncomeExpenseSeries(prepared, input.period.current);
   const recurringDetected = detectRecurringMerchants(prepared, input.period.current, 5);
+  const sankey = buildSankeyModel(currentPeriodTransactions, {
+    topCategories: 10,
+    topSubcategoriesPerCategory: 3
+  });
   const hasCurrentData = finalizedCurrentTotals.income > 0 || finalizedCurrentTotals.expense > 0;
 
   return {
@@ -203,6 +225,7 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
     topMerchants,
     recurringDetected,
     timeSeries,
+    sankey,
     hasCurrentData
   };
 }
