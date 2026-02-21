@@ -1,0 +1,12 @@
+Date,Description,Amount,Account,ExternalId
+2025-11-30,Salario Novembro,5000.00,Conta Corrente,ext-001
+2025-12-03,PIX RECEBIDO JOAO,150.00,Conta Corrente,ext-002
+2025-12-05,PIX ENVIADO ALUGUEL,-1200.00,Conta Corrente,ext-003
+2025-12-12,Supermercado Central,-320.45,Conta Corrente,ext-004
+2026-01-07,Estorno Mercado,45.20,Conta Corrente,ext-005
+2026-01-08,Uber Trip - Centro,-36.90,Cartao,ext-006
+2026-01-09,Transferencia recebida Maria,800.00,Conta Corrente,ext-007
+2026-01-09,Transferencia recebida Maria,800.00,Conta Corrente,ext-007
+2026-02-14,Assinatura Streaming,-39.90,Cartao,ext-008
+2026-02-21,Reembolso Streaming,39.90,Cartao,ext-009
+2026-02-25,Compra Farmacia,-89.00,Conta Corrente,ext-010
