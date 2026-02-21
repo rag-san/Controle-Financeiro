@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Badge } from "@/src/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { CategoryPill } from "@/src/components/ui/CategoryPill";
 import { ProgressBar } from "@/src/components/ui/ProgressBar";
 import { formatBRL, formatPercent } from "@/src/utils/format";
 
@@ -86,10 +87,8 @@ export function TopCategoriesCard({
                   key={item.categoryId}
                   className="rounded-xl border border-slate-200/70 p-3 dark:border-border md:grid md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center md:gap-4 md:rounded-none md:border-0 md:p-0"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} aria-hidden="true" />
-                    {item.icon ? <span aria-hidden="true" className="text-sm leading-none">{item.icon}</span> : null}
-                    <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{item.name}</span>
+                  <div>
+                    <CategoryPill name={item.name} />
                   </div>
 
                   <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100 md:mt-0 md:text-right">

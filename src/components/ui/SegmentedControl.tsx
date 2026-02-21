@@ -42,7 +42,14 @@ export function SegmentedControl<Value extends string>({
   };
 
   return (
-    <div className={cn("inline-flex flex-wrap items-center gap-2", className)} role="group" aria-label={ariaLabel}>
+    <div
+      className={cn(
+        "inline-flex flex-wrap items-center gap-1 rounded-full bg-slate-100/80 p-1 dark:bg-slate-900/80",
+        className
+      )}
+      role="group"
+      aria-label={ariaLabel}
+    >
       {options.map((option, index) => {
         const isActive = option.value === value;
 
@@ -58,10 +65,10 @@ export function SegmentedControl<Value extends string>({
             aria-pressed={isActive}
             tabIndex={index === selectedIndex ? 0 : -1}
             className={cn(
-              "rounded-full px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+              "rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               isActive
                 ? "bg-blue-500 text-white shadow-sm"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                : "text-slate-600 hover:bg-slate-200/80 dark:text-slate-200 dark:hover:bg-slate-800"
             )}
           >
             {option.label}

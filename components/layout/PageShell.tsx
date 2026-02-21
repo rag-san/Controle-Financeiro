@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PageContainer } from "@/components/layout/PageContainer";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 
@@ -26,7 +27,9 @@ export function PageShell({ title, subtitle, actions, children }: PageShellProps
           onOpenSidebar={() => setOpenSidebar(true)}
         />
 
-        <main className="px-4 py-5 md:px-8 md:py-6">{children}</main>
+        <main>
+          <PageContainer>{children}</PageContainer>
+        </main>
       </div>
     </div>
   );

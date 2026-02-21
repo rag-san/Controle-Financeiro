@@ -1,15 +1,37 @@
 "use client";
 
-import { parseISO, startOfDay, startOfYear, subDays, subMonths, subYears } from "date-fns";
-import { useEffect, useMemo, useState } from "react";
+import {
+  format,
+  parseISO,
+  startOfDay,
+  startOfMonth,
+  startOfYear,
+  subDays,
+  subMonths,
+  subYears
+} from "date-fns";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
+import type { CategoryDTO, TransactionDTO } from "@/lib/types";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
 import { NetWorthCard, type NetWorthFilter } from "@/src/features/dashboard/cards/NetWorthCard";
 import { PartialResultCard } from "@/src/features/dashboard/cards/PartialResultCard";
 import { SpendingPaceCard } from "@/src/features/dashboard/cards/SpendingPaceCard";
 import { TopCategoriesCard } from "@/src/features/dashboard/cards/TopCategoriesCard";
+import { buildInsights } from "@/src/features/insights/buildInsights";
+import { NotificationsBell } from "@/src/features/insights/components/NotificationsBell";
+import type { Insight } from "@/src/features/insights/types";
+import { filterActiveInsights } from "@/src/features/insights/utils/filterActiveInsights";
+import {
+  loadDismissed,
+  loadSnoozed,
+  pruneExpiredSnoozed,
+  saveDismissed,
+  saveSnoozed
+} from "@/src/features/insights/utils/notificationsState";
+import { buildMonthComparison } from "@/src/features/insights/utils/period";
 import { formatMonthLabel } from "@/src/utils/format";
 
 type DashboardPayload = {
@@ -50,6 +72,40 @@ type DashboardPayload = {
     variation: number;
   }[];
 };
+
+type TransactionResponse = {
+  items: TransactionDTO[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalCount: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+  meta?: {
+    categories: CategoryDTO[];
+  };
+};
+
+const DISMISSED_STORAGE_KEY = "dismissed_insights";
+const SNOOZED_STORAGE_KEY = "snoozed_insights";
+
+function formatDateToInput(date: Date): string {
+  return format(date, "yyyy-MM-dd");
+}
+
+function resolveReferenceDate(referenceMonth: string): Date {
+  const [yearPart, monthPart] = referenceMonth.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return new Date();
+  }
+
+  return new Date(year, month - 1, 15);
+}
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -140,11 +196,60 @@ function DashboardLoading(): React.JSX.Element {
   );
 }
 
+async function fetchTransactionsForInsights(params: {
+  from: Date;
+  to: Date;
+  signal?: AbortSignal;
+}): Promise<{ items: TransactionDTO[]; categories: CategoryDTO[] }> {
+  const aggregatedItems: TransactionDTO[] = [];
+  let categories: CategoryDTO[] = [];
+  let page = 1;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    const query = new URLSearchParams({
+      period: "custom",
+      from: formatDateToInput(params.from),
+      to: params.to.toISOString(),
+      page: String(page),
+      pageSize: "200"
+    });
+    if (page === 1) {
+      query.set("includeMeta", "1");
+    }
+
+    const response = await fetch(`/api/transactions?${query.toString()}`, { signal: params.signal });
+    const { data, errorMessage } = await parseApiResponse<TransactionResponse | { error?: unknown }>(response);
+
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
+
+    if (!response.ok || !data || !("items" in data)) {
+      throw new Error(extractApiError(data, "Nao foi possivel carregar dados para insights."));
+    }
+
+    aggregatedItems.push(...data.items);
+    if (page === 1 && data.meta?.categories) {
+      categories = data.meta.categories;
+    }
+
+    hasNextPage = data.pagination.hasNextPage;
+    page += 1;
+  }
+
+  return { items: aggregatedItems, categories };
+}
+
 export function DashboardPage(): React.JSX.Element {
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [insights, setInsights] = useState<Insight[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(true);
   const [netWorthFilter, setNetWorthFilter] = useState<NetWorthFilter>("1W");
+  const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(new Set<string>());
+  const [snoozedInsights, setSnoozedInsights] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const load = async (): Promise<void> => {
@@ -177,6 +282,79 @@ export function DashboardPage(): React.JSX.Element {
     };
 
     void load();
+  }, []);
+
+  useEffect(() => {
+    const dismissed = loadDismissed(DISMISSED_STORAGE_KEY);
+    const snoozedRaw = loadSnoozed(SNOOZED_STORAGE_KEY);
+    const snoozedPruned = pruneExpiredSnoozed(snoozedRaw);
+
+    setDismissedInsights(dismissed);
+    setSnoozedInsights(snoozedPruned);
+
+    if (Object.keys(snoozedRaw).length !== Object.keys(snoozedPruned).length) {
+      saveSnoozed(SNOOZED_STORAGE_KEY, snoozedPruned);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!data) {
+      setInsights([]);
+      setInsightsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadInsights = async (): Promise<void> => {
+      setInsightsLoading(true);
+
+      try {
+        const referenceDate = resolveReferenceDate(data.referenceMonth);
+        const period = buildMonthComparison(referenceDate);
+        const historyStart = startOfMonth(subMonths(period.currentPeriod.start, 6));
+        const historyEnd = period.currentPeriod.end;
+
+        const insightsData = await fetchTransactionsForInsights({
+          from: historyStart,
+          to: historyEnd,
+          signal: controller.signal
+        });
+
+        const computed = buildInsights({
+          transactions: insightsData.items,
+          categories: insightsData.categories,
+          period,
+          today: new Date()
+        });
+
+        setInsights(computed);
+      } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+          return;
+        }
+        setInsights([]);
+      } finally {
+        setInsightsLoading(false);
+      }
+    };
+
+    void loadInsights();
+    return () => controller.abort();
+  }, [data]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setSnoozedInsights((current) => {
+        const pruned = pruneExpiredSnoozed(current);
+        if (Object.keys(pruned).length !== Object.keys(current).length) {
+          saveSnoozed(SNOOZED_STORAGE_KEY, pruned);
+          return pruned;
+        }
+        return current;
+      });
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
   const dashboardView = useMemo(() => {
@@ -231,8 +409,58 @@ export function DashboardPage(): React.JSX.Element {
     };
   }, [data, netWorthFilter]);
 
+  const handleDismissInsight = useCallback((insightId: string): void => {
+    setDismissedInsights((current) => {
+      const next = new Set(current);
+      next.add(insightId);
+      saveDismissed(DISMISSED_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const handleSnoozeInsight = useCallback((insightId: string, days: 1 | 7): void => {
+    const until = Date.now() + days * 24 * 60 * 60 * 1000;
+    setSnoozedInsights((current) => {
+      const next = { ...current, [insightId]: until };
+      saveSnoozed(SNOOZED_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const handleClearDismissed = useCallback((): void => {
+    const next = new Set<string>();
+    setDismissedInsights(next);
+    saveDismissed(DISMISSED_STORAGE_KEY, next);
+  }, []);
+
+  const activeNotifications = useMemo(() => {
+    const prunedSnoozed = pruneExpiredSnoozed(snoozedInsights);
+    return filterActiveInsights(insights, dismissedInsights, prunedSnoozed);
+  }, [dismissedInsights, insights, snoozedInsights]);
+
+  const actions = useMemo(
+    () => (
+      <NotificationsBell
+        insights={activeNotifications}
+        isLoading={insightsLoading}
+        dismissedCount={dismissedInsights.size}
+        onDismissInsight={handleDismissInsight}
+        onSnoozeInsight={handleSnoozeInsight}
+        onClearDismissed={handleClearDismissed}
+      />
+    ),
+    [
+      activeNotifications,
+      dismissedInsights.size,
+      handleClearDismissed,
+      handleDismissInsight,
+      handleSnoozeInsight,
+      insightsLoading
+    ]
+  );
+
   return (
-    <PageShell title="Dashboard" subtitle="Aqui esta uma visao geral das suas financas">
+    <PageShell title="Dashboard" subtitle="Aqui esta uma visao geral das suas financas" actions={actions}>
       {loading ? (
         <DashboardLoading />
       ) : !data || !dashboardView ? (

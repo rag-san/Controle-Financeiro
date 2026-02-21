@@ -11,11 +11,11 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { Select } from "@/components/ui/select";
-import { CategoryBadge } from "@/components/transactions/CategoryBadge";
 import { TransactionRowActions } from "@/components/transactions/TransactionRowActions";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
+import { CategoryPill } from "@/src/components/ui/CategoryPill";
 
 type TransactionsTableProps = {
   items: TransactionDTO[];
@@ -84,10 +84,7 @@ export function TransactionsTable({
                   </TableCell>
                   <TableCell>
                     <div className="space-y-1">
-                      <CategoryBadge
-                        name={transaction.category?.name ?? "Sem categoria"}
-                        color={transaction.category?.color}
-                      />
+                      <CategoryPill name={transaction.category?.name ?? "Sem categoria"} size="sm" />
                       <Select
                         className="h-8 text-xs"
                         value={transaction.categoryId ?? ""}
