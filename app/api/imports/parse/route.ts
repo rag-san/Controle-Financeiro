@@ -18,6 +18,8 @@ const mappingSchema = z.object({
   message: "Selecione Valor ou Debito/Credito no mapeamento"
 });
 
+const MAX_IMPORT_FILE_BYTES = 12 * 1024 * 1024;
+
 function inferSourceType(filename: string, content: string): "csv" | "ofx" | "pdf" {
   const lowered = filename.toLowerCase();
   if (lowered.endsWith(".pdf") || content.includes("%PDF")) {
@@ -40,6 +42,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       if (!(file instanceof File)) {
         return NextResponse.json({ error: "Arquivo nao enviado" }, { status: 400 });
+      }
+
+      if (!Number.isFinite(file.size) || file.size <= 0) {
+        return NextResponse.json({ error: "Arquivo invalido ou vazio" }, { status: 400 });
+      }
+
+      if (file.size > MAX_IMPORT_FILE_BYTES) {
+        return NextResponse.json(
+          {
+            error: `Arquivo excede o limite de ${(MAX_IMPORT_FILE_BYTES / (1024 * 1024)).toFixed(0)} MB`
+          },
+          { status: 413 }
+        );
       }
 
       const buffer = Buffer.from(await file.arrayBuffer());

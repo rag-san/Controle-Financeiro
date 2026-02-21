@@ -6,6 +6,8 @@
     "dev": "next dev --turbopack",
     "dev:turbo": "next dev --turbopack",
     "dev:webpack": "next dev",
+    "seed": "tsx scripts/seed.ts",
+    "validate": "tsx scripts/validate-backend-flow.ts",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run lint",
     "build": "next build --no-lint",

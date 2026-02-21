@@ -21,7 +21,12 @@ export async function PATCH(
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
-  const payload = await request.json();
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+  }
   const parsed = updateRecurringSchema.safeParse(payload);
 
   if (!parsed.success) {

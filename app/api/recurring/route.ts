@@ -40,7 +40,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const auth = await requireUser(request);
   if (auth instanceof NextResponse) return auth;
 
-  const payload = await request.json();
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+  }
   const parsed = createRecurringSchema.safeParse(payload);
 
   if (!parsed.success) {
