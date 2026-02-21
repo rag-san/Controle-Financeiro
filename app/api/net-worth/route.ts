@@ -4,14 +4,28 @@ import { requireUser } from "@/lib/api-auth";
 import { getCache, setCache } from "@/lib/cache";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { privateCacheHeaders } from "@/lib/http";
+import { parseStrictMoneyInput } from "@/lib/money";
+import { isValidFlexibleDate, parseFlexibleDate } from "@/lib/normalize";
 import { withRouteProfiling } from "@/lib/profiling";
 import { netWorthRepo } from "@/lib/server/net-worth.repo";
+
+const moneyInputSchema = z
+  .union([z.number(), z.string()])
+  .transform((value) => parseStrictMoneyInput(value))
+  .refine((value): value is number => value !== null, {
+    message: "Valor invalido"
+  });
 
 const createEntrySchema = z.object({
   type: z.enum(["asset", "debt"]),
   name: z.string().min(2).max(100),
-  value: z.union([z.number(), z.string()]),
-  date: z.string().min(8),
+  value: moneyInputSchema,
+  date: z
+    .string()
+    .min(8)
+    .refine((value) => isValidFlexibleDate(value), {
+      message: "Data invalida"
+    }),
   group: z.string().max(80).optional().nullable()
 });
 
@@ -55,8 +69,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     userId: auth.userId,
     type: parsed.data.type,
     name: parsed.data.name,
-    value: Number(parsed.data.value),
-    date: new Date(parsed.data.date),
+    value: parsed.data.value,
+    date: parseFlexibleDate(parsed.data.date),
     group: parsed.data.group
   });
 

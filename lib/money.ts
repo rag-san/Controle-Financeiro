@@ -52,3 +52,21 @@ export function parseMoneyInput(value: string | number): number {
 
   return Number.isFinite(parsed) ? parsed : 0;
 }
+
+export function parseStrictMoneyInput(value: string | number): number | null {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (!/\d/.test(trimmed)) {
+    return null;
+  }
+
+  const parsed = parseMoneyInput(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}

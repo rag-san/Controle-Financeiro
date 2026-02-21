@@ -2,14 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
-import { normalizeDescription, parseFlexibleDate } from "@/lib/normalize";
+import { isValidFlexibleDate, normalizeDescription, parseFlexibleDate } from "@/lib/normalize";
 import { parseMoneyInput } from "@/lib/money";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 const updateTransactionSchema = z.object({
   accountId: z.string().min(6).max(128).optional(),
   categoryId: z.string().min(6).max(128).nullable().optional(),
-  date: z.string().optional(),
+  date: z
+    .string()
+    .optional()
+    .refine((value) => value === undefined || isValidFlexibleDate(value), {
+      message: "Data invalida"
+    }),
   description: z.string().min(2).max(180).optional(),
   amount: z.union([z.number(), z.string()]).optional(),
   type: z.enum(["income", "expense"]).optional(),

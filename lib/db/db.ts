@@ -2,8 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
-const DB_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIR, "finance.db");
+function resolveDbPath(): string {
+  const configuredPath = process.env.FINANCE_DB_PATH?.trim();
+  if (!configuredPath) {
+    return path.join(process.cwd(), "data", "finance.db");
+  }
+
+  return path.isAbsolute(configuredPath) ? configuredPath : path.join(process.cwd(), configuredPath);
+}
+
+const DB_PATH = resolveDbPath();
+const DB_DIR = path.dirname(DB_PATH);
 
 type GlobalDb = typeof globalThis & {
   __finance_sqlite__?: Database.Database;
@@ -35,4 +44,3 @@ export function getDb(): Database.Database {
 
 export const db = getDb();
 export const DB_FILE_PATH = DB_PATH;
-

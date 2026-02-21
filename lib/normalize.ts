@@ -64,6 +64,15 @@ export function parseFlexibleDate(value: string | Date): Date {
   return fallback;
 }
 
+export function isValidFlexibleDate(value: string | Date): boolean {
+  try {
+    const parsed = parseFlexibleDate(value);
+    return Number.isFinite(parsed.getTime());
+  } catch {
+    return false;
+  }
+}
+
 export function inferTypeFromAmount(amount: number): "income" | "expense" {
   return amount >= 0 ? "income" : "expense";
 }

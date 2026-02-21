@@ -2,13 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
+import { parseStrictMoneyInput } from "@/lib/money";
+import { isValidFlexibleDate, parseFlexibleDate } from "@/lib/normalize";
 import { netWorthRepo } from "@/lib/server/net-worth.repo";
+
+const moneyInputSchema = z
+  .union([z.number(), z.string()])
+  .transform((value) => parseStrictMoneyInput(value))
+  .refine((value): value is number => value !== null, {
+    message: "Valor invalido"
+  });
 
 const updateSchema = z.object({
   type: z.enum(["asset", "debt"]).optional(),
   name: z.string().min(2).max(100).optional(),
-  value: z.union([z.number(), z.string()]).optional(),
-  date: z.string().optional(),
+  value: moneyInputSchema.optional(),
+  date: z
+    .string()
+    .optional()
+    .refine((value) => value === undefined || isValidFlexibleDate(value), {
+      message: "Data invalida"
+    }),
   group: z.string().max(80).optional().nullable()
 });
 
@@ -37,8 +51,8 @@ export async function PATCH(
     userId: auth.userId,
     type: parsed.data.type,
     name: parsed.data.name,
-    value: parsed.data.value !== undefined ? Number(parsed.data.value) : undefined,
-    date: parsed.data.date ? new Date(parsed.data.date) : undefined,
+    value: parsed.data.value,
+    date: parsed.data.date ? parseFlexibleDate(parsed.data.date) : undefined,
     group: parsed.data.group
   });
 

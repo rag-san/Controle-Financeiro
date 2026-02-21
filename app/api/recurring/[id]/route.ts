@@ -2,15 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
+import { parseStrictMoneyInput } from "@/lib/money";
+import { isValidFlexibleDate, parseFlexibleDate } from "@/lib/normalize";
 import { recurringRepo } from "@/lib/server/recurring.repo";
+
+const moneyInputSchema = z
+  .union([z.number(), z.string()])
+  .transform((value) => parseStrictMoneyInput(value))
+  .refine((value): value is number => value !== null, {
+    message: "Valor invalido"
+  });
 
 const updateRecurringSchema = z.object({
   name: z.string().min(2).max(100).optional(),
-  amount: z.union([z.number(), z.string()]).optional(),
+  amount: moneyInputSchema.optional(),
   dueDay: z.number().int().min(1).max(31).optional(),
   categoryId: z.string().min(6).max(128).optional().nullable(),
   status: z.enum(["active", "inactive"]).optional(),
-  lastPaidAt: z.string().optional().nullable()
+  lastPaidAt: z
+    .string()
+    .optional()
+    .nullable()
+    .refine((value) => value === null || value === undefined || isValidFlexibleDate(value), {
+      message: "Data de pagamento invalida"
+    })
 });
 
 export async function PATCH(
@@ -37,11 +52,16 @@ export async function PATCH(
     id,
     userId: auth.userId,
     name: parsed.data.name,
-    amount: parsed.data.amount !== undefined ? Number(parsed.data.amount) : undefined,
+    amount: parsed.data.amount,
     dueDay: parsed.data.dueDay,
     categoryId: parsed.data.categoryId,
     status: parsed.data.status,
-    lastPaidAt: parsed.data.lastPaidAt ? new Date(parsed.data.lastPaidAt) : parsed.data.lastPaidAt === null ? null : undefined
+    lastPaidAt:
+      parsed.data.lastPaidAt
+        ? parseFlexibleDate(parsed.data.lastPaidAt)
+        : parsed.data.lastPaidAt === null
+          ? null
+          : undefined
   });
 
   if (!recurring) {

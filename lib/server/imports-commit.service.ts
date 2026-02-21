@@ -9,9 +9,11 @@ import { categoryRulesRepo } from "@/lib/server/category-rules.repo";
 import { importsRepo } from "@/lib/server/imports.repo";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
+const MAX_IMPORT_COMMIT_ROWS = 5000;
+
 export const importCommitPayloadSchema = z.object({
   sourceType: z.enum(["csv", "ofx", "pdf", "manual"]),
-  fileName: z.string().min(1),
+  fileName: z.string().min(1).max(255),
   defaultAccountId: z.string().min(6).max(128).optional(),
   mapping: z.record(z.unknown()).optional(),
   applyRules: z.boolean().optional().default(true),
@@ -28,7 +30,7 @@ export const importCommitPayloadSchema = z.object({
       externalId: z.string().optional(),
       raw: z.record(z.unknown()).optional()
     })
-  )
+  ).max(MAX_IMPORT_COMMIT_ROWS)
 });
 
 type ImportCommitPayload = z.infer<typeof importCommitPayloadSchema>;

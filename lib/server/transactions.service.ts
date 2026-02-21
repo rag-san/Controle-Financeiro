@@ -1,14 +1,21 @@
 import { addDays, endOfMonth, startOfMonth } from "date-fns";
 import { z } from "zod";
-import { normalizeDescription, normalizeTransaction } from "@/lib/normalize";
+import { isValidFlexibleDate, normalizeDescription, normalizeTransaction, parseFlexibleDate } from "@/lib/normalize";
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
+const flexibleDateSchema = z
+  .string()
+  .min(8)
+  .refine((value) => isValidFlexibleDate(value), {
+    message: "Data invalida"
+  });
+
 export const createTransactionSchema = z.object({
   accountId: z.string().min(6).max(128),
   categoryId: z.string().min(6).max(128).optional().nullable(),
-  date: z.string().min(8),
+  date: flexibleDateSchema,
   description: z.string().min(2).max(180),
   amount: z.union([z.number(), z.string()]),
   type: z.enum(["income", "expense"]).optional(),
@@ -26,6 +33,39 @@ export const transactionsQuerySchema = z.object({
   includeMeta: z.coerce.boolean().optional().default(false),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(10).max(200).default(50)
+}).superRefine((value, context) => {
+  if (value.period !== "custom") {
+    return;
+  }
+
+  if (value.from && !isValidFlexibleDate(value.from)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["from"],
+      message: "Data inicial invalida"
+    });
+  }
+
+  if (value.to && !isValidFlexibleDate(value.to)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["to"],
+      message: "Data final invalida"
+    });
+  }
+
+  if (value.from && value.to && isValidFlexibleDate(value.from) && isValidFlexibleDate(value.to)) {
+    const from = parseFlexibleDate(value.from);
+    const to = parseFlexibleDate(value.to);
+
+    if (from.getTime() > to.getTime()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: "Data final deve ser maior ou igual a data inicial"
+      });
+    }
+  }
 });
 
 type TransactionsQuery = z.infer<typeof transactionsQuerySchema>;
@@ -38,8 +78,8 @@ function buildDateRange(params: TransactionsQuery): { gte?: Date; lte?: Date } {
 
   if (params.period === "custom") {
     return {
-      gte: params.from ? new Date(params.from) : undefined,
-      lte: params.to ? new Date(params.to) : undefined
+      gte: params.from ? parseFlexibleDate(params.from) : undefined,
+      lte: params.to ? parseFlexibleDate(params.to) : undefined
     };
   }
 

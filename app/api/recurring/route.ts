@@ -4,16 +4,31 @@ import { requireUser } from "@/lib/api-auth";
 import { getCache, setCache } from "@/lib/cache";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { privateCacheHeaders } from "@/lib/http";
+import { parseStrictMoneyInput } from "@/lib/money";
+import { isValidFlexibleDate, parseFlexibleDate } from "@/lib/normalize";
 import { withRouteProfiling } from "@/lib/profiling";
 import { recurringRepo } from "@/lib/server/recurring.repo";
 
+const moneyInputSchema = z
+  .union([z.number(), z.string()])
+  .transform((value) => parseStrictMoneyInput(value))
+  .refine((value): value is number => value !== null, {
+    message: "Valor invalido"
+  });
+
 const createRecurringSchema = z.object({
   name: z.string().min(2).max(100),
-  amount: z.union([z.number(), z.string()]),
+  amount: moneyInputSchema,
   dueDay: z.number().int().min(1).max(31),
   categoryId: z.string().min(6).max(128).optional().nullable(),
   status: z.enum(["active", "inactive"]).default("active"),
-  lastPaidAt: z.string().optional().nullable()
+  lastPaidAt: z
+    .string()
+    .optional()
+    .nullable()
+    .refine((value) => value === null || value === undefined || isValidFlexibleDate(value), {
+      message: "Data de pagamento invalida"
+    })
 });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -55,11 +70,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const recurring = recurringRepo.create({
     userId: auth.userId,
     name: parsed.data.name,
-    amount: Number(parsed.data.amount),
+    amount: parsed.data.amount,
     dueDay: parsed.data.dueDay,
     categoryId: parsed.data.categoryId,
     status: parsed.data.status,
-    lastPaidAt: parsed.data.lastPaidAt ? new Date(parsed.data.lastPaidAt) : null
+    lastPaidAt: parsed.data.lastPaidAt ? parseFlexibleDate(parsed.data.lastPaidAt) : null
   });
 
   if (!recurring) {

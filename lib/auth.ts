@@ -2,12 +2,16 @@ import { getServerSession, type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { clearRateLimit, consumeRateLimit } from "@/lib/rate-limit";
 import { usersRepo } from "@/lib/server/users.repo";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6)
 });
+
+const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 8;
+const LOGIN_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -29,7 +33,19 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const user = usersRepo.findByEmail(parsed.data.email.toLowerCase());
+        const normalizedEmail = parsed.data.email.toLowerCase().trim();
+        const rateLimitKey = `auth:login:${normalizedEmail}`;
+        const rateLimit = consumeRateLimit({
+          key: rateLimitKey,
+          limit: LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+          windowMs: LOGIN_RATE_LIMIT_WINDOW_MS
+        });
+
+        if (!rateLimit.ok) {
+          return null;
+        }
+
+        const user = usersRepo.findByEmail(normalizedEmail);
 
         if (!user?.password) {
           return null;
@@ -39,6 +55,8 @@ export const authOptions: NextAuthOptions = {
         if (!validPassword) {
           return null;
         }
+
+        clearRateLimit(rateLimitKey);
 
         return {
           id: user.id,
