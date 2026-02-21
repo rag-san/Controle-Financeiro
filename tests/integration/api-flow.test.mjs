@@ -307,6 +307,49 @@ test("critical backend flow via API", async () => {
   const transactionId = createdTransaction.payload?.id;
   assert.ok(typeof transactionId === "string");
 
+  const secondUserCookies = new Map();
+  const secondUserEmail = `integration.second.${uniqueToken}@example.com`;
+  const secondRegister = await apiRequest("/api/auth/register", {
+    method: "POST",
+    json: {
+      name: "Second Integration User",
+      email: secondUserEmail,
+      password: userPassword,
+      confirmPassword: userPassword
+    }
+  });
+  assert.equal(secondRegister.status, 201);
+
+  const secondCsrf = await apiRequest("/api/auth/csrf", { cookies: secondUserCookies });
+  assert.equal(secondCsrf.status, 200);
+
+  const secondLoginForm = new URLSearchParams({
+    csrfToken: secondCsrf.payload.csrfToken,
+    email: secondUserEmail,
+    password: userPassword,
+    callbackUrl: `${baseUrl}/dashboard`,
+    json: "true"
+  });
+
+  const secondLogin = await apiRequest("/api/auth/callback/credentials?json=true", {
+    method: "POST",
+    cookies: secondUserCookies,
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: secondLoginForm.toString()
+  });
+  assert.ok([200, 302].includes(secondLogin.status));
+
+  const crossUserMutation = await apiRequest(`/api/transactions/${transactionId}`, {
+    method: "PATCH",
+    cookies: secondUserCookies,
+    json: {
+      description: "Tentativa de acesso cruzado"
+    }
+  });
+  assert.equal(crossUserMutation.status, 404);
+
   const categorizedTransaction = await apiRequest(`/api/transactions/${transactionId}`, {
     method: "PATCH",
     cookies: authCookies,
