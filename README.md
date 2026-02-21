@@ -1,130 +1,141 @@
-# Controle Financeiro (Next.js + SQLite local)
+# Controle Financeiro v1.0.0
 
-Aplicativo de controle financeiro com App Router, NextAuth e persistência local em SQLite via `better-sqlite3` (sem Prisma/ORM).
+Aplicacao full-stack de controle financeiro pessoal com Next.js + SQLite local.
+
+## Visao geral
+
+- Frontend e backend no mesmo projeto (Next App Router + API Routes)
+- Autenticacao com NextAuth (Credentials)
+- Persistencia local com SQLite (`better-sqlite3`)
+- Importacao de extrato por CSV, OFX e PDF
+- Dashboard, relatorios, contas, categorias, recorrencias e patrimonio
 
 ## Stack
 
-- Next.js (App Router)
-- NextAuth (Credentials)
-- SQLite local (`better-sqlite3`)
+- Next.js 15
+- React 19
+- TypeScript
+- NextAuth
+- SQLite (`better-sqlite3`)
+- Zod
 - Tailwind CSS
 - Recharts
-- Zod
 
-## Estrutura do projeto
+## Arquitetura (resumo)
 
-```txt
-app/                 # pages e rotas API (Next App Router)
-components/          # componentes de UI e blocos de tela
-lib/
-  db/                # conexão SQLite, migração e init
-  server/            # repositórios SQL (accounts, transactions, dashboard, ...)
-  *.ts               # utilitários compartilhados (auth, cache, parse, normalize, etc)
-styles/              # estilos globais
-types/               # tipos globais (NextAuth e afins)
-data/                # banco local finance.db (criado em runtime)
-```
+Fluxo principal:
 
-## Onde fica o banco
+`UI (app/(app)/*)` -> `API (app/api/*)` -> `services/repos (lib/server/*)` -> `SQLite (data/finance.db)`
 
-- Arquivo: `data/finance.db`
-- O diretório `data/` é criado automaticamente.
-- Tabelas e índices são criados automaticamente na inicialização da API.
+Modulos centrais:
 
-## Como rodar
+- `app/(app)` paginas autenticadas da aplicacao
+- `app/api` endpoints HTTP
+- `lib/server/*.repo.ts` acesso a dados e queries
+- `lib/server/*.service.ts` regras de dominio
+- `lib/db/*` conexao, inicializacao e migracoes
+- `components/*` componentes visuais compartilhados
+- `src/features/*` modulos de tela/feature
+
+## Requisitos
+
+- Node.js 20+
+- npm 10+
+
+## Setup rapido
+
+1. Instale dependencias:
 
 ```bash
 npm install
+```
+
+2. Crie o arquivo de ambiente a partir do exemplo:
+
+Linux/macOS:
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+3. Defina pelo menos um `NEXTAUTH_SECRET` forte no `.env`.
+
+4. Rode em desenvolvimento:
+
+```bash
 npm run dev
 ```
 
-## Ciclo rapido (dia a dia)
+## Variaveis de ambiente
+
+Arquivo de referencia: `.env.example`
+
+- `NEXTAUTH_SECRET`: segredo da sessao/auth (obrigatorio em producao)
+- `NEXTAUTH_URL`: URL base da aplicacao (ex.: `http://localhost:3000`)
+- `FINANCE_DB_PATH`: caminho do sqlite (padrao: `data/finance.db`)
+- `API_PROFILING`: ativa profiling de rotas (`0` ou `1`)
+- `API_PROFILING_SLOW_QUERY_MS`: limite para considerar query lenta
+- `OLLAMA_URL`: endpoint do Ollama (IA local opcional)
+- `OLLAMA_MODEL`: modelo usado para sugestao de categoria
+- `LOCAL_AI_TIMEOUT_MS`: timeout da chamada de IA local
+- `LOCAL_AI_ABORT_RETRIES`: tentativas extras em timeout
+- `LOCAL_AI_MIN_CONFIDENCE`: confianca minima para aceitar sugestao
+
+## Scripts
+
+- `npm run dev`: desenvolvimento (Turbopack)
+- `npm run dev:webpack`: desenvolvimento com webpack
+- `npm run typecheck`: TypeScript sem emitir arquivos
+- `npm run lint`: ESLint (Next)
+- `npm run verify`: typecheck + lint
+- `npm run test`: testes de integracao
+- `npm run seed`: seed deterministico para dados de backend
+- `npm run validate`: validacao de fluxo backend
+- `npm run build`: build de producao
+- `npm run build:full`: verify + build
+- `npm run start`: inicia app em modo producao
+
+## Banco de dados e dados locais
+
+- Banco padrao: `data/finance.db`
+- Schema/migracoes executam na inicializacao da API
+- Arquivos de banco (`data/*.db`, `*.db-wal`, `*.db-shm`) estao no `.gitignore`
+- O `.env` tambem esta no `.gitignore`
+
+## Testes e validacao
+
+Comandos principais:
 
 ```bash
 npm run verify
-```
-
-- `verify` roda apenas TypeScript + ESLint (bem mais rapido que build completo).
-
-## Build
-
-```bash
-npm run verify
+npm run test
 npm run build
-npm run start
 ```
 
-- `build` agora roda com `--no-lint` para reduzir tempo.
-- Se quiser validação e build em um comando:
+Documentacao de testes:
 
-```bash
-npm run build:full
-```
-
-## Resetar o banco
-
-Pare o servidor e apague o arquivo:
-
-```bash
-rm data/finance.db
-```
-
-No Windows PowerShell:
-
-```powershell
-Remove-Item .\data\finance.db -Force
-```
-
-Ao iniciar novamente, o schema é recriado automaticamente.
+- `TESTING.md`
 
 ## Endpoints principais
 
-- `GET|POST /api/transactions`
-- `PATCH|DELETE /api/transactions/:id`
-- `GET|POST /api/categories`
-- `PATCH|DELETE /api/categories/:id`
-- `GET /api/dashboard`
-- `GET /api/dashboard/summary?from=ISO&to=ISO`
-- `POST /api/categories/bootstrap` (restaura categorias/regras padrao)
-
-## Exemplos (curl)
-
-Obs: endpoints autenticados exigem sessão (cookie do NextAuth).
-
-Criar categoria:
-
-```bash
-curl -X POST http://localhost:3000/api/categories \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Mercado","color":"#22c55e","icon":"ShoppingCart"}'
-```
-
-Criar transação:
-
-```bash
-curl -X POST http://localhost:3000/api/transactions \
-  -H "Content-Type: application/json" \
-  -d '{"accountId":"<account-id>","date":"2026-02-15","description":"Supermercado","amount":-189.90,"categoryId":"<category-id>"}'
-```
-
-Resumo dashboard por período:
-
-```bash
-curl "http://localhost:3000/api/dashboard/summary?from=2026-02-01T00:00:00.000Z&to=2026-02-28T23:59:59.999Z"
-```
-
-Restaurar categorias padrao:
-
-```bash
-curl -X POST http://localhost:3000/api/categories/bootstrap
-```
+- Auth: `/api/auth/[...nextauth]`, `/api/auth/register`
+- Transacoes: `/api/transactions`, `/api/transactions/:id`
+- Importacao: `/api/imports`, `/api/imports/parse`, `/api/imports/commit`
+- Dashboard: `/api/dashboard`, `/api/dashboard/summary`
+- Categorias: `/api/categories`, `/api/categories/:id`, `/api/categories/rules`
+- Contas: `/api/accounts`, `/api/accounts/:id`
+- Relatorios: `/api/reports`
+- Recorrencias: `/api/recurring`, `/api/recurring/:id`
+- Patrimonio: `/api/net-worth`, `/api/net-worth/:id`
 
 ## IA local opcional (Ollama)
 
-- No import wizard, habilite `Usar IA local (opcional)`.
-- Configure no `.env`:
-  - `OLLAMA_URL`
-  - `OLLAMA_MODEL`
-  - `LOCAL_AI_TIMEOUT_MS`
-  - `LOCAL_AI_MIN_CONFIDENCE`
-- A IA local so e usada quando nenhuma regra (`contains/regex`) casar.
+- A IA local pode ajudar na categorizacao durante importacao.
+- Ative no wizard de importacao.
+- Sem Ollama, o sistema continua funcionando com regras locais.
