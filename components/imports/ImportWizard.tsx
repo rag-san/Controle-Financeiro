@@ -18,26 +18,94 @@ import { useToast } from "@/src/components/ui/ToastProvider";
 
 type ParsedRow = {
   date: string;
+  balanceAfter?: number | null;
+  transactionKindRaw?: string;
+  counterpartyRaw?: string;
+  transactionKindNorm?: string;
+  counterpartyNorm?: string;
+  merchantKey?: string;
+  sourceType?: "csv" | "ofx" | "pdf" | "manual";
+  documentType?: string | null;
   description: string;
+  normalizedDescription?: string;
   amount: number;
   type: "income" | "expense";
   accountHint?: string;
   accountId?: string;
   categoryId?: string | null;
   externalId?: string;
-  raw?: Record<string, string>;
+  raw?: Record<string, unknown>;
+};
+
+type PreviewRow = {
+  line: number;
+  commitIndex: number | null;
+  status: "ok" | "ignored" | "error";
+  reasonCode: string;
+  reason: string;
+  date: string | null;
+  description: string;
+  transactionKind: string;
+  counterparty: string;
+  merchantKey: string;
+  amount: number | null;
+  type: "income" | "expense" | null;
+  accountHint?: string;
+};
+
+type MappingField =
+  | "date"
+  | "description"
+  | "history"
+  | "amount"
+  | "debit"
+  | "credit"
+  | "type"
+  | "account"
+  | "balanceAfter";
+
+type CategoryOption = {
+  id: string;
+  name: string;
+};
+
+type MappingConfidence = {
+  overall: "alta" | "media" | "baixa";
+  missingRequired: string[];
+  fields: {
+    date: "alta" | "media" | "baixa";
+    description: "alta" | "media" | "baixa";
+    amount: "alta" | "media" | "baixa";
+  };
 };
 
 type ParseResponse = {
   sourceType: "csv" | "ofx" | "pdf";
+  documentType?: "bank_statement" | "credit_card_invoice" | "unknown";
+  issuerProfile?: string;
+  metadata?: Record<string, string | number | boolean | null>;
   needsMapping: boolean;
   columns: string[];
-  suggestedMapping?: Record<string, string>;
-  appliedMapping?: Record<string, string>;
-  preview: ParsedRow[];
+  suggestedMapping?: Partial<Record<MappingField, string>>;
+  suggestedMappingConfidence?: MappingConfidence;
+  appliedMapping?: Partial<Record<MappingField, string>>;
+  preview: PreviewRow[];
   rows?: ParsedRow[];
   totalRows: number;
   validRows?: number;
+  ignoredRows?: number;
+  errorRows?: number;
+  reasons?: Record<string, number>;
+  mappingDiagnostics?: {
+    mappable: boolean;
+    missingRequired: string[];
+    message: string;
+  };
+  supported?: boolean;
+  phase?: string;
+  message?: string;
+  code?: string;
+  error?: string;
 };
 
 type ImportWizardProps = {
@@ -49,6 +117,15 @@ type ImportWizardProps = {
 type ImportCommitResult = {
   totalImported: number;
   totalSkipped: number;
+  duplicates?: number;
+  invalidRows?: number;
+  summary?: {
+    imported: number;
+    skipped: number;
+    duplicates: number;
+    invalid: number;
+  };
+  deterministicCategorizedCount?: number;
   aiCategorizedCount?: number;
   aiUnavailableReason?: string | null;
   importedRange?: {
@@ -66,19 +143,22 @@ function formatShortDate(value: string): string {
 export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportWizardProps): React.JSX.Element {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
+  const [pdfPassword, setPdfPassword] = useState("");
+  const [errorCode, setErrorCode] = useState("");
   const [parseData, setParseData] = useState<ParseResponse | null>(null);
   const [mapping, setMapping] = useState({
     date: "",
     description: "",
+    history: "",
     amount: "",
     debit: "",
     credit: "",
     type: "",
-    account: ""
+    account: "",
+    balanceAfter: ""
   });
   const [defaultAccountId, setDefaultAccountId] = useState("");
   const [applyRules, setApplyRules] = useState(true);
-  const [applyLocalAi, setApplyLocalAi] = useState(false);
   const [loading, setLoading] = useState(false);
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [showQuickAccountForm, setShowQuickAccountForm] = useState(false);
@@ -91,6 +171,9 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
   });
   const [result, setResult] = useState<ImportCommitResult | null>(null);
   const [error, setError] = useState("");
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [manualCategoryByCommitIndex, setManualCategoryByCommitIndex] = useState<Record<number, string>>({});
+  const [saveRuleByCommitIndex, setSaveRuleByCommitIndex] = useState<Record<number, boolean>>({});
 
   const mergedAccounts = useMemo(() => {
     const byId = new Map<string, AccountDTO>();
@@ -121,7 +204,58 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     };
   }, [showQuickAccountForm]);
 
-  const effectiveRows = parseData?.rows ?? parseData?.preview ?? [];
+  useEffect(() => {
+    const run = async (): Promise<void> => {
+      try {
+        const response = await fetch("/api/categories");
+        const { data, errorMessage } = await parseApiResponse<Array<{ id: string; name: string }>>(response);
+        if (errorMessage || !response.ok || !data) {
+          return;
+        }
+
+        setCategories(
+          data
+            .map((item) => ({ id: item.id, name: item.name }))
+            .filter((item) => Boolean(item.id && item.name))
+        );
+      } catch {
+        // fallback silencioso no wizard
+      }
+    };
+
+    void run();
+  }, []);
+
+  useEffect(() => {
+    if (!parseData?.rows || parseData.rows.length === 0) {
+      setManualCategoryByCommitIndex({});
+      setSaveRuleByCommitIndex({});
+      return;
+    }
+
+    const initialCategories: Record<number, string> = {};
+    parseData.rows.forEach((row, index) => {
+      if (row.categoryId) {
+        initialCategories[index] = row.categoryId;
+      }
+    });
+
+    setManualCategoryByCommitIndex(initialCategories);
+    setSaveRuleByCommitIndex({});
+  }, [parseData]);
+
+  const commitRows = parseData?.rows ?? [];
+  const isPdfUpload = Boolean(file?.name.toLowerCase().endsWith(".pdf"));
+  const needsPdfPassword =
+    errorCode === "pdf_password_required" || errorCode === "pdf_password_invalid";
+  const topReasonEntries = useMemo(
+    () =>
+      Object.entries(parseData?.reasons ?? {})
+        .filter(([reason]) => reason !== "ok")
+        .sort(([, first], [, second]) => second - first)
+        .slice(0, 3),
+    [parseData]
+  );
 
   const steps = useMemo(() => {
     if (!file) return "upload";
@@ -134,6 +268,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
   const parseFile = async (inputFile: File, overrideMapping?: Record<string, string>): Promise<void> => {
     setLoading(true);
     setError("");
+    setErrorCode("");
 
     try {
       const formData = new FormData();
@@ -141,14 +276,15 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       if (overrideMapping) {
         formData.append("mapping", JSON.stringify(overrideMapping));
       }
+      if (inputFile.name.toLowerCase().endsWith(".pdf") && pdfPassword.trim()) {
+        formData.append("pdfPassword", pdfPassword.trim());
+      }
 
       const response = await fetch("/api/imports/parse", {
         method: "POST",
         body: formData
       });
-      const { data, errorMessage } = await parseApiResponse<ParseResponse & { error?: string; message?: string }>(
-        response
-      );
+      const { data, errorMessage } = await parseApiResponse<ParseResponse>(response);
 
       if (errorMessage) {
         throw new Error(errorMessage);
@@ -159,9 +295,11 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       }
 
       if (!response.ok) {
-        throw new Error(data.error ?? data.message ?? "Falha ao analisar arquivo");
+        setErrorCode(data.code ?? "parse_error");
+        throw new Error(data.error ?? data.message ?? "Falha ao analisar arquivo.");
       }
 
+      setErrorCode("");
       setParseData(data);
 
       if (data.appliedMapping) {
@@ -175,6 +313,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro inesperado";
+      setParseData(null);
       setError(message);
       toast({ variant: "error", title: "Falha na analise", description: message });
     } finally {
@@ -184,8 +323,10 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
 
   const handleUpload = async (selectedFile: File): Promise<void> => {
     setFile(selectedFile);
+    setParseData(null);
     setResult(null);
     setError("");
+    setErrorCode("");
     await parseFile(selectedFile);
   };
 
@@ -249,10 +390,53 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     }
   };
 
+  const saveReusableRules = async (rowsToCommit: ParsedRow[]): Promise<void> => {
+    const unique = new Map<string, { categoryId: string; merchantKey: string }>();
+
+    rowsToCommit.forEach((row, index) => {
+      if (!saveRuleByCommitIndex[index]) return;
+      if (!row.categoryId) return;
+      if (!row.merchantKey || row.merchantKey === "transacao") return;
+
+      const key = `${row.categoryId}|${row.merchantKey}`;
+      if (!unique.has(key)) {
+        unique.set(key, {
+          categoryId: row.categoryId,
+          merchantKey: row.merchantKey
+        });
+      }
+    });
+
+    if (unique.size === 0) {
+      return;
+    }
+
+    for (const entry of unique.values()) {
+      const response = await fetch("/api/categories/rules", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name: `Import ${entry.merchantKey}`,
+          priority: 50,
+          enabled: true,
+          matchType: "contains",
+          pattern: entry.merchantKey.toUpperCase(),
+          categoryId: entry.categoryId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("Nao foi possivel salvar uma ou mais regras de estabelecimento.");
+      }
+    }
+  };
+
   const handleCommit = async (): Promise<void> => {
     if (!file || !parseData) return;
 
-    if (!defaultAccountId && !effectiveRows.some((row) => row.accountId || row.accountHint)) {
+    if (!defaultAccountId && !commitRows.some((row) => row.accountId || row.accountHint)) {
       const message = "Selecione uma conta padrao para concluir a importacao.";
       setError(message);
       toast({ variant: "error", title: "Conta obrigatoria", description: message });
@@ -263,6 +447,11 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     setError("");
 
     try {
+      const rowsForCommit = commitRows.map((row, index) => ({
+        ...row,
+        categoryId: manualCategoryByCommitIndex[index] ?? row.categoryId ?? null
+      }));
+
       const response = await fetch("/api/imports/commit", {
         method: "POST",
         headers: {
@@ -274,21 +463,11 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
           defaultAccountId: defaultAccountId || undefined,
           mapping,
           applyRules,
-          applyLocalAi,
-          rows: effectiveRows
+          applyLocalAi: false,
+          rows: rowsForCommit
         })
       });
-      const { data, errorMessage } = await parseApiResponse<
-        | {
-            totalImported: number;
-            totalSkipped: number;
-            aiCategorizedCount?: number;
-            aiUnavailableReason?: string | null;
-            importedRange?: ImportCommitResult["importedRange"];
-            error?: string;
-          }
-        | { error: string }
-      >(response);
+      const { data, errorMessage } = await parseApiResponse<ImportCommitResult & { error?: string }>(response);
 
       if (errorMessage) {
         throw new Error(errorMessage);
@@ -298,13 +477,25 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         throw new Error("Nao foi possivel interpretar a resposta final da importacao.");
       }
 
-      if (!response.ok || "error" in data) {
-        throw new Error("error" in data ? data.error : "Falha ao importar");
+      if (!response.ok || data.error) {
+        throw new Error(data.error ?? "Falha ao importar.");
+      }
+      let saveRuleWarning: string | null = null;
+      try {
+        await saveReusableRules(rowsForCommit);
+      } catch (ruleError) {
+        saveRuleWarning =
+          ruleError instanceof Error ? ruleError.message : "Falha ao salvar regras reaproveitaveis.";
       }
 
       setResult({
         totalImported: data.totalImported,
         totalSkipped: data.totalSkipped,
+        duplicates: data.duplicates ?? data.summary?.duplicates ?? 0,
+        invalidRows: data.invalidRows ?? data.summary?.invalid ?? 0,
+        summary: data.summary,
+        deterministicCategorizedCount:
+          "deterministicCategorizedCount" in data ? data.deterministicCategorizedCount ?? 0 : 0,
         aiCategorizedCount: "aiCategorizedCount" in data ? data.aiCategorizedCount ?? 0 : 0,
         aiUnavailableReason: "aiUnavailableReason" in data ? data.aiUnavailableReason ?? null : null,
         importedRange: "importedRange" in data ? data.importedRange ?? null : null
@@ -314,6 +505,13 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         title: "Importacao concluida",
         description: `${data.totalImported} transacao(oes) importada(s).`
       });
+      if (saveRuleWarning) {
+        toast({
+          variant: "info",
+          title: "Importacao concluida com aviso",
+          description: saveRuleWarning
+        });
+      }
       onSuccess();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro inesperado";
@@ -334,11 +532,52 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       </CardHeader>
       <CardContent className="space-y-4" aria-busy={loading || creatingAccount}>
         {steps === "upload" ? <FileDropzone onSelect={handleUpload} /> : null}
+        {steps === "upload" && isPdfUpload ? (
+          <FeedbackMessage variant={needsPdfPassword ? "warning" : "info"} className="space-y-3 p-4">
+            <p className="font-medium">
+              {needsPdfPassword
+                ? "Este PDF precisa de senha para leitura."
+                : "Se este PDF estiver protegido, informe a senha para tentar novamente."}
+            </p>
+            <FormField
+              id="import-pdf-password"
+              label="Senha do PDF (opcional)"
+              hint="A senha e usada apenas para leitura do arquivo no parse."
+            >
+              {(fieldProps) => (
+                <Input
+                  {...fieldProps}
+                  type="password"
+                  value={pdfPassword}
+                  onChange={(event) => setPdfPassword(event.target.value)}
+                  autoComplete="off"
+                />
+              )}
+            </FormField>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (file) {
+                    void parseFile(file);
+                  }
+                }}
+                isLoading={loading}
+                disabled={loading || !file || (needsPdfPassword && pdfPassword.trim().length === 0)}
+              >
+                {loading ? "Validando PDF..." : "Tentar novamente"}
+              </Button>
+            </div>
+          </FeedbackMessage>
+        ) : null}
 
         {steps === "mapping" && parseData ? (
           <MappingStep
             columns={parseData.columns}
             mapping={mapping}
+            suggestedMapping={parseData.suggestedMapping as Partial<Record<MappingField, string>>}
+            confidence={parseData.suggestedMappingConfidence}
             onChange={setMapping}
             onConfirm={() => {
               if (file) {
@@ -382,8 +621,15 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
               <FeedbackMessage variant="info">
                 <p>Total detectado: {parseData.totalRows} linhas</p>
                 {typeof parseData.validRows === "number" ? <p>Linhas validas: {parseData.validRows}</p> : null}
+                {typeof parseData.ignoredRows === "number" ? <p>Linhas ignoradas: {parseData.ignoredRows}</p> : null}
+                {typeof parseData.errorRows === "number" ? <p>Linhas com erro: {parseData.errorRows}</p> : null}
                 <p>Tipo de origem: {parseData.sourceType.toUpperCase()}</p>
+                {parseData.documentType ? <p>Tipo de documento: {parseData.documentType}</p> : null}
+                {parseData.issuerProfile ? <p>Perfil detectado: {parseData.issuerProfile}</p> : null}
                 <p>Contas disponiveis: {mergedAccounts.length}</p>
+                {topReasonEntries.length > 0 ? (
+                  <p>Motivos principais: {topReasonEntries.map(([reason, count]) => `${reason} (${count})`).join(", ")}</p>
+                ) : null}
               </FeedbackMessage>
             </div>
 
@@ -462,10 +708,34 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
             <RulesStep
               applyRules={applyRules}
               onToggleRules={setApplyRules}
-              applyLocalAi={applyLocalAi}
-              onToggleLocalAi={setApplyLocalAi}
             />
-            <PreviewStep rows={parseData.preview} />
+            <PreviewStep
+              rows={parseData.preview}
+              categories={categories}
+              manualCategoryByCommitIndex={manualCategoryByCommitIndex}
+              saveRuleByCommitIndex={saveRuleByCommitIndex}
+              onCategoryChange={(commitIndex, categoryId) => {
+                if (commitIndex < 0) return;
+                setManualCategoryByCommitIndex((previous) => ({
+                  ...previous,
+                  [commitIndex]: categoryId
+                }));
+                if (!categoryId) {
+                  setSaveRuleByCommitIndex((previous) => {
+                    const next = { ...previous };
+                    delete next[commitIndex];
+                    return next;
+                  });
+                }
+              }}
+              onSaveRuleChange={(commitIndex, value) => {
+                if (commitIndex < 0) return;
+                setSaveRuleByCommitIndex((previous) => ({
+                  ...previous,
+                  [commitIndex]: value
+                }));
+              }}
+            />
 
             {steps === "preview" ? (
               <div className="flex justify-end">
@@ -482,8 +752,10 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
             <p>
               Importacao concluida: {result.totalImported} novas transacoes e {result.totalSkipped} ignoradas.
             </p>
-            {typeof result.aiCategorizedCount === "number" && result.aiCategorizedCount > 0 ? (
-              <p>IA local categorizou {result.aiCategorizedCount} transacoes sem regra.</p>
+            {typeof result.duplicates === "number" ? <p>Duplicadas: {result.duplicates}</p> : null}
+            {typeof result.invalidRows === "number" ? <p>Invalidas: {result.invalidRows}</p> : null}
+            {typeof result.deterministicCategorizedCount === "number" && result.deterministicCategorizedCount > 0 ? (
+              <p>Categorizacao deterministica aplicada em {result.deterministicCategorizedCount} transacoes.</p>
             ) : null}
             {result.importedRange ? (
               <p>

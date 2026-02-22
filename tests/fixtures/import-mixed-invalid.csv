@@ -1,0 +1,8 @@
+data,descricao,valor,conta
+05/02/2026,Compra Mercado,-120.40,Conta Corrente
+,Sem data,-10.00,Conta Corrente
+06/02/2026,Sem valor,,Conta Corrente
+07/13/2026,Data ruim,-20.00,Conta Corrente
+08/02/2026,SALDO FINAL,0,Conta Corrente
+09/02/2026,Texto valor,abc,Conta Corrente
+10/02/2026,Recebimento,200.00,Conta Corrente

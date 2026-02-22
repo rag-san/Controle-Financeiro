@@ -1,51 +1,82 @@
-import { parseMoneyInput } from "@/lib/money";
+import { parseStrictMoneyInput } from "@/lib/money";
 import { normalizeDescription, normalizeTransaction } from "@/lib/normalize";
+import { type ImportTextEncoding, decodeImportText, fixCommonMojibake } from "@/lib/import-text";
+import { toCanonicalImportRow } from "@/lib/import-canonical";
 
 export type CsvParseResult = {
   columns: string[];
   rows: Record<string, string>[];
   delimiter: string;
-  detectedEncoding: "utf8" | "latin1";
+  detectedEncoding: ImportTextEncoding;
 };
 
 export type CsvMapping = {
   date: string;
   description: string;
+  history?: string;
   amount?: string;
   debit?: string;
   credit?: string;
   type?: string;
   account?: string;
+  balanceAfter?: string;
 };
 
 export type ParsedImportRow = {
   date: Date;
+  balanceAfter?: number | null;
+  transactionKindRaw: string;
+  counterpartyRaw: string;
+  transactionKindNorm: string;
+  counterpartyNorm: string;
+  merchantKey: string;
+  sourceType: "csv";
+  documentType?: null;
   description: string;
   normalizedDescription: string;
   amount: number;
   type: "income" | "expense";
   externalId?: string;
   accountHint?: string;
-  raw: Record<string, string>;
+  raw: Record<string, unknown>;
 };
 
-function decodeBuffer(buffer: Buffer): { text: string; encoding: "utf8" | "latin1" } {
-  const utf8 = buffer.toString("utf8");
-  const replacementChars = (utf8.match(/�/g) ?? []).length;
-  const ratio = replacementChars / Math.max(utf8.length, 1);
+export type CsvRowStatus = "ok" | "ignored" | "error";
 
-  if (ratio > 0.01) {
-    return {
-      text: buffer.toString("latin1"),
-      encoding: "latin1"
-    };
-  }
+export type CsvRowReason =
+  | "ok"
+  | "missing_date"
+  | "missing_description"
+  | "missing_amount"
+  | "invalid_amount"
+  | "invalid_date"
+  | "ignored_balance_row"
+  | "zero_amount"
+  | "invalid_normalized_row"
+  | "row_parse_error";
 
-  return {
-    text: utf8,
-    encoding: "utf8"
-  };
-}
+export type CsvRowDiagnostic = {
+  line: number;
+  status: CsvRowStatus;
+  reason: CsvRowReason;
+  message: string;
+  raw: Record<string, string>;
+  mapped?: ParsedImportRow;
+};
+
+export type CsvMappingDiagnostics = {
+  totalRows: number;
+  validRows: number;
+  ignoredRows: number;
+  errorRows: number;
+  reasons: Record<string, number>;
+};
+
+export type CsvMappingAnalysis = {
+  rows: ParsedImportRow[];
+  diagnostics: CsvRowDiagnostic[];
+  summary: CsvMappingDiagnostics;
+};
 
 function detectDelimiter(sample: string): string {
   const candidates = [",", ";", "\t", "|"];
@@ -128,7 +159,7 @@ function splitCsvRows(text: string, delimiter: string): string[][] {
 }
 
 function sanitizeCell(value: string): string {
-  return value.replace(/^"|"$/g, "").trim();
+  return fixCommonMojibake(value.replace(/^"|"$/g, "")).replace(/\s+/g, " ").trim();
 }
 
 const headerAliasKeywords = [
@@ -214,7 +245,8 @@ function isRepeatedHeaderRow(row: Record<string, string>, columns: string[]): bo
 }
 
 export function parseCsvBuffer(buffer: Buffer): CsvParseResult {
-  const { text, encoding } = decodeBuffer(buffer);
+  const { text: decodedText, encoding } = decodeImportText(buffer);
+  const text = fixCommonMojibake(decodedText);
   const delimiter = detectDelimiter(text.slice(0, 2000));
   const matrix = splitCsvRows(text, delimiter);
 
@@ -275,34 +307,61 @@ export function suggestCsvMapping(columns: string[]): Partial<CsvMapping> {
   const amount = pickColumn(columns, ["valor", "amount", "vlr", "valor lancado", "valor final"], ["saldo"]);
   const debit = pickColumn(columns, ["debito", "débito", "saida", "saída", "valor debito", "valor débito"], ["saldo"]);
   const credit = pickColumn(columns, ["credito", "crédito", "entrada", "valor credito", "valor crédito"], ["saldo"]);
-
-  return {
-    date: pickColumn(columns, ["data", "date", "dt", "lancamento", "lançamento", "posted"]),
-    description: pickColumn(columns, [
+  const history = pickColumn(columns, ["historico", "histórico", "history", "tipo lancamento", "tipo transacao"], [
+    "descri"
+  ]);
+  const description =
+    pickColumn(columns, [
       "descricao",
       "descrição",
       "description",
-      "historico",
-      "histórico",
+      "beneficiario",
+      "beneficiário",
+      "favorecido",
+      "destino",
+      "estabelecimento",
       "memo",
       "name",
       "details",
       "narrative"
-    ]),
+    ]) ??
+    columns.find((column) => {
+      const normalized = normalizeDescription(column);
+      return normalized.includes("DESCRI") || normalized.includes("BENEF") || normalized.includes("DESTIN");
+    }) ??
+    history;
+
+  return {
+    date: pickColumn(columns, ["data", "date", "dt", "lancamento", "lançamento", "posted"]),
+    description,
+    history,
     amount,
     debit,
     credit,
     type: pickColumn(columns, ["tipo", "type", "natureza", "debito_credito", "d/c"]),
-    account: pickColumn(columns, ["conta", "account", "bank", "cartao"])
+    account: pickColumn(columns, ["conta", "account", "bank", "cartao"]),
+    balanceAfter: pickColumn(columns, ["saldo", "saldo final", "balance", "balance after", "saldo apos"])
   };
 }
 
-function resolveAmountValue(raw: Record<string, string>, mapping: CsvMapping): number | string | null {
+type ResolvedAmount =
+  | { kind: "ok"; amount: number }
+  | { kind: "missing" }
+  | { kind: "invalid" };
+
+function resolveAmountValue(raw: Record<string, string>, mapping: CsvMapping): ResolvedAmount {
   if (mapping.amount) {
     const amountValue = raw[mapping.amount];
-    if (amountValue && amountValue.trim().length > 0) {
-      return amountValue;
+    if (!amountValue || amountValue.trim().length === 0) {
+      return { kind: "missing" };
     }
+
+    const parsedAmount = parseStrictMoneyInput(amountValue);
+    if (parsedAmount === null) {
+      return { kind: "invalid" };
+    }
+
+    return { kind: "ok", amount: parsedAmount };
   }
 
   const debitRaw = mapping.debit ? raw[mapping.debit] ?? "" : "";
@@ -311,13 +370,34 @@ function resolveAmountValue(raw: Record<string, string>, mapping: CsvMapping): n
   const hasCredit = creditRaw.trim().length > 0;
 
   if (!hasDebit && !hasCredit) {
+    return { kind: "missing" };
+  }
+
+  const parsedDebit = hasDebit ? parseStrictMoneyInput(debitRaw) : 0;
+  const parsedCredit = hasCredit ? parseStrictMoneyInput(creditRaw) : 0;
+
+  if ((hasDebit && parsedDebit === null) || (hasCredit && parsedCredit === null)) {
+    return { kind: "invalid" };
+  }
+
+  const debit = hasDebit ? Math.abs(parsedDebit ?? 0) : 0;
+  const credit = hasCredit ? Math.abs(parsedCredit ?? 0) : 0;
+
+  return { kind: "ok", amount: credit - debit };
+}
+
+function resolveBalanceAfter(raw: Record<string, string>, mapping: CsvMapping): number | null {
+  if (!mapping.balanceAfter) {
     return null;
   }
 
-  const debit = hasDebit ? Math.abs(parseMoneyInput(debitRaw)) : 0;
-  const credit = hasCredit ? Math.abs(parseMoneyInput(creditRaw)) : 0;
+  const value = raw[mapping.balanceAfter];
+  if (!value || value.trim().length === 0) {
+    return null;
+  }
 
-  return credit - debit;
+  const parsed = parseStrictMoneyInput(value);
+  return parsed === null ? null : parsed;
 }
 
 function findExternalId(raw: Record<string, string>): string | undefined {
@@ -332,31 +412,115 @@ function findExternalId(raw: Record<string, string>): string | undefined {
   );
 }
 
-export function mapCsvRows(rows: Record<string, string>[], mapping: CsvMapping): ParsedImportRow[] {
+function incrementReason(reasons: Record<string, number>, reason: CsvRowReason): void {
+  reasons[reason] = (reasons[reason] ?? 0) + 1;
+}
+
+export function analyzeCsvRows(rows: Record<string, string>[], mapping: CsvMapping): CsvMappingAnalysis {
   const mapped: ParsedImportRow[] = [];
+  const diagnostics: CsvRowDiagnostic[] = [];
+  const reasons: Record<string, number> = {};
+  let ignoredRows = 0;
+  let errorRows = 0;
 
-  for (const raw of rows) {
+  for (const [index, raw] of rows.entries()) {
+    const line = index + 1;
+    const dateValue = (raw[mapping.date] ?? "").trim();
+    const descriptionValue = (raw[mapping.description] ?? "").trim();
+    const historyValue = mapping.history ? (raw[mapping.history] ?? "").trim() : "";
+    const combinedDescription = [historyValue, descriptionValue].filter(Boolean).join(" ");
+    const amountValue = resolveAmountValue(raw, mapping);
+    const balanceAfter = resolveBalanceAfter(raw, mapping);
+
+    if (!dateValue) {
+      diagnostics.push({
+        line,
+        status: "ignored",
+        reason: "missing_date",
+        message: "Linha ignorada: data ausente.",
+        raw
+      });
+      ignoredRows += 1;
+      incrementReason(reasons, "missing_date");
+      continue;
+    }
+
+    if (!descriptionValue && !historyValue) {
+      diagnostics.push({
+        line,
+        status: "ignored",
+        reason: "missing_description",
+        message: "Linha ignorada: descricao ausente.",
+        raw
+      });
+      ignoredRows += 1;
+      incrementReason(reasons, "missing_description");
+      continue;
+    }
+
+    if (amountValue.kind === "missing") {
+      diagnostics.push({
+        line,
+        status: "ignored",
+        reason: "missing_amount",
+        message: "Linha ignorada: valor ausente.",
+        raw
+      });
+      ignoredRows += 1;
+      incrementReason(reasons, "missing_amount");
+      continue;
+    }
+
+    if (amountValue.kind === "invalid") {
+      diagnostics.push({
+        line,
+        status: "error",
+        reason: "invalid_amount",
+        message: "Linha com erro: valor invalido.",
+        raw
+      });
+      errorRows += 1;
+      incrementReason(reasons, "invalid_amount");
+      continue;
+    }
+
+    if (ignoredDescriptionRegex.test(combinedDescription)) {
+      diagnostics.push({
+        line,
+        status: "ignored",
+        reason: "ignored_balance_row",
+        message: "Linha ignorada: saldo/resumo.",
+        raw
+      });
+      ignoredRows += 1;
+      incrementReason(reasons, "ignored_balance_row");
+      continue;
+    }
+
     try {
-      const dateValue = raw[mapping.date];
-      const descriptionValue = (raw[mapping.description] ?? "Sem descricao").trim();
-      const amountValue = resolveAmountValue(raw, mapping);
-
-      if (!dateValue || amountValue === null) {
-        continue;
-      }
-
-      if (ignoredDescriptionRegex.test(descriptionValue)) {
-        continue;
-      }
-
       const draft = normalizeTransaction({
         date: dateValue,
-        description: descriptionValue,
-        amount: amountValue,
+        description: descriptionValue || historyValue || "Sem descricao",
+        amount: amountValue.amount,
         type: mapping.type ? raw[mapping.type] : undefined
       });
 
       if (ignoredDescriptionRegex.test(draft.description) || Math.abs(draft.amount) < 0.01) {
+        diagnostics.push({
+          line,
+          status: "ignored",
+          reason: ignoredDescriptionRegex.test(draft.description) ? "ignored_balance_row" : "zero_amount",
+          message:
+            ignoredDescriptionRegex.test(draft.description)
+              ? "Linha ignorada: saldo/resumo."
+              : "Linha ignorada: valor zero.",
+          raw
+        });
+        ignoredRows += 1;
+        incrementReason(
+          reasons,
+          ignoredDescriptionRegex.test(draft.description) ? "ignored_balance_row" : "zero_amount"
+        );
         continue;
       }
 
@@ -364,19 +528,79 @@ export function mapCsvRows(rows: Record<string, string>[], mapping: CsvMapping):
       const externalId = findExternalId(raw);
 
       if (!draft.description || !Number.isFinite(draft.amount)) {
+        diagnostics.push({
+          line,
+          status: "error",
+          reason: "invalid_normalized_row",
+          message: "Linha com erro: normalizacao invalida.",
+          raw
+        });
+        errorRows += 1;
+        incrementReason(reasons, "invalid_normalized_row");
         continue;
       }
 
-      mapped.push({
-        ...draft,
+      const canonical = toCanonicalImportRow({
+        date: draft.date,
+        amount: draft.amount,
+        type: draft.type,
+        balanceAfter,
+        sourceType: "csv",
+        description: draft.description,
+        transactionKindRaw: historyValue || undefined,
+        counterpartyRaw: descriptionValue || undefined,
         accountHint,
         externalId,
         raw
       });
-    } catch {
+
+      const mappedRow: ParsedImportRow = {
+        ...canonical,
+        sourceType: "csv",
+        documentType: null
+      };
+
+      mapped.push(mappedRow);
+      diagnostics.push({
+        line,
+        status: "ok",
+        reason: "ok",
+        message: "Linha valida para importacao.",
+        raw,
+        mapped: mappedRow
+      });
+      incrementReason(reasons, "ok");
+    } catch (error) {
+      const dateError =
+        error instanceof Error &&
+        (error.message.toLowerCase().includes("data invalida") || error.message.toLowerCase().includes("invalid date"));
+
+      diagnostics.push({
+        line,
+        status: "error",
+        reason: dateError ? "invalid_date" : "row_parse_error",
+        message: dateError ? "Linha com erro: data invalida." : "Linha com erro durante parse.",
+        raw
+      });
+      errorRows += 1;
+      incrementReason(reasons, dateError ? "invalid_date" : "row_parse_error");
       continue;
     }
   }
 
-  return mapped;
+  return {
+    rows: mapped,
+    diagnostics,
+    summary: {
+      totalRows: rows.length,
+      validRows: mapped.length,
+      ignoredRows,
+      errorRows,
+      reasons
+    }
+  };
+}
+
+export function mapCsvRows(rows: Record<string, string>[], mapping: CsvMapping): ParsedImportRow[] {
+  return analyzeCsvRows(rows, mapping).rows;
 }

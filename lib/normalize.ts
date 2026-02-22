@@ -18,6 +18,14 @@ export function normalizeDescription(value: string): string {
     .toUpperCase();
 }
 
+function parseByPattern(input: string, pattern: string): Date {
+  const parsed = parse(input, pattern, new Date());
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Data invalida: ${input}`);
+  }
+  return parsed;
+}
+
 export function parseFlexibleDate(value: string | Date): Date {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value;
@@ -26,19 +34,19 @@ export function parseFlexibleDate(value: string | Date): Date {
   const input = String(value).trim();
 
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(input)) {
-    return parse(input, "dd/MM/yyyy", new Date());
+    return parseByPattern(input, "dd/MM/yyyy");
   }
 
   if (/^\d{2}\/\d{2}\/\d{2}$/.test(input)) {
-    return parse(input, "dd/MM/yy", new Date());
+    return parseByPattern(input, "dd/MM/yy");
   }
 
   if (/^\d{2}-\d{2}-\d{4}$/.test(input)) {
-    return parse(input, "dd-MM-yyyy", new Date());
+    return parseByPattern(input, "dd-MM-yyyy");
   }
 
   if (/^\d{2}\.\d{2}\.\d{4}$/.test(input)) {
-    return parse(input, "dd.MM.yyyy", new Date());
+    return parseByPattern(input, "dd.MM.yyyy");
   }
 
   if (/^\d{4}-\d{2}-\d{2}/.test(input)) {
@@ -53,7 +61,11 @@ export function parseFlexibleDate(value: string | Date): Date {
     const hh = input.length >= 14 ? Number(input.slice(8, 10)) : 0;
     const min = input.length >= 14 ? Number(input.slice(10, 12)) : 0;
     const ss = input.length >= 14 ? Number(input.slice(12, 14)) : 0;
-    return new Date(yyyy, mm, dd, hh, min, ss);
+    const parsed = new Date(yyyy, mm, dd, hh, min, ss);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(`Data invalida: ${input}`);
+    }
+    return parsed;
   }
 
   const fallback = new Date(input);
