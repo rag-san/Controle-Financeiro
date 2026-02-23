@@ -18,8 +18,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const [items, categories] = await Promise.all([
-    Promise.resolve(recurringRepo.listByUser(auth.userId, true)),
-    Promise.resolve(categoriesRepo.listByUser(auth.userId))
+    recurringRepo.listByUser(auth.userId, true),
+    categoriesRepo.listByUser(auth.userId)
   ]);
 
   const payload = {

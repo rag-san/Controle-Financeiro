@@ -42,7 +42,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(cached, { headers: privateCacheHeaders });
   }
 
-  const payload = recurringRepo.listByUser(auth.userId, true);
+  const payload = await recurringRepo.listByUser(auth.userId, true);
 
   setCache(cacheKey, payload, 20_000);
 
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const recurring = recurringRepo.create({
+  const recurring = await recurringRepo.create({
     userId: auth.userId,
     name: parsed.data.name,
     amount: parsed.data.amount,

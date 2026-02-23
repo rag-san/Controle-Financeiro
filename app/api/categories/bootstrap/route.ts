@@ -21,9 +21,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const [categories, rules, accounts] = await Promise.all([
-    Promise.resolve(categoriesRepo.listByUser(auth.userId, true)),
-    Promise.resolve(categoryRulesRepo.listByUser(auth.userId, true)),
-    Promise.resolve(accountsRepo.listByUser(auth.userId))
+    categoriesRepo.listByUser(auth.userId, true),
+    categoryRulesRepo.listByUser(auth.userId, true),
+    accountsRepo.listByUser(auth.userId)
   ]);
 
   const payload = {
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const auth = await requireUser(request);
     if (auth instanceof NextResponse) return auth;
 
-    const result = restoreDefaultCategoriesForUser(auth.userId);
+    const result = await restoreDefaultCategoriesForUser(auth.userId);
     invalidateFinanceCaches(auth.userId);
 
     return NextResponse.json(result, { status: 200 });

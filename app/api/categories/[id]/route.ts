@@ -31,13 +31,13 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const existing = categoriesRepo.findByIdForUser(id, auth.userId);
+  const existing = await categoriesRepo.findByIdForUser(id, auth.userId);
 
   if (!existing) {
     return NextResponse.json({ error: "Categoria nao encontrada" }, { status: 404 });
   }
 
-  const category = categoriesRepo.update({
+  const category = await categoriesRepo.update({
     id,
     userId: auth.userId,
     ...parsed.data
@@ -61,12 +61,12 @@ export async function DELETE(
 
   const { id } = await params;
 
-  categoriesRepo.clearParentForChildren({
+  await categoriesRepo.clearParentForChildren({
     userId: auth.userId,
     parentId: id
   });
 
-  categoriesRepo.delete({
+  await categoriesRepo.delete({
     id,
     userId: auth.userId
   });

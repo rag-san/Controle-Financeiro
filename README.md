@@ -1,12 +1,12 @@
 # Controle Financeiro v1.0.0
 
-Aplicacao full-stack de controle financeiro pessoal com Next.js + SQLite local.
+Aplicacao full-stack de controle financeiro pessoal com Next.js + PostgreSQL.
 
 ## Visao geral
 
 - Frontend e backend no mesmo projeto (Next App Router + API Routes)
 - Autenticacao com NextAuth (Credentials)
-- Persistencia local com SQLite (`better-sqlite3`)
+- Persistencia principal em PostgreSQL (`pg`)
 - Importacao de extrato por CSV, OFX e PDF (PDF: suporte atual para Inter e Mercado Pago)
 - Dashboard, relatorios, contas, categorias, recorrencias e patrimonio
 
@@ -16,7 +16,7 @@ Aplicacao full-stack de controle financeiro pessoal com Next.js + SQLite local.
 - React 19
 - TypeScript
 - NextAuth
-- SQLite (`better-sqlite3`)
+- PostgreSQL (`pg`)
 - Zod
 - Tailwind CSS
 - Recharts
@@ -25,7 +25,7 @@ Aplicacao full-stack de controle financeiro pessoal com Next.js + SQLite local.
 
 Fluxo principal:
 
-`UI (app/(app)/*)` -> `API (app/api/*)` -> `services/repos (lib/server/*)` -> `SQLite (data/finance.db)`
+`UI (app/(app)/*)` -> `API (app/api/*)` -> `services/repos (lib/server/*)` -> `PostgreSQL`
 
 Modulos centrais:
 
@@ -41,6 +41,7 @@ Modulos centrais:
 
 - Node.js 20+
 - npm 10+
+- PostgreSQL 14+ (ou superior)
 
 ## Setup rapido
 
@@ -78,7 +79,8 @@ Arquivo de referencia: `.env.example`
 
 - `NEXTAUTH_SECRET`: segredo da sessao/auth (obrigatorio em producao)
 - `NEXTAUTH_URL`: URL base da aplicacao (ex.: `http://localhost:3000`)
-- `FINANCE_DB_PATH`: caminho do sqlite (padrao: `data/finance.db`)
+- `DATABASE_URL`: string de conexao PostgreSQL (principal)
+- `FINANCE_DB_PATH`: fallback SQLite (usado apenas sem `DATABASE_URL`)
 - `API_PROFILING`: ativa profiling de rotas (`0` ou `1`)
 - `API_PROFILING_SLOW_QUERY_MS`: limite para considerar query lenta
 - `OLLAMA_URL`: endpoint do Ollama (IA local opcional)
@@ -101,12 +103,29 @@ Arquivo de referencia: `.env.example`
 - `npm run build:full`: verify + build
 - `npm run start`: inicia app em modo producao
 
-## Banco de dados e dados locais
+## Banco de dados
 
-- Banco padrao: `data/finance.db`
+- Banco principal: PostgreSQL (`DATABASE_URL`)
 - Schema/migracoes executam na inicializacao da API
-- Arquivos de banco (`data/*.db`, `*.db-wal`, `*.db-shm`) estao no `.gitignore`
+- Fallback SQLite continua disponivel para compatibilidade local/testes (`FINANCE_DB_PATH`)
+- Arquivos SQLite locais (`data/*.db`, `*.db-wal`, `*.db-shm`) seguem no `.gitignore`
 - O `.env` tambem esta no `.gitignore`
+
+### Migrar dados do SQLite para PostgreSQL
+
+1. Configure `DATABASE_URL` no `.env`.
+2. Opcional: aponte o arquivo origem com `SOURCE_SQLITE_PATH` (padrao: `data/finance.db`).
+3. Rode:
+
+```bash
+npm run db:migrate:sqlite-to-postgres
+```
+
+Opcional para sobrescrever o destino antes da carga:
+
+```bash
+RESET_TARGET=1 npm run db:migrate:sqlite-to-postgres
+```
 
 ## Testes e validacao
 

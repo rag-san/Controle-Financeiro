@@ -62,7 +62,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const email = parsed.data.email.toLowerCase().trim();
 
-  const existingUser = usersRepo.findByEmail(email);
+  const existingUser = await usersRepo.findByEmail(email);
 
   if (existingUser) {
     return NextResponse.json(
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
-  const user = usersRepo.create({
+  const user = await usersRepo.create({
     name: parsed.data.name.trim(),
     email,
     password: passwordHash

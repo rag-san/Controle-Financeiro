@@ -25,7 +25,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(cached, { headers: privateCacheHeaders });
   }
 
-  const categories = categoriesRepo.listByUser(auth.userId, true);
+  const categories = await categoriesRepo.listByUser(auth.userId, true);
 
   setCache(cacheKey, categories, 20_000);
 
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const category = categoriesRepo.create({
+  const category = await categoriesRepo.create({
     userId: auth.userId,
     ...parsed.data
   });

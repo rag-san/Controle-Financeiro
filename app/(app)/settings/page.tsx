@@ -10,7 +10,7 @@ export default async function SettingsPage(): Promise<React.JSX.Element> {
     redirect("/login");
   }
 
-  const user = usersRepo.findById(userId);
+  const user = await usersRepo.findById(userId);
 
   return (
     <PageShell title="Configuracoes" subtitle="Preferencias e dados da conta">

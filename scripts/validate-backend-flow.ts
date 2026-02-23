@@ -13,7 +13,7 @@ import { buildPeriodComparison } from "../src/features/reports/utils/period";
 import { seedTestData } from "./seed";
 
 type TransactionsListResponse = ReturnType<typeof listTransactionsForUser>;
-type TransactionItem = TransactionsListResponse["items"][number];
+type TransactionItem = Awaited<TransactionsListResponse>["items"][number];
 
 function round2(value: number): number {
   return Number(value.toFixed(2));
@@ -29,13 +29,33 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-function tableColumns(table: string): string[] {
-  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+async function tableColumns(table: string): Promise<string[]> {
+  if (db.dialect === "postgres") {
+    const result = await db.query<{ column_name: string }>(
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = ?`,
+      [table]
+    );
+    return result.rows.map((row) => row.column_name);
+  }
+
+  const rows = (await db.prepare(`PRAGMA table_info(${table})`).all()) as Array<{ name: string }>;
   return rows.map((row) => row.name);
 }
 
-function tableIndexes(table: string): string[] {
-  const rows = db.prepare(`PRAGMA index_list(${table})`).all() as Array<{ name: string }>;
+async function tableIndexes(table: string): Promise<string[]> {
+  if (db.dialect === "postgres") {
+    const result = await db.query<{ indexname: string }>(
+      `SELECT indexname
+       FROM pg_indexes
+       WHERE schemaname = 'public' AND tablename = ?`,
+      [table]
+    );
+    return result.rows.map((row) => row.indexname);
+  }
+
+  const rows = (await db.prepare(`PRAGMA index_list(${table})`).all()) as Array<{ name: string }>;
   return rows.map((row) => row.name);
 }
 
@@ -87,25 +107,25 @@ function sumByType(items: TransactionItem[]): { income: number; expense: number;
 }
 
 async function run(): Promise<void> {
-  const seeded = seedTestData();
+  const seeded = await seedTestData();
   console.log(`[validate] seed user: ${seeded.email} (${seeded.userId})`);
   console.log(
     `[validate] seeded transactions=${seeded.createdCount}, income=${seeded.totals.income}, expense=${seeded.totals.expense}, net=${seeded.totals.net}`
   );
 
-  const accountColumns = tableColumns("accounts");
+  const accountColumns = await tableColumns("accounts");
   assert(accountColumns.includes("parent_account_id"), "Schema sem coluna accounts.parent_account_id.");
-  const transactionColumns = tableColumns("transactions");
+  const transactionColumns = await tableColumns("transactions");
   assert(transactionColumns.includes("transfer_group_id"), "Schema sem coluna transactions.transfer_group_id.");
   assert(transactionColumns.includes("transfer_peer_tx_id"), "Schema sem coluna transactions.transfer_peer_tx_id.");
-  const importEventsColumns = tableColumns("import_events");
+  const importEventsColumns = await tableColumns("import_events");
   assert(importEventsColumns.includes("source_type"), "Schema sem coluna import_events.source_type.");
-  const snapshotColumns = tableColumns("official_metric_snapshots");
+  const snapshotColumns = await tableColumns("official_metric_snapshots");
   assert(snapshotColumns.includes("metric_key"), "Schema sem coluna official_metric_snapshots.metric_key.");
 
-  const accountIndexes = tableIndexes("accounts");
+  const accountIndexes = await tableIndexes("accounts");
   assert(accountIndexes.includes("idx_accounts_user_parent"), "Indice idx_accounts_user_parent ausente.");
-  const transactionIndexes = tableIndexes("transactions");
+  const transactionIndexes = await tableIndexes("transactions");
   assert(
     transactionIndexes.includes("idx_transactions_user_transfer_group"),
     "Indice idx_transactions_user_transfer_group ausente."
@@ -114,15 +134,15 @@ async function run(): Promise<void> {
     transactionIndexes.includes("idx_transactions_account_transfer_group"),
     "Indice idx_transactions_account_transfer_group ausente."
   );
-  const snapshotIndexes = tableIndexes("official_metric_snapshots");
+  const snapshotIndexes = await tableIndexes("official_metric_snapshots");
   assert(
     snapshotIndexes.includes("idx_metric_snapshots_user_metric_period"),
     "Indice idx_metric_snapshots_user_metric_period ausente."
   );
-  const importEventsIndexes = tableIndexes("import_events");
+  const importEventsIndexes = await tableIndexes("import_events");
   assert(importEventsIndexes.includes("idx_import_events_user_created"), "Indice idx_import_events_user_created ausente.");
 
-  const allBefore = listTransactionsForUser(seeded.userId, {
+  const allBefore = await listTransactionsForUser(seeded.userId, {
     period: "all",
     page: 1,
     pageSize: 200,
@@ -139,7 +159,7 @@ async function run(): Promise<void> {
     `Resumo de despesas divergente. esperado=${seeded.totals.expense} atual=${allBefore.summary.expense}`
   );
 
-  const created = createTransactionForUser(seeded.userId, {
+  const created = await createTransactionForUser(seeded.userId, {
     accountId: seeded.accounts.checkingId,
     categoryId: null,
     date: "2026-02-21",
@@ -150,7 +170,7 @@ async function run(): Promise<void> {
 
   assert(Boolean(created?.id), "Falha ao criar transação no fluxo de validação.");
 
-  const allAfter = listTransactionsForUser(seeded.userId, {
+  const allAfter = await listTransactionsForUser(seeded.userId, {
     period: "all",
     page: 1,
     pageSize: 250,
@@ -164,7 +184,7 @@ async function run(): Promise<void> {
     "Total de transações após create não corresponde ao esperado."
   );
 
-  const createdTransfer = transactionsRepo.createTransferPair({
+  const createdTransfer = await transactionsRepo.createTransferPair({
     userId: seeded.userId,
     fromAccountId: seeded.accounts.checkingId,
     toAccountId: seeded.accounts.creditId,
@@ -177,7 +197,7 @@ async function run(): Promise<void> {
 
   assert(createdTransfer.created, "Falha ao criar transferencia de validacao.");
 
-  const allAfterTransfer = listTransactionsForUser(seeded.userId, {
+  const allAfterTransfer = await listTransactionsForUser(seeded.userId, {
     period: "all",
     page: 1,
     pageSize: 300,
@@ -210,7 +230,7 @@ async function run(): Promise<void> {
   assert(Boolean(transferOut), "Perna de saida da transferencia nao encontrada.");
   assert(Boolean(transferIn), "Perna de entrada da transferencia nao encontrada.");
 
-  const accountBalances = accountsRepo.listByUserWithBalance(seeded.userId);
+  const accountBalances = await accountsRepo.listByUserWithBalance(seeded.userId);
   const manualBalanceByAccount = new Map<string, number>();
   for (const item of allAfterTransfer.items) {
     manualBalanceByAccount.set(item.accountId, round2((manualBalanceByAccount.get(item.accountId) ?? 0) + item.amount));
@@ -232,7 +252,7 @@ async function run(): Promise<void> {
   }, undefined);
 
   const period = buildPeriodComparison("3M", { now, earliestDate });
-  const categories = categoriesRepo.listByUser(seeded.userId);
+  const categories = await categoriesRepo.listByUser(seeded.userId);
   const model = buildReportsModel({
     transactions: normalizeTransactionsForReports(allAfterTransfer.items),
     categories,
@@ -272,7 +292,7 @@ async function run(): Promise<void> {
     `Serie temporal (despesas) diverge do total do período. serie=${timeSeriesExpenseSum} total=${model.currentTotals.expense}`
   );
 
-  const dashboardSummary = dashboardRepo.summaryByRange(seeded.userId, period.current.start, period.current.end);
+  const dashboardSummary = await dashboardRepo.summaryByRange(seeded.userId, period.current.start, period.current.end);
   assert(
     approxEqual(fromAmountCents(dashboardSummary.totals.income), model.currentTotals.income),
     "Dashboard summary income diverge do total oficial de relatórios."

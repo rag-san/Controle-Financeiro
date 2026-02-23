@@ -33,7 +33,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const existing = accountsRepo.findByIdForUser(id, auth.userId);
+  const existing = await accountsRepo.findByIdForUser(id, auth.userId);
 
   if (!existing) {
     return NextResponse.json({ error: "Conta nao encontrada" }, { status: 404 });
@@ -41,7 +41,7 @@ export async function PATCH(
 
   let account;
   try {
-    account = accountsRepo.update({
+    account = await accountsRepo.update({
       id,
       userId: auth.userId,
       ...parsed.data,
@@ -78,7 +78,7 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const transactionCount = transactionsRepo.countByAccount(auth.userId, id);
+  const transactionCount = await transactionsRepo.countByAccount(auth.userId, id);
 
   if (transactionCount > 0) {
     return NextResponse.json(
@@ -87,7 +87,7 @@ export async function DELETE(
     );
   }
 
-  accountsRepo.delete({ id, userId: auth.userId });
+  await accountsRepo.delete({ id, userId: auth.userId });
 
   invalidateFinanceCaches(auth.userId);
 

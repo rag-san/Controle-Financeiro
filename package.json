@@ -7,6 +7,7 @@
     "dev:turbo": "next dev --turbopack",
     "dev:webpack": "next dev",
     "seed": "tsx scripts/seed.ts",
+    "db:migrate:sqlite-to-postgres": "tsx scripts/migrate-sqlite-to-postgres.ts",
     "validate": "tsx scripts/validate-backend-flow.ts",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "node --import tsx --test tests/unit/**/*.test.ts",
@@ -28,6 +29,7 @@
     "next": "^15.1.3",
     "next-auth": "^4.24.11",
     "pdf-parse": "^2.4.5",
+    "pg": "^8.18.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "recharts": "^3.7.0",
@@ -37,6 +39,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.1",
+    "@types/pg": "^8.16.0",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.23",

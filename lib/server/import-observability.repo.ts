@@ -12,7 +12,7 @@ function clampCounter(value: number | undefined): number | null {
 }
 
 export const importObservabilityRepo = {
-  record(input: {
+  async record(input: {
     userId: string;
     sourceType?: string;
     event: string;
@@ -29,11 +29,11 @@ export const importObservabilityRepo = {
     transferCreated?: number;
     cardPaymentDetected?: number;
     cardPaymentNotConverted?: number;
-  }): void {
+  }): Promise<void> {
     const id = createId();
     const createdAt = nowIso();
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO import_events (
          id, user_id, source_type, event, phase, error_code,
          total_rows, valid_rows, ignored_rows, error_rows,
@@ -63,11 +63,11 @@ export const importObservabilityRepo = {
     );
   },
 
-  summarizeBySource(input: {
+  async summarizeBySource(input: {
     userId: string;
     from?: Date;
     to?: Date;
-  }): Array<{
+  }): Promise<Array<{
     sourceType: string;
     phase: ImportEventPhase;
     events: number;
@@ -77,7 +77,7 @@ export const importObservabilityRepo = {
     transferCreated: number;
     cardPaymentsDetected: number;
     cardPaymentsNotConverted: number;
-  }> {
+  }>> {
     const clauses = ["user_id = ?"];
     const params: unknown[] = [input.userId];
 
@@ -91,7 +91,7 @@ export const importObservabilityRepo = {
     }
 
     const where = clauses.join(" AND ");
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT
             source_type,
@@ -108,7 +108,7 @@ export const importObservabilityRepo = {
          GROUP BY source_type, phase
          ORDER BY source_type ASC, phase ASC`
       )
-      .all(...params) as Array<{
+      .all(...params)) as Array<{
       source_type: string;
       phase: ImportEventPhase;
       events: number;
@@ -133,18 +133,18 @@ export const importObservabilityRepo = {
     }));
   },
 
-  recentErrors(input: {
+  async recentErrors(input: {
     userId: string;
     from?: Date;
     to?: Date;
     limit?: number;
-  }): Array<{
+  }): Promise<Array<{
     sourceType: string;
     phase: ImportEventPhase;
     errorCode: string;
     count: number;
     lastSeenAt: string;
-  }> {
+  }>> {
     const clauses = ["user_id = ?", "error_code IS NOT NULL"];
     const params: unknown[] = [input.userId];
 
@@ -160,7 +160,7 @@ export const importObservabilityRepo = {
     const limit = Math.max(1, Math.min(input.limit ?? 20, 100));
     const where = clauses.join(" AND ");
 
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT
             source_type,
@@ -174,7 +174,7 @@ export const importObservabilityRepo = {
          ORDER BY count DESC, last_seen_at DESC
          LIMIT ?`
       )
-      .all(...params, limit) as Array<{
+      .all(...params, limit)) as Array<{
       source_type: string;
       phase: ImportEventPhase;
       error_code: string;

@@ -29,21 +29,21 @@ function mapCategory(row: CategoryRow) {
 }
 
 export const categoriesRepo = {
-  listByUser(userId: string, withCounts = false) {
+  async listByUser(userId: string, withCounts = false) {
     if (!withCounts) {
-      const rows = db
+      const rows = (await db
         .prepare(
           `SELECT id, user_id, name, color, icon, parent_id, created_at, updated_at
            FROM categories
            WHERE user_id = ?
            ORDER BY parent_id ASC, name ASC`
         )
-        .all(userId) as CategoryRow[];
+        .all(userId)) as CategoryRow[];
 
       return rows.map(mapCategory);
     }
 
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT c.id, c.user_id, c.name, c.color, c.icon, c.parent_id, c.created_at, c.updated_at,
                 (SELECT COUNT(*) FROM transactions t WHERE t.category_id = c.id) AS tx_count,
@@ -52,7 +52,7 @@ export const categoriesRepo = {
          WHERE c.user_id = ?
          ORDER BY c.parent_id ASC, c.name ASC`
       )
-      .all(userId) as CategoryRow[];
+      .all(userId)) as CategoryRow[];
 
     return rows.map((row) => ({
       ...mapCategory(row),
@@ -63,19 +63,19 @@ export const categoriesRepo = {
     }));
   },
 
-  findByIdForUser(id: string, userId: string) {
-    const row = db
+  async findByIdForUser(id: string, userId: string) {
+    const row = (await db
       .prepare(
         `SELECT id, user_id, name, color, icon, parent_id, created_at, updated_at
          FROM categories
          WHERE id = ? AND user_id = ?`
       )
-      .get(id, userId) as CategoryRow | undefined;
+      .get(id, userId)) as CategoryRow | undefined;
 
     return row ? mapCategory(row) : null;
   },
 
-  create(input: {
+  async create(input: {
     userId: string;
     name: string;
     color?: string;
@@ -85,7 +85,7 @@ export const categoriesRepo = {
     const id = createId();
     const now = nowIso();
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO categories (id, user_id, name, color, icon, parent_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(id, input.userId, input.name, input.color ?? "#3b82f6", input.icon ?? null, input.parentId ?? null, now, now);
@@ -93,7 +93,7 @@ export const categoriesRepo = {
     return this.findByIdForUser(id, input.userId);
   },
 
-  update(input: {
+  async update(input: {
     id: string;
     userId: string;
     name?: string;
@@ -101,11 +101,11 @@ export const categoriesRepo = {
     icon?: string | null;
     parentId?: string | null;
   }) {
-    const existing = this.findByIdForUser(input.id, input.userId);
+    const existing = await this.findByIdForUser(input.id, input.userId);
     if (!existing) return null;
     const now = nowIso();
 
-    db.prepare(
+    await db.prepare(
       `UPDATE categories
        SET name = ?, color = ?, icon = ?, parent_id = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
@@ -122,16 +122,16 @@ export const categoriesRepo = {
     return this.findByIdForUser(input.id, input.userId);
   },
 
-  clearParentForChildren(input: { userId: string; parentId: string }) {
-    db.prepare(
+  async clearParentForChildren(input: { userId: string; parentId: string }) {
+    await db.prepare(
       `UPDATE categories
        SET parent_id = NULL, updated_at = ?
        WHERE user_id = ? AND parent_id = ?`
     ).run(nowIso(), input.userId, input.parentId);
   },
 
-  delete(input: { id: string; userId: string }): number {
-    const result = db
+  async delete(input: { id: string; userId: string }): Promise<number> {
+    const result = await db
       .prepare(
         `DELETE FROM categories
          WHERE id = ? AND user_id = ?`

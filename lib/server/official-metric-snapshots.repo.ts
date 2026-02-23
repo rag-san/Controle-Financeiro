@@ -13,15 +13,15 @@ type SnapshotRow = {
 };
 
 export const officialMetricSnapshotsRepo = {
-  find(input: { userId: string; metricKey: string; periodKey: string }) {
-    const row = db
+  async find(input: { userId: string; metricKey: string; periodKey: string }) {
+    const row = (await db
       .prepare(
         `SELECT id, user_id, metric_key, period_key, payload_json, created_at, updated_at
          FROM official_metric_snapshots
          WHERE user_id = ? AND metric_key = ? AND period_key = ?
          LIMIT 1`
       )
-      .get(input.userId, input.metricKey, input.periodKey) as SnapshotRow | undefined;
+      .get(input.userId, input.metricKey, input.periodKey)) as SnapshotRow | undefined;
 
     if (!row) return null;
     try {
@@ -39,25 +39,25 @@ export const officialMetricSnapshotsRepo = {
     }
   },
 
-  upsert(input: {
+  async upsert(input: {
     userId: string;
     metricKey: string;
     periodKey: string;
     payload: unknown;
-  }): void {
-    const existing = db
+  }): Promise<void> {
+    const existing = (await db
       .prepare(
         `SELECT id
          FROM official_metric_snapshots
          WHERE user_id = ? AND metric_key = ? AND period_key = ?
          LIMIT 1`
       )
-      .get(input.userId, input.metricKey, input.periodKey) as { id: string } | undefined;
+      .get(input.userId, input.metricKey, input.periodKey)) as { id: string } | undefined;
     const now = nowIso();
     const payloadJson = JSON.stringify(input.payload);
 
     if (existing) {
-      db.prepare(
+      await db.prepare(
         `UPDATE official_metric_snapshots
          SET payload_json = ?, updated_at = ?
          WHERE id = ?`
@@ -65,7 +65,7 @@ export const officialMetricSnapshotsRepo = {
       return;
     }
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO official_metric_snapshots (
          id, user_id, metric_key, period_key, payload_json, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?)`

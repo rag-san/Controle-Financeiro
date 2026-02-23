@@ -14,7 +14,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(cached, { headers: privateCacheHeaders });
   }
 
-  const batches = importsRepo.listRecentByUser(auth.userId, 30);
+  const batches = await importsRepo.listRecentByUser(auth.userId, 30);
 
   setCache(cacheKey, batches, 20_000);
 

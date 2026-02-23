@@ -34,29 +34,29 @@ function mapAccount(row: AccountRow) {
 }
 
 export const accountsRepo = {
-  listByUser(userId: string) {
-    const rows = db
+  async listByUser(userId: string) {
+    const rows = (await db
       .prepare(
         `SELECT id, user_id, name, type, institution, currency, parent_account_id, created_at, updated_at
          FROM accounts
          WHERE user_id = ?
          ORDER BY (parent_account_id IS NOT NULL) ASC, type ASC, name ASC`
       )
-      .all(userId) as AccountRow[];
+      .all(userId)) as AccountRow[];
 
     return rows.map(mapAccount);
   },
 
-  listByUserWithBalance(userId: string) {
-    const accounts = this.listByUser(userId);
-    const balanceRows = db
+  async listByUserWithBalance(userId: string) {
+    const accounts = await this.listByUser(userId);
+    const balanceRows = (await db
       .prepare(
         `SELECT account_id, SUM(amount_cents) AS total_cents
          FROM transactions
          WHERE user_id = ?
          GROUP BY account_id`
       )
-      .all(userId) as AccountBalanceRow[];
+      .all(userId)) as AccountBalanceRow[];
 
     const balanceByAccountId = new Map(balanceRows.map((row) => [row.account_id, fromCents(row.total_cents)]));
 
@@ -66,19 +66,19 @@ export const accountsRepo = {
     }));
   },
 
-  findByIdForUser(id: string, userId: string) {
-    const row = db
+  async findByIdForUser(id: string, userId: string) {
+    const row = (await db
       .prepare(
         `SELECT id, user_id, name, type, institution, currency, parent_account_id, created_at, updated_at
          FROM accounts
          WHERE id = ? AND user_id = ?`
       )
-      .get(id, userId) as AccountRow | undefined;
+      .get(id, userId)) as AccountRow | undefined;
 
     return row ? mapAccount(row) : null;
   },
 
-  create(input: {
+  async create(input: {
     userId: string;
     name: string;
     type: "checking" | "credit" | "cash" | "investment";
@@ -92,7 +92,7 @@ export const accountsRepo = {
       input.type === "credit" ? (input.parentAccountId !== undefined ? input.parentAccountId : null) : null;
 
     if (parentAccountId) {
-      const parent = this.findByIdForUser(parentAccountId, input.userId);
+      const parent = await this.findByIdForUser(parentAccountId, input.userId);
       if (!parent) {
         throw new Error("PARENT_ACCOUNT_NOT_FOUND");
       }
@@ -101,7 +101,7 @@ export const accountsRepo = {
       }
     }
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO accounts (id, user_id, name, type, institution, currency, parent_account_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
@@ -119,7 +119,7 @@ export const accountsRepo = {
     return this.findByIdForUser(id, input.userId);
   },
 
-  update(input: {
+  async update(input: {
     id: string;
     userId: string;
     name?: string;
@@ -128,7 +128,7 @@ export const accountsRepo = {
     currency?: string;
     parentAccountId?: string | null;
   }) {
-    const existing = this.findByIdForUser(input.id, input.userId);
+    const existing = await this.findByIdForUser(input.id, input.userId);
     if (!existing) return null;
 
     const nextType = input.type ?? existing.type;
@@ -140,7 +140,7 @@ export const accountsRepo = {
       if (nextParentAccountId === input.id) {
         throw new Error("PARENT_ACCOUNT_SELF_REFERENCE");
       }
-      const parent = this.findByIdForUser(nextParentAccountId, input.userId);
+      const parent = await this.findByIdForUser(nextParentAccountId, input.userId);
       if (!parent) {
         throw new Error("PARENT_ACCOUNT_NOT_FOUND");
       }
@@ -150,7 +150,7 @@ export const accountsRepo = {
     }
 
     const now = nowIso();
-    db.prepare(
+    await db.prepare(
       `UPDATE accounts
        SET name = ?, type = ?, institution = ?, currency = ?, parent_account_id = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
@@ -168,20 +168,20 @@ export const accountsRepo = {
     return this.findByIdForUser(input.id, input.userId);
   },
 
-  countTransactions(userId: string, accountId: string): number {
-    const row = db
+  async countTransactions(userId: string, accountId: string): Promise<number> {
+    const row = (await db
       .prepare(
         `SELECT COUNT(*) as count
          FROM transactions
          WHERE user_id = ? AND account_id = ?`
       )
-      .get(userId, accountId) as { count: number };
+      .get(userId, accountId)) as { count: number };
 
     return row.count;
   },
 
-  delete(input: { id: string; userId: string }): number {
-    const result = db
+  async delete(input: { id: string; userId: string }): Promise<number> {
+    const result = await db
       .prepare(
         `DELETE FROM accounts
          WHERE id = ? AND user_id = ?`

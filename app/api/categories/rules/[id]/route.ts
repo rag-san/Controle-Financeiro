@@ -36,13 +36,13 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const existing = categoryRulesRepo.findByIdForUser(id, auth.userId);
+  const existing = await categoryRulesRepo.findByIdForUser(id, auth.userId);
 
   if (!existing) {
     return NextResponse.json({ error: "Regra nao encontrada" }, { status: 404 });
   }
 
-  const rule = categoryRulesRepo.update({
+  const rule = await categoryRulesRepo.update({
     id,
     userId: auth.userId,
     ...parsed.data
@@ -65,7 +65,7 @@ export async function DELETE(
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
-  categoryRulesRepo.delete({
+  await categoryRulesRepo.delete({
     id,
     userId: auth.userId
   });

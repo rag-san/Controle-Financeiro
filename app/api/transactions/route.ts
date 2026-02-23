@@ -35,7 +35,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const payload = listTransactionsForUser(auth.userId, parsed.data);
+    const payload = await listTransactionsForUser(auth.userId, parsed.data);
 
     setCache(cacheKey, payload, 10_000);
 
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const transaction = createTransactionForUser(auth.userId, parsed.data);
+    const transaction = await createTransactionForUser(auth.userId, parsed.data);
 
     if (!transaction) {
       return NextResponse.json({ error: "Falha ao criar transacao" }, { status: 500 });
@@ -90,7 +90,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     }
 
     const dedupedIds = [...new Set(parsed.data.ids)];
-    const deletedCount = transactionsRepo.deleteManyByIdsForUser(dedupedIds, auth.userId);
+    const deletedCount = await transactionsRepo.deleteManyByIdsForUser(dedupedIds, auth.userId);
 
     invalidateFinanceCaches(auth.userId);
 

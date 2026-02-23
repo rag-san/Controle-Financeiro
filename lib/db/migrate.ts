@@ -4,18 +4,23 @@ type TableInfoRow = {
   name: string;
 };
 
-function ensureColumn(table: string, column: string, ddlFragment: string): void {
-  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
+async function ensureColumn(table: string, column: string, ddlFragment: string): Promise<void> {
+  if (db.dialect === "postgres") {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${ddlFragment}`);
+    return;
+  }
+
+  const rows = (await db.prepare(`PRAGMA table_info(${table})`).all()) as TableInfoRow[];
   const hasColumn = rows.some((row) => row.name === column);
   if (hasColumn) {
     return;
   }
 
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddlFragment}`);
+  await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddlFragment}`);
 }
 
-function runMigrations(): void {
-  db.exec(`
+async function runMigrations(): Promise<void> {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
@@ -214,19 +219,19 @@ function runMigrations(): void {
     CREATE INDEX IF NOT EXISTS idx_rules_user_enabled ON category_rules(user_id, enabled);
   `);
 
-  ensureColumn("accounts", "parent_account_id", "TEXT");
-  ensureColumn("transactions", "transfer_group_id", "TEXT");
-  ensureColumn("transactions", "transfer_peer_tx_id", "TEXT");
+  await ensureColumn("accounts", "parent_account_id", "TEXT");
+  await ensureColumn("transactions", "transfer_group_id", "TEXT");
+  await ensureColumn("transactions", "transfer_peer_tx_id", "TEXT");
 
-  db.exec(`
+  await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_accounts_user_parent ON accounts(user_id, parent_account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_user_transfer_group ON transactions(user_id, transfer_group_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_account_transfer_group ON transactions(account_id, transfer_group_id);
   `);
 }
 
-export function migrate(): void {
-  runMigrations();
+export async function migrate(): Promise<void> {
+  await runMigrations();
 }
 
 

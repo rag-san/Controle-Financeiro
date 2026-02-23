@@ -88,13 +88,13 @@ function buildRuleIdentity(input: { pattern: string; categoryId: string }): stri
   return `${normalizeDescription(input.pattern)}|${input.categoryId}`;
 }
 
-export function restoreDefaultCategoriesForUser(userId: string): {
+export async function restoreDefaultCategoriesForUser(userId: string): Promise<{
   createdCategories: number;
   createdRules: number;
   totalCategories: number;
   totalRules: number;
-} {
-  const existingCategories = categoriesRepo.listByUser(userId);
+}> {
+  const existingCategories = await categoriesRepo.listByUser(userId);
   const categoryByName = new Map(existingCategories.map((item) => [normalizeDescription(item.name), item]));
 
   let createdCategories = 0;
@@ -105,7 +105,7 @@ export function restoreDefaultCategoriesForUser(userId: string): {
       continue;
     }
 
-    const created = categoriesRepo.create({
+    const created = await categoriesRepo.create({
       userId,
       name: preset.name,
       color: preset.color,
@@ -118,7 +118,7 @@ export function restoreDefaultCategoriesForUser(userId: string): {
     }
   }
 
-  const allRules = categoryRulesRepo.listByUser(userId);
+  const allRules = await categoryRulesRepo.listByUser(userId);
   const existingRuleIdentities = new Set(
     allRules.map((rule) => buildRuleIdentity({ pattern: rule.pattern, categoryId: rule.categoryId }))
   );
@@ -136,7 +136,7 @@ export function restoreDefaultCategoriesForUser(userId: string): {
         continue;
       }
 
-      const created = categoryRulesRepo.create({
+      const created = await categoryRulesRepo.create({
         userId,
         name: `Auto: ${preset.name} - ${pattern}`,
         priority: nextPriority,
@@ -158,8 +158,8 @@ export function restoreDefaultCategoriesForUser(userId: string): {
   return {
     createdCategories,
     createdRules,
-    totalCategories: categoriesRepo.listByUser(userId).length,
-    totalRules: categoryRulesRepo.listByUser(userId).length
+    totalCategories: (await categoriesRepo.listByUser(userId)).length,
+    totalRules: (await categoryRulesRepo.listByUser(userId)).length
   };
 }
 

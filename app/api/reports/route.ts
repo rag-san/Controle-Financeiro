@@ -158,7 +158,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(cached, { headers: deprecatedReportsHeaders });
     }
 
-    const transactions = transactionsRepo.listPaged(
+    const transactions = await transactionsRepo.listPaged(
       { userId: auth.userId },
       { page: 1, pageSize: 500 }
     );

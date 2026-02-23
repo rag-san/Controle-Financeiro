@@ -40,7 +40,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(cached, { headers: privateCacheHeaders });
   }
 
-  const payload = netWorthRepo.listByUser(auth.userId);
+  const payload = await netWorthRepo.listByUser(auth.userId);
 
   setCache(cacheKey, payload, 20_000);
 
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const entry = netWorthRepo.create({
+  const entry = await netWorthRepo.create({
     userId: auth.userId,
     type: parsed.data.type,
     name: parsed.data.name,

@@ -136,20 +136,20 @@ function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[]
 }
 
 export const transactionsRepo = {
-  listAll(filter: FilterInput) {
-    const total = this.count(filter);
+  async listAll(filter: FilterInput) {
+    const total = await this.count(filter);
     if (total <= 0) return [];
     return this.listPaged(filter, { page: 1, pageSize: total });
   },
 
-  listPaged(
+  async listPaged(
     filter: FilterInput,
     pagination: { page: number; pageSize: number }
   ) {
     const { sql, params } = buildFilterWhere(filter);
     const offset = (pagination.page - 1) * pagination.pageSize;
 
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
@@ -164,30 +164,30 @@ export const transactionsRepo = {
          ORDER BY t.posted_at DESC, t.created_at DESC
          LIMIT ? OFFSET ?`
       )
-      .all(...params, pagination.pageSize, offset) as TransactionJoinedRow[];
+      .all(...params, pagination.pageSize, offset)) as TransactionJoinedRow[];
 
     return rows.map(mapWithRelations);
   },
 
-  count(filter: FilterInput): number {
+  async count(filter: FilterInput): Promise<number> {
     const { sql, params } = buildFilterWhere(filter);
-    const row = db
+    const row = (await db
       .prepare(`SELECT COUNT(*) AS count FROM transactions t WHERE ${sql}`)
-      .get(...params) as { count: number };
+      .get(...params)) as { count: number };
 
     return row.count;
   },
 
-  sumByType(filter: FilterInput): Array<{ type: "income" | "expense" | "transfer"; amount: number }> {
+  async sumByType(filter: FilterInput): Promise<Array<{ type: "income" | "expense" | "transfer"; amount: number }>> {
     const { sql, params } = buildFilterWhere(filter);
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT t.type, SUM(t.amount_cents) AS total_cents
          FROM transactions t
          WHERE ${sql}
          GROUP BY t.type`
       )
-      .all(...params) as Array<{ type: "income" | "expense" | "transfer"; total_cents: number | null }>;
+      .all(...params)) as Array<{ type: "income" | "expense" | "transfer"; total_cents: number | null }>;
 
     return rows.map((row) => ({
       type: row.type,
@@ -195,8 +195,8 @@ export const transactionsRepo = {
     }));
   },
 
-  findByIdForUser(id: string, userId: string) {
-    const row = db
+  async findByIdForUser(id: string, userId: string) {
+    const row = (await db
       .prepare(
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
@@ -209,12 +209,12 @@ export const transactionsRepo = {
          LEFT JOIN categories c ON c.id = t.category_id
          WHERE t.id = ? AND t.user_id = ?`
       )
-      .get(id, userId) as TransactionJoinedRow | undefined;
+      .get(id, userId)) as TransactionJoinedRow | undefined;
 
     return row ? mapWithRelations(row) : null;
   },
 
-  create(input: {
+  async create(input: {
     userId: string;
     accountId: string;
     categoryId?: string | null;
@@ -234,7 +234,7 @@ export const transactionsRepo = {
     const now = nowIso();
     const categoryId = input.type === "transfer" ? null : (input.categoryId ?? null);
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
          amount_cents, currency, type, status, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
@@ -262,7 +262,7 @@ export const transactionsRepo = {
     return this.findByIdForUser(id, input.userId);
   },
 
-  createMany(
+  async createMany(
     rows: Array<{
       userId: string;
       accountId: string;
@@ -279,7 +279,7 @@ export const transactionsRepo = {
       transferPeerTxId?: string | null;
       raw?: Record<string, unknown> | null;
     }>
-  ): { count: number } {
+  ): Promise<{ count: number }> {
     if (rows.length === 0) {
       return { count: 0 };
     }
@@ -292,11 +292,11 @@ export const transactionsRepo = {
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
-    const run = db.transaction(() => {
+    const run = db.transaction(async () => {
       let count = 0;
       for (const row of rows) {
         const categoryId = row.type === "transfer" ? null : (row.categoryId ?? null);
-        insert.run(
+        await insert.run(
           createId(),
           row.userId,
           row.accountId,
@@ -320,10 +320,10 @@ export const transactionsRepo = {
       return count;
     });
 
-    return { count: run() };
+    return { count: await run() };
   },
 
-  createTransferPair(input: {
+  async createTransferPair(input: {
     userId: string;
     fromAccountId: string;
     toAccountId: string;
@@ -335,7 +335,7 @@ export const transactionsRepo = {
     importBatchId?: string | null;
     importedHashBase?: string | null;
     raw?: Record<string, unknown> | null;
-  }): {
+  }): Promise<{
     created: boolean;
     reason?: "duplicate";
     transferGroupId: string | null;
@@ -343,7 +343,7 @@ export const transactionsRepo = {
     inTxId: string | null;
     outImportedHash: string | null;
     inImportedHash: string | null;
-  } {
+  }> {
     if (input.fromAccountId === input.toAccountId) {
       throw new Error("TRANSFER_SAME_ACCOUNT");
     }
@@ -368,33 +368,33 @@ export const transactionsRepo = {
     };
 
     try {
-      return dbTransaction(() => {
-        const fromAccountExists = db
+      return dbTransaction(async () => {
+        const fromAccountExists = (await db
           .prepare(
             `SELECT id
              FROM accounts
              WHERE user_id = ? AND id = ?
              LIMIT 1`
           )
-          .get(input.userId, input.fromAccountId) as { id: string } | undefined;
+          .get(input.userId, input.fromAccountId)) as { id: string } | undefined;
         if (!fromAccountExists) {
           throw new Error("TRANSFER_FROM_ACCOUNT_NOT_FOUND");
         }
 
-        const toAccountExists = db
+        const toAccountExists = (await db
           .prepare(
             `SELECT id
              FROM accounts
              WHERE user_id = ? AND id = ?
              LIMIT 1`
           )
-          .get(input.userId, input.toAccountId) as { id: string } | undefined;
+          .get(input.userId, input.toAccountId)) as { id: string } | undefined;
         if (!toAccountExists) {
           throw new Error("TRANSFER_TO_ACCOUNT_NOT_FOUND");
         }
 
         if (outImportedHash && inImportedHash) {
-          const existing = db
+          const existing = (await db
             .prepare(
               `SELECT id
                FROM transactions
@@ -402,7 +402,7 @@ export const transactionsRepo = {
                  AND imported_hash IN (?, ?)
                LIMIT 1`
             )
-            .get(input.userId, outImportedHash, inImportedHash) as { id: string } | undefined;
+            .get(input.userId, outImportedHash, inImportedHash)) as { id: string } | undefined;
 
           if (existing) {
             return duplicateResult;
@@ -421,7 +421,7 @@ export const transactionsRepo = {
            ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', 'transfer', ?, ?, ?, NULL, ?, ?, ?)`
         );
 
-        insert.run(
+        await insert.run(
           outTxId,
           input.userId,
           input.fromAccountId,
@@ -443,7 +443,7 @@ export const transactionsRepo = {
           now
         );
 
-        insert.run(
+        await insert.run(
           inTxId,
           input.userId,
           input.toAccountId,
@@ -470,8 +470,8 @@ export const transactionsRepo = {
            SET transfer_peer_tx_id = ?, updated_at = ?
            WHERE id = ? AND user_id = ?`
         );
-        updatePeer.run(inTxId, now, outTxId, input.userId);
-        updatePeer.run(outTxId, now, inTxId, input.userId);
+        await updatePeer.run(inTxId, now, outTxId, input.userId);
+        await updatePeer.run(outTxId, now, inTxId, input.userId);
 
         return {
           created: true,
@@ -495,7 +495,7 @@ export const transactionsRepo = {
     }
   },
 
-  update(input: {
+  async update(input: {
     id: string;
     userId: string;
     accountId?: string;
@@ -507,7 +507,7 @@ export const transactionsRepo = {
     type?: "income" | "expense" | "transfer";
     status?: "posted" | "pending";
   }) {
-    const existing = this.findByIdForUser(input.id, input.userId);
+    const existing = await this.findByIdForUser(input.id, input.userId);
     if (!existing) return null;
 
     const nextDescription = input.description ?? existing.description;
@@ -522,7 +522,7 @@ export const transactionsRepo = {
           ? input.categoryId
           : existing.categoryId;
 
-    db.prepare(
+    await db.prepare(
       `UPDATE transactions
        SET account_id = ?, category_id = ?, posted_at = ?, description = ?, normalized_description = ?,
            amount_cents = ?, type = ?, status = ?, updated_at = ?
@@ -544,14 +544,14 @@ export const transactionsRepo = {
     return this.findByIdForUser(input.id, input.userId);
   },
 
-  deleteByIdForUser(id: string, userId: string): number {
-    const existing = db
+  async deleteByIdForUser(id: string, userId: string): Promise<number> {
+    const existing = (await db
       .prepare(
         `SELECT id, type, transfer_peer_tx_id, transfer_group_id
          FROM transactions
          WHERE id = ? AND user_id = ?`
       )
-      .get(id, userId) as
+      .get(id, userId)) as
       | {
           id: string;
           type: "income" | "expense" | "transfer";
@@ -571,13 +571,13 @@ export const transactionsRepo = {
       }
 
       if (existing.transfer_group_id) {
-        const groupedRows = db
+        const groupedRows = (await db
           .prepare(
             `SELECT id
              FROM transactions
              WHERE user_id = ? AND transfer_group_id = ?`
           )
-          .all(userId, existing.transfer_group_id) as Array<{ id: string }>;
+          .all(userId, existing.transfer_group_id)) as Array<{ id: string }>;
 
         for (const row of groupedRows) {
           idsToDelete.add(row.id);
@@ -587,7 +587,7 @@ export const transactionsRepo = {
 
     const finalIds = [...idsToDelete];
     const placeholders = finalIds.map(() => "?").join(",");
-    const result = db
+    const result = await db
       .prepare(
         `DELETE FROM transactions
          WHERE user_id = ? AND id IN (${placeholders})`
@@ -597,18 +597,18 @@ export const transactionsRepo = {
     return result.changes;
   },
 
-  deleteManyByIdsForUser(ids: string[], userId: string): number {
+  async deleteManyByIdsForUser(ids: string[], userId: string): Promise<number> {
     if (ids.length === 0) return 0;
 
     const selectedIds = [...new Set(ids)];
     const selectedPlaceholders = selectedIds.map(() => "?").join(",");
-    const selectedRows = db
+    const selectedRows = (await db
       .prepare(
         `SELECT id, type, transfer_peer_tx_id, transfer_group_id
          FROM transactions
          WHERE user_id = ? AND id IN (${selectedPlaceholders})`
       )
-      .all(userId, ...selectedIds) as Array<{
+      .all(userId, ...selectedIds)) as Array<{
       id: string;
       type: "income" | "expense" | "transfer";
       transfer_peer_tx_id: string | null;
@@ -634,13 +634,13 @@ export const transactionsRepo = {
 
     if (transferGroupIds.size > 0) {
       const groupPlaceholders = [...transferGroupIds].map(() => "?").join(",");
-      const groupedRows = db
+      const groupedRows = (await db
         .prepare(
           `SELECT id
            FROM transactions
            WHERE user_id = ? AND transfer_group_id IN (${groupPlaceholders})`
         )
-        .all(userId, ...transferGroupIds) as Array<{ id: string }>;
+        .all(userId, ...transferGroupIds)) as Array<{ id: string }>;
 
       for (const row of groupedRows) {
         idsToDelete.add(row.id);
@@ -649,7 +649,7 @@ export const transactionsRepo = {
 
     const finalIds = [...idsToDelete];
     const placeholders = finalIds.map(() => "?").join(",");
-    const result = db
+    const result = await db
       .prepare(
         `DELETE FROM transactions
          WHERE user_id = ? AND id IN (${placeholders})`
@@ -659,8 +659,8 @@ export const transactionsRepo = {
     return result.changes;
   },
 
-  listForRuleReapply(userId: string, onlyUncategorized: boolean) {
-    const rows = db
+  async listForRuleReapply(userId: string, onlyUncategorized: boolean) {
+    const rows = (await db
       .prepare(
         `SELECT id, description, normalized_description, amount_cents, account_id, category_id
          FROM transactions
@@ -669,7 +669,7 @@ export const transactionsRepo = {
            ${onlyUncategorized ? "AND category_id IS NULL" : ""}
          ORDER BY posted_at DESC, created_at DESC`
       )
-      .all(userId) as Array<{
+      .all(userId)) as Array<{
         id: string;
         description: string;
         normalized_description: string;
@@ -688,7 +688,7 @@ export const transactionsRepo = {
     }));
   },
 
-  bulkUpdateCategory(updates: Array<{ id: string; categoryId: string }>) {
+  async bulkUpdateCategory(updates: Array<{ id: string; categoryId: string }>) {
     if (updates.length === 0) return 0;
     const stmt = db.prepare(
       `UPDATE transactions
@@ -696,45 +696,45 @@ export const transactionsRepo = {
        WHERE id = ?`
     );
 
-    return dbTransaction(() => {
+    return dbTransaction(async () => {
       let count = 0;
       const now = nowIso();
       for (const update of updates) {
-        const result = stmt.run(update.categoryId, now, update.id);
+        const result = await stmt.run(update.categoryId, now, update.id);
         count += result.changes;
       }
       return count;
     });
   },
 
-  findImportedHashes(userId: string, hashes: string[]) {
+  async findImportedHashes(userId: string, hashes: string[]) {
     if (hashes.length === 0) return [];
     const placeholders = hashes.map(() => "?").join(",");
-    const rows = db
+    const rows = (await db
       .prepare(
         `SELECT imported_hash
          FROM transactions
          WHERE user_id = ? AND imported_hash IN (${placeholders})`
       )
-      .all(userId, ...hashes) as Array<{ imported_hash: string | null }>;
+      .all(userId, ...hashes)) as Array<{ imported_hash: string | null }>;
 
     return rows.map((row) => row.imported_hash).filter((value): value is string => Boolean(value));
   },
 
-  countByAccount(userId: string, accountId: string): number {
-    const row = db
+  async countByAccount(userId: string, accountId: string): Promise<number> {
+    const row = (await db
       .prepare(
         `SELECT COUNT(*) AS count
          FROM transactions
          WHERE user_id = ? AND account_id = ?`
       )
-      .get(userId, accountId) as { count: number };
+      .get(userId, accountId)) as { count: number };
 
     return row.count;
   },
 
-  listByDateRange(userId: string, from: Date, to: Date, withCategory = false) {
-    const rows = db
+  async listByDateRange(userId: string, from: Date, to: Date, withCategory = false) {
+    const rows = (await db
       .prepare(
         `SELECT id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
                 amount_cents, currency, type, status, account, bank, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
@@ -742,7 +742,7 @@ export const transactionsRepo = {
          WHERE user_id = ? AND posted_at >= ? AND posted_at <= ?
          ORDER BY posted_at ASC`
       )
-      .all(userId, from.toISOString(), to.toISOString()) as TransactionRow[];
+      .all(userId, from.toISOString(), to.toISOString())) as TransactionRow[];
 
     if (!withCategory) {
       return rows.map(mapBase);
@@ -750,8 +750,8 @@ export const transactionsRepo = {
     return rows.map(mapBase);
   },
 
-  listRecentAmounts(userId: string, take: number) {
-    const rows = db
+  async listRecentAmounts(userId: string, take: number) {
+    const rows = (await db
       .prepare(
         `SELECT amount_cents
          FROM transactions
@@ -759,13 +759,13 @@ export const transactionsRepo = {
          ORDER BY posted_at DESC
          LIMIT ?`
       )
-      .all(userId, take) as Array<{ amount_cents: number }>;
+      .all(userId, take)) as Array<{ amount_cents: number }>;
 
     return rows.map((row) => ({ amount: fromCents(row.amount_cents) }));
   },
 
-  latestPostedAt(userId: string): Date | null {
-    const row = db
+  async latestPostedAt(userId: string): Promise<Date | null> {
+    const row = (await db
       .prepare(
         `SELECT posted_at
          FROM transactions
@@ -773,7 +773,7 @@ export const transactionsRepo = {
          ORDER BY posted_at DESC
          LIMIT 1`
       )
-      .get(userId) as { posted_at: string } | undefined;
+      .get(userId)) as { posted_at: string } | undefined;
 
     if (!row?.posted_at) {
       return null;
@@ -783,8 +783,8 @@ export const transactionsRepo = {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   },
 
-  oldestPostedAt(userId: string): Date | null {
-    const row = db
+  async oldestPostedAt(userId: string): Promise<Date | null> {
+    const row = (await db
       .prepare(
         `SELECT posted_at
          FROM transactions
@@ -792,7 +792,7 @@ export const transactionsRepo = {
          ORDER BY posted_at ASC
          LIMIT 1`
       )
-      .get(userId) as { posted_at: string } | undefined;
+      .get(userId)) as { posted_at: string } | undefined;
 
     if (!row?.posted_at) {
       return null;
@@ -802,10 +802,10 @@ export const transactionsRepo = {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   },
 
-  listMetaForUser(userId: string) {
+  async listMetaForUser(userId: string) {
     return {
-      accounts: accountsRepo.listByUser(userId),
-      categories: categoriesRepo.listByUser(userId)
+      accounts: await accountsRepo.listByUser(userId),
+      categories: await categoriesRepo.listByUser(userId)
     };
   }
 };

@@ -32,20 +32,20 @@ function mapItem(row: RecurringRow) {
 }
 
 export const recurringRepo = {
-  listByUser(userId: string, includeCategory = false) {
-    const rows = db
+  async listByUser(userId: string, includeCategory = false) {
+    const rows = (await db
       .prepare(
         `SELECT id, user_id, name, amount_cents, due_day, category_id, status, last_paid_at, created_at, updated_at
          FROM recurring_items
          WHERE user_id = ?
          ORDER BY status ASC, due_day ASC, name ASC`
       )
-      .all(userId) as RecurringRow[];
+      .all(userId)) as RecurringRow[];
 
     const base = rows.map(mapItem);
     if (!includeCategory) return base;
 
-    const categories = categoriesRepo.listByUser(userId);
+    const categories = await categoriesRepo.listByUser(userId);
     const categoryById = new Map(categories.map((item) => [item.id, item]));
 
     return base.map((item) => ({
@@ -54,23 +54,23 @@ export const recurringRepo = {
     }));
   },
 
-  findByIdForUser(id: string, userId: string, includeCategory = false) {
-    const row = db
+  async findByIdForUser(id: string, userId: string, includeCategory = false) {
+    const row = (await db
       .prepare(
         `SELECT id, user_id, name, amount_cents, due_day, category_id, status, last_paid_at, created_at, updated_at
          FROM recurring_items
          WHERE id = ? AND user_id = ?`
       )
-      .get(id, userId) as RecurringRow | undefined;
+      .get(id, userId)) as RecurringRow | undefined;
 
     if (!row) return null;
     const base = mapItem(row);
     if (!includeCategory) return base;
-    const category = base.categoryId ? categoriesRepo.findByIdForUser(base.categoryId, userId) : null;
+    const category = base.categoryId ? await categoriesRepo.findByIdForUser(base.categoryId, userId) : null;
     return { ...base, category };
   },
 
-  create(input: {
+  async create(input: {
     userId: string;
     name: string;
     amount: number;
@@ -81,7 +81,7 @@ export const recurringRepo = {
   }) {
     const id = createId();
     const now = nowIso();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO recurring_items (
          id, user_id, name, amount_cents, due_day, category_id, status, last_paid_at, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -101,7 +101,7 @@ export const recurringRepo = {
     return this.findByIdForUser(id, input.userId, true);
   },
 
-  update(input: {
+  async update(input: {
     id: string;
     userId: string;
     name?: string;
@@ -111,10 +111,10 @@ export const recurringRepo = {
     status?: "active" | "inactive";
     lastPaidAt?: Date | null;
   }) {
-    const existing = this.findByIdForUser(input.id, input.userId, false);
+    const existing = await this.findByIdForUser(input.id, input.userId, false);
     if (!existing) return null;
 
-    db.prepare(
+    await db.prepare(
       `UPDATE recurring_items
        SET name = ?, amount_cents = ?, due_day = ?, category_id = ?, status = ?, last_paid_at = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
@@ -133,8 +133,8 @@ export const recurringRepo = {
     return this.findByIdForUser(input.id, input.userId, true);
   },
 
-  delete(input: { id: string; userId: string }): number {
-    const result = db
+  async delete(input: { id: string; userId: string }): Promise<number> {
+    const result = await db
       .prepare(
         `DELETE FROM recurring_items
          WHERE id = ? AND user_id = ?`

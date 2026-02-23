@@ -22,8 +22,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const [rulesDb, transactions] = await Promise.all([
-    Promise.resolve(categoryRulesRepo.listActiveByUser(auth.userId)),
-    Promise.resolve(transactionsRepo.listForRuleReapply(auth.userId, parsed.data.onlyUncategorized))
+    categoryRulesRepo.listActiveByUser(auth.userId),
+    transactionsRepo.listForRuleReapply(auth.userId, parsed.data.onlyUncategorized)
   ]);
 
   const rules: CategorizationRule[] = rulesDb.map((rule) => ({
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     .filter((item): item is { id: string; categoryId: string } => Boolean(item));
 
   if (updates.length > 0) {
-    transactionsRepo.bulkUpdateCategory(updates);
+    await transactionsRepo.bulkUpdateCategory(updates);
   }
 
   invalidateFinanceCaches(auth.userId);

@@ -13,7 +13,7 @@ async function ensureUserExists(userId: string): Promise<boolean> {
     return true;
   }
 
-  const user = usersRepo.findById(userId);
+  const user = await usersRepo.findById(userId);
 
   if (!user) {
     return false;

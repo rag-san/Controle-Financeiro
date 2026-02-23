@@ -38,12 +38,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Parametro from deve ser menor ou igual a to." }, { status: 400 });
     }
 
-    const bySourcePhase = importObservabilityRepo.summarizeBySource({
+    const bySourcePhase = await importObservabilityRepo.summarizeBySource({
       userId: auth.userId,
       from: from ?? undefined,
       to: to ?? undefined
     });
-    const recentErrors = importObservabilityRepo.recentErrors({
+    const recentErrors = await importObservabilityRepo.recentErrors({
       userId: auth.userId,
       from: from ?? undefined,
       to: to ?? undefined,

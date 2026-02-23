@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { initDbOnce } from "@/lib/db";
 
-initDbOnce();
+void initDbOnce();
 
 export function toCents(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -25,9 +25,9 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-export function dbTransaction<T>(run: () => T): T {
+export async function dbTransaction<T>(run: () => Promise<T>): Promise<T> {
   const trx = db.transaction(run);
-  return trx();
+  return await trx();
 }
 
 export function escapeLike(value: string): string {

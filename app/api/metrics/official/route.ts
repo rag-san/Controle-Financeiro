@@ -59,7 +59,7 @@ function serializePeriodRange(range: { preset: string; label: string; start: Dat
 }
 
 function toTransactionDTO(
-  item: ReturnType<typeof transactionsRepo.listPaged>[number]
+  item: Awaited<ReturnType<typeof transactionsRepo.listPaged>>[number]
 ) {
   return {
     id: item.id,
@@ -93,25 +93,25 @@ function toTransactionDTO(
   };
 }
 
-function buildReportsViewPayload(input: {
+async function buildReportsViewPayload(input: {
   userId: string;
   preset: ReportsPeriodPreset;
   accountId?: string;
   categoryId?: string;
 }) {
-  const earliestDate = transactionsRepo.oldestPostedAt(input.userId) ?? undefined;
+  const earliestDate = (await transactionsRepo.oldestPostedAt(input.userId)) ?? undefined;
   const period = buildPeriodComparison(input.preset, { now: new Date(), earliestDate });
   const start =
     period.current.start.getTime() <= period.previous.start.getTime() ? period.current.start : period.previous.start;
   const end = period.current.end.getTime() >= period.previous.end.getTime() ? period.current.end : period.previous.end;
 
-  const rows = transactionsRepo.listAll({
+  const rows = await transactionsRepo.listAll({
     userId: input.userId,
     dateFrom: start,
     dateTo: end
   });
   const transactions = rows.map(toTransactionDTO);
-  const categories = categoriesRepo.listByUser(input.userId);
+  const categories = await categoriesRepo.listByUser(input.userId);
 
   const model = buildReportsModel({
     transactions,
@@ -127,7 +127,7 @@ function buildReportsViewPayload(input: {
       current: serializePeriodRange(period.current),
       previous: serializePeriodRange(period.previous)
     },
-    accounts: accountsRepo.listByUser(input.userId),
+    accounts: await accountsRepo.listByUser(input.userId),
     categories,
     model: {
       ...model,
@@ -144,8 +144,8 @@ function buildReportsViewPayload(input: {
   };
 }
 
-function buildCashflowViewPayload(input: { userId: string; period: CashflowPeriodKey; accountId?: string }) {
-  const referenceDate = transactionsRepo.latestPostedAt(input.userId) ?? new Date();
+async function buildCashflowViewPayload(input: { userId: string; period: CashflowPeriodKey; accountId?: string }) {
+  const referenceDate = (await transactionsRepo.latestPostedAt(input.userId)) ?? new Date();
   const currentRange = resolveCurrentRange(input.period, referenceDate);
   const previousRange = resolvePreviousRange(currentRange);
   const mergedRange = {
@@ -153,13 +153,13 @@ function buildCashflowViewPayload(input: { userId: string; period: CashflowPerio
     to: currentRange.to
   };
 
-  const rangeTransactions = transactionsRepo
+  const rangeTransactions = (await transactionsRepo
     .listAll({
       userId: input.userId,
       dateFrom: mergedRange.from,
       dateTo: mergedRange.to,
       accountId: input.accountId
-    })
+    }))
     .map(toTransactionDTO);
   const currentTransactions = splitByRange(rangeTransactions, currentRange);
   const previousTransactions = splitByRange(rangeTransactions, previousRange);
@@ -191,18 +191,18 @@ function buildCashflowViewPayload(input: { userId: string; period: CashflowPerio
   };
 }
 
-function buildCategoriesViewPayload(input: { userId: string; month: string; accountId?: string }) {
+async function buildCategoriesViewPayload(input: { userId: string; month: string; accountId?: string }) {
   const referenceDate = parseMonthKey(input.month);
   const monthStart = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), 1, 0, 0, 0));
   const monthEnd = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth() + 1, 0, 23, 59, 59, 999));
-  const categories = categoriesRepo.listByUser(input.userId);
-  const transactions = transactionsRepo
+  const categories = await categoriesRepo.listByUser(input.userId);
+  const transactions = (await transactionsRepo
     .listAll({
       userId: input.userId,
       dateFrom: monthStart,
       dateTo: monthEnd,
       accountId: input.accountId
-    })
+    }))
     .map(toTransactionDTO);
   const aggregates = buildCategoryMonthAggregates(categories, transactions, referenceDate);
 
@@ -223,29 +223,29 @@ function isHistoricalMonth(monthKey: string): boolean {
   return monthKey < format(new Date(), "yyyy-MM");
 }
 
-function buildDashboardViewPayloadWithSnapshots(input: { userId: string; month?: string }) {
+async function buildDashboardViewPayloadWithSnapshots(input: { userId: string; month?: string }) {
   const requestedMonth = input.month?.trim() || null;
   if (requestedMonth && isHistoricalMonth(requestedMonth)) {
-    const snapshot = officialMetricSnapshotsRepo.find({
+    const snapshot = await officialMetricSnapshotsRepo.find({
       userId: input.userId,
       metricKey: "dashboard",
       periodKey: requestedMonth
     });
 
     if (snapshot && snapshot.payload && typeof snapshot.payload === "object") {
-      return snapshot.payload as { view: "dashboard" } & ReturnType<typeof dashboardRepo.fullDashboard>;
+      return snapshot.payload as { view: "dashboard" } & Awaited<ReturnType<typeof dashboardRepo.fullDashboard>>;
     }
   }
 
   const referenceDate = requestedMonth ? parseMonthKey(requestedMonth) : new Date();
   const payload = {
     view: "dashboard" as const,
-    ...dashboardRepo.fullDashboard(input.userId, referenceDate, {
+    ...(await dashboardRepo.fullDashboard(input.userId, referenceDate, {
       forceReferenceDate: Boolean(requestedMonth)
-    })
+    }))
   };
 
-  officialMetricSnapshotsRepo.upsert({
+  await officialMetricSnapshotsRepo.upsert({
     userId: input.userId,
     metricKey: "dashboard",
     periodKey: payload.referenceMonth,
@@ -284,25 +284,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     const payload =
       parsed.data.view === "reports"
-        ? buildReportsViewPayload({
+        ? await buildReportsViewPayload({
             userId: auth.userId,
             preset: parsed.data.preset as ReportsPeriodPreset,
             accountId: parsed.data.accountId,
             categoryId: parsed.data.categoryId
           })
         : parsed.data.view === "cashflow"
-          ? buildCashflowViewPayload({
+          ? await buildCashflowViewPayload({
               userId: auth.userId,
               period: parsed.data.period as CashflowPeriodKey,
               accountId: parsed.data.accountId
             })
           : parsed.data.view === "categories"
-            ? buildCategoriesViewPayload({
+            ? await buildCategoriesViewPayload({
                 userId: auth.userId,
                 month: parsed.data.month as string,
                 accountId: parsed.data.accountId
               })
-            : buildDashboardViewPayloadWithSnapshots({
+            : await buildDashboardViewPayloadWithSnapshots({
                 userId: auth.userId,
                 month: parsed.data.month
               });

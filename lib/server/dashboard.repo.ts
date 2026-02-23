@@ -40,12 +40,12 @@ function round2(value: number): number {
 }
 
 export const dashboardRepo = {
-  summaryByRange(userId: string, from: Date, to: Date) {
-    const txs = transactionsRepo.listByDateRange(userId, from, to, true);
+  async summaryByRange(userId: string, from: Date, to: Date) {
+    const txs = await transactionsRepo.listByDateRange(userId, from, to, true);
     const totals = accumulateOfficialFlowCents(txs.map((tx) => ({ type: tx.type, amount: tx.amount })));
     const byCategoryMap = new Map<string, { totalCents: number; name: string; color: string }>();
 
-    const categories = categoriesRepo.listByUser(userId);
+    const categories = await categoriesRepo.listByUser(userId);
     const categoryById = new Map(categories.map((item) => [item.id, item]));
 
     for (const tx of txs) {
@@ -84,8 +84,8 @@ export const dashboardRepo = {
     };
   },
 
-  fullDashboard(userId: string, now = new Date(), options?: { forceReferenceDate?: boolean }) {
-    const latestTransactionDate = transactionsRepo.latestPostedAt(userId);
+  async fullDashboard(userId: string, now = new Date(), options?: { forceReferenceDate?: boolean }) {
+    const latestTransactionDate = await transactionsRepo.latestPostedAt(userId);
     const referenceDate = options?.forceReferenceDate ? now : latestTransactionDate ?? now;
     const currentMonthStart = startOfMonth(referenceDate);
     const currentMonthEnd = endOfMonth(referenceDate);
@@ -93,9 +93,9 @@ export const dashboardRepo = {
     const previousMonthEnd = endOfMonth(subMonths(referenceDate, 1));
     const sixMonthsAgo = startOfMonth(subMonths(referenceDate, 5));
 
-    const currentTransactions = transactionsRepo.listByDateRange(userId, currentMonthStart, currentMonthEnd, true);
-    const previousTransactions = transactionsRepo.listByDateRange(userId, previousMonthStart, previousMonthEnd, true);
-    const monthlyTransactions = transactionsRepo.listByDateRange(userId, sixMonthsAgo, currentMonthEnd, false);
+    const currentTransactions = await transactionsRepo.listByDateRange(userId, currentMonthStart, currentMonthEnd, true);
+    const previousTransactions = await transactionsRepo.listByDateRange(userId, previousMonthStart, previousMonthEnd, true);
+    const monthlyTransactions = await transactionsRepo.listByDateRange(userId, sixMonthsAgo, currentMonthEnd, false);
 
     const monthSummary = accumulateOfficialFlowCents(
       currentTransactions.map((tx) => ({ type: tx.type, amount: tx.amount }))
@@ -135,7 +135,7 @@ export const dashboardRepo = {
       };
     });
 
-    const categories = categoriesRepo.listByUser(userId);
+    const categories = await categoriesRepo.listByUser(userId);
     const categoryById = new Map(categories.map((item) => [item.id, item]));
 
     const currentByCategory = new Map<string, number>();
@@ -199,7 +199,7 @@ export const dashboardRepo = {
       });
 
     const netWorthSeriesByDate = new Map<string, number>();
-    for (const entry of netWorthRepo.listByUser(userId)) {
+    for (const entry of await netWorthRepo.listByUser(userId)) {
       const key = format(entry.date, "yyyy-MM-dd");
       const signedValue = entry.type === "asset" ? entry.value : -entry.value;
       netWorthSeriesByDate.set(key, (netWorthSeriesByDate.get(key) ?? 0) + signedValue);

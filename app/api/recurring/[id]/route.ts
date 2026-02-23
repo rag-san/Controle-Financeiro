@@ -48,7 +48,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const recurring = recurringRepo.update({
+  const recurring = await recurringRepo.update({
     id,
     userId: auth.userId,
     name: parsed.data.name,
@@ -81,7 +81,7 @@ export async function DELETE(
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
-  recurringRepo.delete({ id, userId: auth.userId });
+  await recurringRepo.delete({ id, userId: auth.userId });
   invalidateFinanceCaches(auth.userId);
 
   return NextResponse.json({ success: true });

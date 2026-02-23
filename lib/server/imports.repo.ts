@@ -31,8 +31,8 @@ function mapBatch(row: ImportBatchRow) {
 }
 
 export const importsRepo = {
-  listRecentByUser(userId: string, take = 30) {
-    const rows = db
+  async listRecentByUser(userId: string, take = 30) {
+    const rows = (await db
       .prepare(
         `SELECT id, user_id, source, file_name, mapping_json, total_imported, total_skipped, imported_at, created_at, updated_at
          FROM import_batches
@@ -40,12 +40,12 @@ export const importsRepo = {
          ORDER BY imported_at DESC
          LIMIT ?`
       )
-      .all(userId, take) as ImportBatchRow[];
+      .all(userId, take)) as ImportBatchRow[];
 
     return rows.map(mapBatch);
   },
 
-  createBatch(input: {
+  async createBatch(input: {
     userId: string;
     sourceType: "csv" | "ofx" | "pdf" | "manual";
     fileName: string;
@@ -53,7 +53,7 @@ export const importsRepo = {
   }) {
     const id = createId();
     const now = nowIso();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO import_batches (
          id, user_id, source, file_name, mapping_json, total_imported, total_skipped, imported_at, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`
@@ -62,27 +62,27 @@ export const importsRepo = {
     return this.findById(id);
   },
 
-  findById(id: string) {
-    const row = db
+  async findById(id: string) {
+    const row = (await db
       .prepare(
         `SELECT id, user_id, source, file_name, mapping_json, total_imported, total_skipped, imported_at, created_at, updated_at
          FROM import_batches
          WHERE id = ?`
       )
-      .get(id) as ImportBatchRow | undefined;
+      .get(id)) as ImportBatchRow | undefined;
     return row ? mapBatch(row) : null;
   },
 
-  updateBatchTotals(input: { id: string; totalImported: number; totalSkipped: number }) {
-    db.prepare(
+  async updateBatchTotals(input: { id: string; totalImported: number; totalSkipped: number }) {
+    await db.prepare(
       `UPDATE import_batches
        SET total_imported = ?, total_skipped = ?, updated_at = ?
        WHERE id = ?`
     ).run(input.totalImported, input.totalSkipped, nowIso(), input.id);
   },
 
-  insertImportItem(input: { id: string; userId: string; batchId: string; txId: string }) {
-    db.prepare(
+  async insertImportItem(input: { id: string; userId: string; batchId: string; txId: string }) {
+    await db.prepare(
       `INSERT OR IGNORE INTO import_items (id, user_id, batch_id, tx_id, created_at)
        VALUES (?, ?, ?, ?, ?)`
     ).run(input.id, input.userId, input.batchId, input.txId, nowIso());

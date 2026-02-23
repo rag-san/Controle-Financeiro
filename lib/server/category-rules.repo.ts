@@ -39,8 +39,8 @@ function mapRule(row: RuleRow) {
 }
 
 export const categoryRulesRepo = {
-  listByUser(userId: string, includeRelations = false) {
-    const rows = db
+  async listByUser(userId: string, includeRelations = false) {
+    const rows = (await db
       .prepare(
         `SELECT id, user_id, name, priority, enabled, match_type, pattern, account_id,
                 min_amount_cents, max_amount_cents, category_id, created_at, updated_at
@@ -48,13 +48,13 @@ export const categoryRulesRepo = {
          WHERE user_id = ?
          ORDER BY priority ASC, created_at ASC`
       )
-      .all(userId) as RuleRow[];
+      .all(userId)) as RuleRow[];
 
     const base = rows.map(mapRule);
     if (!includeRelations) return base;
 
-    const categories = categoriesRepo.listByUser(userId);
-    const accounts = accountsRepo.listByUser(userId);
+    const categories = await categoriesRepo.listByUser(userId);
+    const accounts = await accountsRepo.listByUser(userId);
     const categoryById = new Map(categories.map((item) => [item.id, item]));
     const accountById = new Map(accounts.map((item) => [item.id, item]));
 
@@ -65,8 +65,8 @@ export const categoryRulesRepo = {
     }));
   },
 
-  listActiveByUser(userId: string) {
-    const rows = db
+  async listActiveByUser(userId: string) {
+    const rows = (await db
       .prepare(
         `SELECT id, user_id, name, priority, enabled, match_type, pattern, account_id,
                 min_amount_cents, max_amount_cents, category_id, created_at, updated_at
@@ -74,23 +74,23 @@ export const categoryRulesRepo = {
          WHERE user_id = ? AND enabled = 1
          ORDER BY priority ASC, created_at ASC`
       )
-      .all(userId) as RuleRow[];
+      .all(userId)) as RuleRow[];
     return rows.map(mapRule);
   },
 
-  findByIdForUser(id: string, userId: string) {
-    const row = db
+  async findByIdForUser(id: string, userId: string) {
+    const row = (await db
       .prepare(
         `SELECT id, user_id, name, priority, enabled, match_type, pattern, account_id,
                 min_amount_cents, max_amount_cents, category_id, created_at, updated_at
          FROM category_rules
          WHERE id = ? AND user_id = ?`
       )
-      .get(id, userId) as RuleRow | undefined;
+      .get(id, userId)) as RuleRow | undefined;
     return row ? mapRule(row) : null;
   },
 
-  create(input: {
+  async create(input: {
     userId: string;
     name: string;
     priority: number;
@@ -105,7 +105,7 @@ export const categoryRulesRepo = {
     const id = createId();
     const now = nowIso();
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO category_rules (
          id, user_id, name, priority, enabled, match_type, pattern, account_id,
          min_amount_cents, max_amount_cents, category_id, created_at, updated_at
@@ -129,7 +129,7 @@ export const categoryRulesRepo = {
     return this.findByIdForUser(id, input.userId);
   },
 
-  update(input: {
+  async update(input: {
     id: string;
     userId: string;
     name?: string;
@@ -142,10 +142,10 @@ export const categoryRulesRepo = {
     maxAmount?: number | null;
     categoryId?: string;
   }) {
-    const existing = this.findByIdForUser(input.id, input.userId);
+    const existing = await this.findByIdForUser(input.id, input.userId);
     if (!existing) return null;
 
-    db.prepare(
+    await db.prepare(
       `UPDATE category_rules
        SET name = ?, priority = ?, enabled = ?, match_type = ?, pattern = ?, account_id = ?,
            min_amount_cents = ?, max_amount_cents = ?, category_id = ?, updated_at = ?
@@ -168,8 +168,8 @@ export const categoryRulesRepo = {
     return this.findByIdForUser(input.id, input.userId);
   },
 
-  delete(input: { id: string; userId: string }): number {
-    const result = db
+  async delete(input: { id: string; userId: string }): Promise<number> {
+    const result = await db
       .prepare(
         `DELETE FROM category_rules
          WHERE id = ? AND user_id = ?`

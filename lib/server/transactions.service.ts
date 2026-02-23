@@ -98,7 +98,7 @@ function buildDateRange(params: TransactionsQuery): { gte?: Date; lte?: Date } {
   };
 }
 
-export function listTransactionsForUser(userId: string, params: TransactionsQuery) {
+export async function listTransactionsForUser(userId: string, params: TransactionsQuery) {
   const dateRange = buildDateRange(params);
   const page = params.page;
   const pageSize = params.pageSize;
@@ -114,9 +114,9 @@ export function listTransactionsForUser(userId: string, params: TransactionsQuer
     normalizedQuery: params.q ? normalizeDescription(params.q) : undefined
   };
 
-  const items = transactionsRepo.listPaged(filter, { page, pageSize });
-  const totalCount = transactionsRepo.count(filter);
-  const totalsByType = transactionsRepo.sumByType(filter);
+  const items = await transactionsRepo.listPaged(filter, { page, pageSize });
+  const totalCount = await transactionsRepo.count(filter);
+  const totalsByType = await transactionsRepo.sumByType(filter);
   const totals = totalsFromGroupedTypes(totalsByType);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -139,15 +139,15 @@ export function listTransactionsForUser(userId: string, params: TransactionsQuer
     ...(includeMeta
       ? {
           meta: {
-            accounts: accountsRepo.listByUser(userId),
-            categories: categoriesRepo.listByUser(userId)
+            accounts: await accountsRepo.listByUser(userId),
+            categories: await categoriesRepo.listByUser(userId)
           }
         }
       : {})
   };
 }
 
-export function createTransactionForUser(userId: string, input: CreateTransactionInput) {
+export async function createTransactionForUser(userId: string, input: CreateTransactionInput) {
   const draft = normalizeTransaction({
     date: input.date,
     description: input.description,

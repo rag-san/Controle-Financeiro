@@ -61,7 +61,7 @@ export function logImportEvent(event: ImportEvent, input: ImportTelemetryInput):
   console.info(`[IMPORT] ${JSON.stringify(payload)}`);
 
   try {
-    importObservabilityRepo.record({
+    void importObservabilityRepo.record({
       userId: input.userId,
       sourceType: input.sourceType,
       event,

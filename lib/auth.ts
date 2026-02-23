@@ -45,7 +45,7 @@ export const authOptions: NextAuthOptions = {
           return null;
         }
 
-        const user = usersRepo.findByEmail(normalizedEmail);
+        const user = await usersRepo.findByEmail(normalizedEmail);
 
         if (!user?.password) {
           return null;

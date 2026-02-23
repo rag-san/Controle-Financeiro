@@ -69,7 +69,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Periodo invalido: from maior que to." }, { status: 400 });
     }
 
-    const rows = transactionsRepo.listAll({
+    const rows = await transactionsRepo.listAll({
       userId: auth.userId,
       dateFrom: from,
       dateTo: to

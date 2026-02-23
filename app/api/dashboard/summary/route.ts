@@ -28,7 +28,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Periodo invalido" }, { status: 400 });
     }
 
-    const payload = dashboardRepo.summaryByRange(auth.userId, from, to);
+    const payload = await dashboardRepo.summaryByRange(auth.userId, from, to);
     return NextResponse.json(payload);
   });
 }

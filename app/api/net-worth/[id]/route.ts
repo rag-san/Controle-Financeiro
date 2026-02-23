@@ -46,7 +46,7 @@ export async function PATCH(
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const updated = netWorthRepo.update({
+  const updated = await netWorthRepo.update({
     id,
     userId: auth.userId,
     type: parsed.data.type,
@@ -73,7 +73,7 @@ export async function DELETE(
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
-  netWorthRepo.delete({ id, userId: auth.userId });
+  await netWorthRepo.delete({ id, userId: auth.userId });
   invalidateFinanceCaches(auth.userId);
   return NextResponse.json({ success: true });
 }

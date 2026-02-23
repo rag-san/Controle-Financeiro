@@ -39,7 +39,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(cached, { headers: privateCacheHeaders });
     }
 
-    const payload = accountsRepo.listByUserWithBalance(auth.userId);
+    const payload = await accountsRepo.listByUserWithBalance(auth.userId);
 
     setCache(cacheKey, payload, 20_000);
 
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     let account;
     try {
-      account = accountsRepo.create({
+      account = await accountsRepo.create({
         userId: auth.userId,
         ...parsed.data,
         name: parsed.data.name.trim(),

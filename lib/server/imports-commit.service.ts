@@ -52,7 +52,7 @@ export const importCommitPayloadSchema = z.object({
 
 type ImportCommitPayload = z.infer<typeof importCommitPayloadSchema>;
 type ImportRowInput = ImportCommitPayload["rows"][number];
-type UserAccount = ReturnType<typeof accountsRepo.listByUser>[number];
+type UserAccount = Awaited<ReturnType<typeof accountsRepo.listByUser>>[number];
 
 function parseBooleanMappingValue(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") {
@@ -251,7 +251,7 @@ function buildAutoCreditAccountName(parent: UserAccount): string {
   return `Cartao ${parent.name}`.trim();
 }
 
-function ensureCreditAccountForInvoice(input: {
+async function ensureCreditAccountForInvoice(input: {
   userId: string;
   row: ImportRowInput;
   currentAccount: UserAccount;
@@ -260,7 +260,7 @@ function ensureCreditAccountForInvoice(input: {
   defaultAccountId?: string;
   createdByParentId: Map<string, string>;
   registerAccount: (account: UserAccount) => void;
-}): { accountId: string | null; autoCreated: boolean } {
+}): Promise<{ accountId: string | null; autoCreated: boolean }> {
   const resolvedId = resolveCreditInvoiceAccountId({
     row: input.row,
     currentAccount: input.currentAccount,
@@ -316,7 +316,7 @@ function ensureCreditAccountForInvoice(input: {
   }
 
   try {
-    const createdAccount = accountsRepo.create({
+    const createdAccount = await accountsRepo.create({
       userId: input.userId,
       name: buildAutoCreditAccountName(parentCandidate),
       type: "credit",
@@ -347,8 +347,8 @@ function ensureCreditAccountForInvoice(input: {
   }
 }
 
-function buildAccountResolver(userId: string, defaultAccountId?: string) {
-  const accounts = accountsRepo.listByUser(userId);
+async function buildAccountResolver(userId: string, defaultAccountId?: string) {
+  const accounts = await accountsRepo.listByUser(userId);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const accountNameMap = new Map(accounts.map((account) => [normalizeDescription(account.name), account.id]));
 
@@ -394,12 +394,12 @@ function buildAccountResolver(userId: string, defaultAccountId?: string) {
   };
 }
 
-function loadRules(userId: string, applyRules: boolean): CategorizationRule[] {
+async function loadRules(userId: string, applyRules: boolean): Promise<CategorizationRule[]> {
   if (!applyRules) {
     return [];
   }
 
-  return categoryRulesRepo.listActiveByUser(userId).map((rule) => ({
+  return (await categoryRulesRepo.listActiveByUser(userId)).map((rule) => ({
     id: rule.id,
     userId: rule.userId,
     name: rule.name,
@@ -415,13 +415,13 @@ function loadRules(userId: string, applyRules: boolean): CategorizationRule[] {
 }
 
 export async function commitImportForUser(userId: string, payload: ImportCommitPayload) {
-  const { resolveAccountId, accounts, accountById, registerAccount } = buildAccountResolver(
+  const { resolveAccountId, accounts, accountById, registerAccount } = await buildAccountResolver(
     userId,
     payload.defaultAccountId
   );
   const mappingOptions = resolveMappingOptions(payload.mapping);
-  const rules = loadRules(userId, payload.applyRules);
-  const categories = categoriesRepo.listByUser(userId);
+  const rules = await loadRules(userId, payload.applyRules);
+  const categories = await categoriesRepo.listByUser(userId);
   const categoryRefs = categories.map((item) => ({ id: item.id, name: item.name }));
   const shouldApplyDeterministic = payload.applyRules;
 
@@ -482,7 +482,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     }
 
     if (isCreditCardInvoiceDocumentType(row.documentType) && resolvedAccount.type !== "credit") {
-      const creditResolution = ensureCreditAccountForInvoice({
+      const creditResolution = await ensureCreditAccountForInvoice({
         userId,
         row,
         currentAccount: resolvedAccount,
@@ -721,7 +721,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     });
   }
 
-  const batch = importsRepo.createBatch({
+  const batch = await importsRepo.createBatch({
     userId,
     sourceType: payload.sourceType,
     fileName: payload.fileName,
@@ -736,7 +736,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     ...importRows.map((row) => row.importedHash),
     ...transferRows.flatMap((row) => [row.outImportedHash, row.inImportedHash])
   ];
-  const existingHashes = new Set(transactionsRepo.findImportedHashes(userId, importedHashes));
+  const existingHashes = new Set(await transactionsRepo.findImportedHashes(userId, importedHashes));
   const seenInBatch = new Set<string>();
   let duplicateInDatabaseCount = 0;
   let duplicateInPayloadCount = 0;
@@ -774,7 +774,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
 
   const createMany =
     rowsToCreate.length > 0
-      ? transactionsRepo.createMany(
+      ? await transactionsRepo.createMany(
           rowsToCreate.map((row) => ({
             ...row,
             importBatchId: batch.id
@@ -784,7 +784,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
 
   const importedTransferTimestamps: number[] = [];
   for (const row of transferRowsToCreate) {
-    const created = transactionsRepo.createTransferPair({
+    const created = await transactionsRepo.createTransferPair({
       userId: row.userId,
       fromAccountId: row.fromAccountId,
       toAccountId: row.toAccountId,
@@ -819,7 +819,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   const minTimestamp = importedDates.length > 0 ? Math.min(...importedDates) : null;
   const maxTimestamp = importedDates.length > 0 ? Math.max(...importedDates) : null;
 
-  importsRepo.updateBatchTotals({
+  await importsRepo.updateBatchTotals({
     id: batch.id,
     totalImported,
     totalSkipped
