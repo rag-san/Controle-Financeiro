@@ -31,20 +31,20 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
         id={id}
         ref={ref}
         role="dialog"
-        aria-label="Notification Center"
+        aria-label="Central de notificacoes"
         aria-modal="false"
         tabIndex={-1}
         className="absolute right-0 z-40 mt-2 w-[360px] max-w-[90vw] rounded-2xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-800 dark:bg-slate-950"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notifications</p>
+          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notificacoes</p>
           {dismissedCount > 0 && onClearDismissed ? (
             <button
               type="button"
               onClick={onClearDismissed}
               className="rounded-md px-1.5 py-1 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             >
-              Clear dismissed
+              Limpar dispensadas
             </button>
           ) : null}
         </div>
@@ -57,7 +57,7 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
           </div>
         ) : insights.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            You&apos;re all caught up.
+            Voce esta em dia.
           </div>
         ) : (
           <ul className="max-h-80 space-y-2 overflow-auto pr-1">

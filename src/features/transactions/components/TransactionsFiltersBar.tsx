@@ -42,7 +42,7 @@ function FilterSelect({
   disabled?: boolean;
 }): React.JSX.Element {
   return (
-    <div className="min-w-[180px]">
+    <div className="w-[168px] shrink-0 sm:min-w-[180px] sm:w-auto">
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
@@ -80,8 +80,8 @@ export function TransactionsFiltersBar({
         <span>Filtros</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
+      <div className="space-y-2">
+        <div className="relative min-w-0">
           <label htmlFor="tx-filter-search" className="sr-only">
             Buscar transacoes
           </label>
@@ -96,97 +96,101 @@ export function TransactionsFiltersBar({
           />
         </div>
 
-        <FilterSelect
-          id="tx-filter-period"
-          label="Periodo"
-          value={filters.period}
-          onChange={(value) => onChange({ period: value as TransactionsPeriod })}
-          disabled={busy}
-        >
-          <option value="7d">Ultimos 7 dias</option>
-          <option value="30d">Ultimos 30 dias</option>
-          <option value="90d">Ultimos 90 dias</option>
-          <option value="this-month">Este mes</option>
-          <option value="last-month">Mes passado</option>
-          <option value="all">Todo periodo</option>
-          <option value="custom">Personalizado</option>
-        </FilterSelect>
+        <div className="overflow-x-auto pb-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700">
+          <div className="flex min-w-max items-center gap-2 pr-1 sm:min-w-0 sm:flex-wrap">
+            <FilterSelect
+              id="tx-filter-period"
+              label="Periodo"
+              value={filters.period}
+              onChange={(value) => onChange({ period: value as TransactionsPeriod })}
+              disabled={busy}
+            >
+              <option value="7d">Ultimos 7 dias</option>
+              <option value="30d">Ultimos 30 dias</option>
+              <option value="90d">Ultimos 90 dias</option>
+              <option value="this-month">Este mes</option>
+              <option value="last-month">Mes passado</option>
+              <option value="all">Todo periodo</option>
+              <option value="custom">Personalizado</option>
+            </FilterSelect>
 
-        <FilterSelect
-          id="tx-filter-account"
-          label="Conta"
-          value={filters.accountId}
-          onChange={(value) => onChange({ accountId: value })}
-          disabled={busy}
-        >
-          <option value="">Conta</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </FilterSelect>
+            <FilterSelect
+              id="tx-filter-account"
+              label="Conta"
+              value={filters.accountId}
+              onChange={(value) => onChange({ accountId: value })}
+              disabled={busy}
+            >
+              <option value="">Conta</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name}
+                </option>
+              ))}
+            </FilterSelect>
 
-        <FilterSelect
-          id="tx-filter-type"
-          label="Tipo de transacao"
-          value={filters.type}
-          onChange={(value) => onChange({ type: value as TransactionsFiltersState["type"] })}
-          disabled={busy}
-        >
-          <option value="">Todas as transacoes</option>
-          <option value="income">Receitas</option>
-          <option value="expense">Despesas</option>
-          <option value="transfer">Transferencias</option>
-        </FilterSelect>
+            <FilterSelect
+              id="tx-filter-type"
+              label="Tipo de transacao"
+              value={filters.type}
+              onChange={(value) => onChange({ type: value as TransactionsFiltersState["type"] })}
+              disabled={busy}
+            >
+              <option value="">Todas as transacoes</option>
+              <option value="income">Receitas</option>
+              <option value="expense">Despesas</option>
+              <option value="transfer">Transferencias</option>
+            </FilterSelect>
 
-        <FilterSelect
-          id="tx-filter-category"
-          label="Categoria"
-          value={filters.categoryId}
-          onChange={(value) => onChange({ categoryId: value })}
-          disabled={busy}
-        >
-          <option value="">Categorias</option>
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </FilterSelect>
+            <FilterSelect
+              id="tx-filter-category"
+              label="Categoria"
+              value={filters.categoryId}
+              onChange={(value) => onChange({ categoryId: value })}
+              disabled={busy}
+            >
+              <option value="">Categorias</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </FilterSelect>
 
-        {filters.period === "custom" ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <label htmlFor="tx-filter-from" className="sr-only">
-                Data inicial
-              </label>
-              <Input
-                id="tx-filter-from"
-                type="date"
-                value={filters.from}
-                onChange={(event) => onChange({ from: event.target.value })}
-                disabled={busy}
-                className="h-10 min-w-[160px] rounded-xl pr-9"
-              />
-              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            </div>
-            <div className="relative">
-              <label htmlFor="tx-filter-to" className="sr-only">
-                Data final
-              </label>
-              <Input
-                id="tx-filter-to"
-                type="date"
-                value={filters.to}
-                onChange={(event) => onChange({ to: event.target.value })}
-                disabled={busy}
-                className="h-10 min-w-[160px] rounded-xl pr-9"
-              />
-              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            </div>
+            {filters.period === "custom" ? (
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="relative">
+                  <label htmlFor="tx-filter-from" className="sr-only">
+                    Data inicial
+                  </label>
+                  <Input
+                    id="tx-filter-from"
+                    type="date"
+                    value={filters.from}
+                    onChange={(event) => onChange({ from: event.target.value })}
+                    disabled={busy}
+                    className="h-10 min-w-[152px] rounded-xl pr-9"
+                  />
+                  <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </div>
+                <div className="relative">
+                  <label htmlFor="tx-filter-to" className="sr-only">
+                    Data final
+                  </label>
+                  <Input
+                    id="tx-filter-to"
+                    type="date"
+                    value={filters.to}
+                    onChange={(event) => onChange({ to: event.target.value })}
+                    disabled={busy}
+                    className="h-10 min-w-[152px] rounded-xl pr-9"
+                  />
+                  <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                </div>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
 
       <div className="mt-2 flex justify-end">

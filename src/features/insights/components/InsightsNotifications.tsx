@@ -50,7 +50,7 @@ export function InsightsNotifications({
     : visibleInsights.slice(0, DEFAULT_VISIBLE_COUNT);
 
   return (
-    <section role="region" aria-label="Insights notifications" className="space-y-2">
+    <section role="region" aria-label="Notificacoes de insights" className="space-y-2">
       <span className="sr-only" aria-live="polite">
         {liveMessage}
       </span>

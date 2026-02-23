@@ -46,7 +46,7 @@ function EmptyGroupRow({
   onAction: () => void;
 }): React.JSX.Element {
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-4 text-sm text-slate-500 dark:text-slate-400">
+    <div className="flex flex-col items-start gap-3 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
       <span>{message}</span>
       <button
         type="button"
@@ -206,7 +206,7 @@ export function AccountsPage(): React.JSX.Element {
 
   const actions = useMemo(
     () => (
-      <div className="flex items-center gap-2">
+      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
         <IconButton aria-label="Visualizar contas conectadas" icon={<Eye className="h-4 w-4" />} />
         <IconButton
           aria-label="Atualizar dados de contas"
@@ -306,7 +306,7 @@ export function AccountsPage(): React.JSX.Element {
           >
             {creditCards.length === 0 ? (
               <EmptyGroupRow
-                message="No credit cards yet"
+                message="Nenhum cartao de credito cadastrado"
                 ctaLabel="Conectar conta"
                 onAction={() => setConnectModalOpen(true)}
               />

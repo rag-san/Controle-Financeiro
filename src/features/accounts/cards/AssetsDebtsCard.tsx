@@ -80,7 +80,7 @@ function MetricBlock({
 }): React.JSX.Element {
   if (loading) {
     return (
-      <div className="min-w-[13rem] space-y-2">
+      <div className="space-y-2 sm:min-w-[13rem]">
         <div className="flex items-center gap-2">
           <Skeleton className="h-2 w-2 rounded-full" />
           <Skeleton className="h-4 w-14 rounded-md" />
@@ -93,12 +93,12 @@ function MetricBlock({
   }
 
   return (
-    <div className="min-w-[13rem] space-y-1">
+    <div className="space-y-1 sm:min-w-[13rem]">
       <p className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
         <span className={`h-2 w-2 rounded-full ${dotClassName}`} aria-hidden="true" />
         {label}
       </p>
-      <p className="tabular-nums whitespace-nowrap text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+      <p className="tabular-nums whitespace-nowrap text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl dark:text-slate-100">
         {valueText}
       </p>
       <p className="min-h-[1rem] text-[11px] text-slate-500 dark:text-slate-400">
@@ -141,8 +141,8 @@ export function AssetsDebtsCard({
       className="space-y-5 rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950"
       aria-busy={loading}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-wrap items-start gap-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="grid gap-4 sm:flex sm:flex-wrap sm:items-start sm:gap-8">
           <MetricBlock
             dotClassName="bg-blue-500"
             label="Ativos"
@@ -162,7 +162,7 @@ export function AssetsDebtsCard({
         </div>
         <button
           type="button"
-          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          className="self-end rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:self-auto dark:hover:bg-slate-800 dark:hover:text-slate-200"
           aria-label="Configurar visualização de contas"
         >
           <Settings className="h-4 w-4" />
@@ -177,8 +177,9 @@ export function AssetsDebtsCard({
         onHoverPointChange={setHoverPoint}
       />
 
-      <div className="flex justify-center">
+      <div className="flex justify-center overflow-x-auto pb-1">
         <SegmentedControl
+          className="min-w-max"
           options={rangeOptions}
           value={selectedRange}
           onChange={onRangeChange}

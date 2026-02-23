@@ -19,7 +19,7 @@ export function AccountGroupCard({
 }: AccountGroupCardProps): React.JSX.Element {
   return (
     <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex items-center justify-between gap-4 border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="flex flex-col gap-3 border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900/50">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${iconClassName}`}>
             {icon}
@@ -30,7 +30,7 @@ export function AccountGroupCard({
           </div>
         </div>
         {totalLabel ? (
-          <p className="shrink-0 text-right text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          <p className="shrink-0 text-right text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-slate-100">
             {totalLabel}
           </p>
         ) : null}

@@ -54,6 +54,7 @@ export type PdfImportErrorCode =
   | "password_required"
   | "password_invalid"
   | "parser_unavailable"
+  | "unsupported_issuer_profile"
   | "no_transactions_found";
 
 export type PdfParseOptions = {
@@ -70,12 +71,19 @@ export type PdfImportResult = {
 export class PdfImportError extends Error {
   readonly code: PdfImportErrorCode;
   readonly technicalReason?: string;
+  readonly details?: Record<string, unknown>;
 
-  constructor(code: PdfImportErrorCode, message: string, technicalReason?: string) {
+  constructor(
+    code: PdfImportErrorCode,
+    message: string,
+    technicalReason?: string,
+    details?: Record<string, unknown>
+  ) {
     super(message);
     this.name = "PdfImportError";
     this.code = code;
     this.technicalReason = technicalReason;
+    this.details = details;
   }
 }
 
@@ -257,7 +265,7 @@ function collectCandidateLines(text: string): string[] {
   return candidates;
 }
 
-function classifyPdfDocument(text: string): {
+export function classifyPdfText(text: string): {
   documentType: PdfDocumentType;
   issuerProfile: PdfIssuerProfile;
 } {
@@ -668,7 +676,7 @@ export async function parsePdfImport(
     });
 
     const text = fixCommonMojibake(textResult.text ?? "");
-    const classification = classifyPdfDocument(text);
+    const classification = classifyPdfText(text);
     const metadata = buildPdfMetadata(text, classification);
     const dueDate = extractDueDateMetadata(text);
 
@@ -682,9 +690,14 @@ export async function parsePdfImport(
       parsedTransactions = parseMercadoPagoInvoiceTransactions(text, dueDate);
     } else {
       throw new PdfImportError(
-        "parser_unavailable",
-        "Suporte de PDF disponivel apenas para Banco Inter e Mercado Pago.",
-        `issuer_profile=${classification.issuerProfile}`
+        "unsupported_issuer_profile",
+        "PDF reconhecido, mas o emissor/layout ainda nao possui parser dedicado. Tente CSV/OFX.",
+        `issuer_profile=${classification.issuerProfile}`,
+        {
+          issuerProfile: classification.issuerProfile,
+          documentType: classification.documentType,
+          supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES
+        }
       );
     }
 

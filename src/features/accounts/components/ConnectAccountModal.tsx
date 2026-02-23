@@ -87,148 +87,168 @@ export function ConnectAccountModal({
     previousFocusRef.current?.focus();
   }, [open]);
 
+  React.useEffect(() => {
+    if (!open) return;
+
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" role="presentation">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4" role="presentation">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-label="Fechar modal de conta"
+      />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="connect-account-modal-title"
-        className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl"
+        className="relative z-[101] flex h-[100dvh] w-full flex-col overflow-hidden border border-border bg-card shadow-xl sm:h-auto sm:max-w-lg sm:rounded-2xl"
       >
-        <div className="space-y-1">
-          <h2 id="connect-account-modal-title" className="text-lg font-semibold text-foreground">
-            Conectar conta
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Adicione uma conta manualmente enquanto a integração bancária automática não está ativa.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            TODO: Integrar fluxo de Open Banking para conexão direta com instituições.
-          </p>
-        </div>
-
-        <form
-          className="mt-5 grid gap-3 sm:grid-cols-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void onSubmitManual({
-              ...draft,
-              name: draft.name.trim(),
-              institution: draft.institution.trim(),
-              currency: draft.currency.trim().toUpperCase() || "BRL",
-              parentAccountId: draft.type === "credit" ? draft.parentAccountId : ""
-            });
-          }}
-        >
-          <div className="sm:col-span-2">
-            <label htmlFor="connect-account-name" className="mb-1 block text-sm font-medium text-muted-foreground">
-              Nome da conta
-            </label>
-            <Input
-              ref={nameInputRef}
-              id="connect-account-name"
-              value={draft.name}
-              onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
-              placeholder="Ex.: Nubank Conta"
-              disabled={busy}
-              required
-            />
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="space-y-1">
+            <h2 id="connect-account-modal-title" className="text-lg font-semibold text-foreground">
+              Conectar conta
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Adicione uma conta manualmente enquanto a integração bancária automática não está ativa.
+            </p>
+            <p className="text-xs text-muted-foreground">Integracao automatica via Open Banking em evolucao.</p>
           </div>
 
-          <div>
-            <label htmlFor="connect-account-type" className="mb-1 block text-sm font-medium text-muted-foreground">
-              Tipo
-            </label>
-            <Select
-              id="connect-account-type"
-              value={draft.type}
-              onChange={(event) =>
-                setDraft((prev) => ({ ...prev, type: event.target.value as AccountDTO["type"] }))
-              }
-              disabled={busy}
-            >
-              <option value="checking">Conta corrente</option>
-              <option value="credit">Cartão de crédito</option>
-              <option value="cash">Dinheiro</option>
-              <option value="investment">Investimento</option>
-            </Select>
-          </div>
-
-          <div>
-            <label htmlFor="connect-account-currency" className="mb-1 block text-sm font-medium text-muted-foreground">
-              Moeda
-            </label>
-            <Input
-              id="connect-account-currency"
-              value={draft.currency}
-              onChange={(event) => setDraft((prev) => ({ ...prev, currency: event.target.value.toUpperCase() }))}
-              placeholder="BRL"
-              maxLength={3}
-              disabled={busy}
-            />
-          </div>
-
-          <div className="sm:col-span-2">
-            <label htmlFor="connect-account-institution" className="mb-1 block text-sm font-medium text-muted-foreground">
-              Instituicao (opcional)
-            </label>
-            <Input
-              id="connect-account-institution"
-              value={draft.institution}
-              onChange={(event) => setDraft((prev) => ({ ...prev, institution: event.target.value }))}
-              placeholder="Ex.: Nubank"
-              disabled={busy}
-            />
-          </div>
-
-          {draft.type === "credit" ? (
+          <form
+            className="mt-5 grid gap-3 sm:grid-cols-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onSubmitManual({
+                ...draft,
+                name: draft.name.trim(),
+                institution: draft.institution.trim(),
+                currency: draft.currency.trim().toUpperCase() || "BRL",
+                parentAccountId: draft.type === "credit" ? draft.parentAccountId : ""
+              });
+            }}
+          >
             <div className="sm:col-span-2">
-              <label
-                htmlFor="connect-account-parent"
-                className="mb-1 block text-sm font-medium text-muted-foreground"
-              >
-                Conta mae (opcional)
+              <label htmlFor="connect-account-name" className="mb-1 block text-sm font-medium text-muted-foreground">
+                Nome da conta
+              </label>
+              <Input
+                ref={nameInputRef}
+                id="connect-account-name"
+                value={draft.name}
+                onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder="Ex.: Nubank Conta"
+                disabled={busy}
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="connect-account-type" className="mb-1 block text-sm font-medium text-muted-foreground">
+                Tipo
               </label>
               <Select
-                id="connect-account-parent"
-                value={draft.parentAccountId}
-                onChange={(event) => setDraft((prev) => ({ ...prev, parentAccountId: event.target.value }))}
+                id="connect-account-type"
+                value={draft.type}
+                onChange={(event) =>
+                  setDraft((prev) => ({ ...prev, type: event.target.value as AccountDTO["type"] }))
+                }
                 disabled={busy}
               >
-                <option value="">Sem conta mae</option>
-                {parentAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
+                <option value="checking">Conta corrente</option>
+                <option value="credit">Cartão de crédito</option>
+                <option value="cash">Dinheiro</option>
+                <option value="investment">Investimento</option>
               </Select>
             </div>
-          ) : null}
 
-          {errorMessage ? (
-            <p className="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
-              {errorMessage}
-            </p>
-          ) : null}
+            <div>
+              <label htmlFor="connect-account-currency" className="mb-1 block text-sm font-medium text-muted-foreground">
+                Moeda
+              </label>
+              <Input
+                id="connect-account-currency"
+                value={draft.currency}
+                onChange={(event) =>
+                  setDraft((prev) => ({ ...prev, currency: event.target.value.toUpperCase() }))
+                }
+                placeholder="BRL"
+                maxLength={3}
+                disabled={busy}
+              />
+            </div>
 
-          <div className="sm:col-span-2 mt-1 flex items-center justify-end gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={onClose} disabled={busy}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              isLoading={busy}
-              disabled={busy || draft.name.trim().length < 2}
-            >
-              Salvar conta
-            </Button>
-          </div>
-        </form>
+            <div className="sm:col-span-2">
+              <label htmlFor="connect-account-institution" className="mb-1 block text-sm font-medium text-muted-foreground">
+                Instituicao (opcional)
+              </label>
+              <Input
+                id="connect-account-institution"
+                value={draft.institution}
+                onChange={(event) => setDraft((prev) => ({ ...prev, institution: event.target.value }))}
+                placeholder="Ex.: Nubank"
+                disabled={busy}
+              />
+            </div>
+
+            {draft.type === "credit" ? (
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="connect-account-parent"
+                  className="mb-1 block text-sm font-medium text-muted-foreground"
+                >
+                  Conta mae (opcional)
+                </label>
+                <Select
+                  id="connect-account-parent"
+                  value={draft.parentAccountId}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, parentAccountId: event.target.value }))}
+                  disabled={busy}
+                >
+                  <option value="">Sem conta mae</option>
+                  {parentAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : null}
+
+            {errorMessage ? (
+              <p className="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+                {errorMessage}
+              </p>
+            ) : null}
+
+            <div className="sm:col-span-2 sticky bottom-0 mt-1 -mx-4 flex items-center justify-end gap-2 border-t border-border bg-card px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
+              <Button type="button" size="sm" variant="outline" onClick={onClose} disabled={busy}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                isLoading={busy}
+                disabled={busy || draft.name.trim().length < 2}
+              >
+                Salvar conta
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

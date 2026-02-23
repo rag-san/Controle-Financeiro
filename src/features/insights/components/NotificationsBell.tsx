@@ -43,8 +43,8 @@ export function NotificationsBell({
     if (insights.length !== previousCount) {
       setLiveMessage(
         insights.length === 1
-          ? "1 active notification."
-          : `${insights.length} active notifications.`
+          ? "1 notificacao ativa."
+          : `${insights.length} notificacoes ativas.`
       );
       previousCountRef.current = insights.length;
     } else {
@@ -121,7 +121,7 @@ export function NotificationsBell({
       <button
         ref={buttonRef}
         type="button"
-        aria-label="Open notifications"
+        aria-label="Abrir notificacoes"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? dropdownId : undefined}

@@ -13,6 +13,12 @@ Parser de PDF habilitado apenas para layouts validados de:
 Regra importante: nao usar parser generico para "adivinhar" qualquer layout.  
 Para bancos nao reconhecidos, retornar erro estruturado e orientar CSV/OFX.
 
+## Status (23/02/2026)
+
+- [x] Erro estruturado para perfil de emissor nao suportado (`pdf_unsupported_issuer_profile`)
+- [x] Testes unitarios de classificacao por emissor/layout (`tests/unit/pdf-classification.test.ts`)
+- [ ] Adicionar novo banco com parser dedicado e fixture real
+
 ## Como adicionar suporte a um novo banco
 
 1. Coletar amostras reais:

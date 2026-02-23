@@ -362,33 +362,44 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 });
               }
 
-            const fallbackCode = error.code === "no_transactions_found" ? "pdf_no_transactions" : "source_parser_unavailable";
-            const fallbackMessage =
-              error.code === "no_transactions_found"
-                ? error.message
-                : error.message;
-            logParseErrorOnce(parseLogContext, fallbackCode);
-            return parseError(422, fallbackCode, fallbackMessage, {
-              sourceType,
-              technicalReason: error.technicalReason ?? null,
-              supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES
-            });
-          }
+              if (error.code === "unsupported_issuer_profile") {
+                const errorCode = "pdf_unsupported_issuer_profile";
+                logParseErrorOnce(parseLogContext, errorCode);
+                return parseError(422, errorCode, error.message, {
+                  sourceType,
+                  technicalReason: error.technicalReason ?? null,
+                  supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES,
+                  ...(error.details ?? {})
+                });
+              }
 
-          const technicalReason = error instanceof Error ? error.message : "Falha desconhecida no parser PDF";
-          logParseErrorOnce(parseLogContext, "source_parser_unavailable");
-          return parseError(
-            422,
-            "source_parser_unavailable",
-            "Nao foi possivel ler este PDF automaticamente. Suporte atual: Banco Inter e Mercado Pago.",
-            {
-              sourceType,
-              technicalReason,
-              supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES
+              const fallbackCode = error.code === "no_transactions_found" ? "pdf_no_transactions" : "source_parser_unavailable";
+              const fallbackMessage =
+                error.code === "no_transactions_found"
+                  ? error.message
+                  : error.message;
+              logParseErrorOnce(parseLogContext, fallbackCode);
+              return parseError(422, fallbackCode, fallbackMessage, {
+                sourceType,
+                technicalReason: error.technicalReason ?? null,
+                supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES
+              });
             }
-          );
-        }
-      },
+
+            const technicalReason = error instanceof Error ? error.message : "Falha desconhecida no parser PDF";
+            logParseErrorOnce(parseLogContext, "source_parser_unavailable");
+            return parseError(
+              422,
+              "source_parser_unavailable",
+              "Nao foi possivel ler este PDF automaticamente. Suporte atual: Banco Inter e Mercado Pago.",
+              {
+                sourceType,
+                technicalReason,
+                supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES
+              }
+            );
+          }
+        },
         ofx: async () => {
           try {
             const parsed = parseOfxBuffer(buffer);
