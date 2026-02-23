@@ -1,4 +1,6 @@
 import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
+import { isDateInRangeByKey } from "@/lib/finance/date-keys";
+import { absAmountCents, fromAmountCents, toAmountCents } from "@/lib/finance/official-metrics";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
 import { getCategoryColor } from "@/src/features/categories/categoryColors";
 
@@ -44,11 +46,6 @@ function round2(value: number): number {
   return Number(value.toFixed(2));
 }
 
-function inRange(date: Date, interval: MonthInterval): boolean {
-  const time = date.getTime();
-  return time >= interval.start.getTime() && time <= interval.end.getTime();
-}
-
 function buildCategoryIndex(categories: CategoryDTO[]): Map<string, CategoryDTO> {
   return new Map(categories.map((category) => [category.id, category]));
 }
@@ -61,8 +58,7 @@ function buildCategoryTotals(
   const totals = new Map<string, CategorySpendItem>();
 
   for (const transaction of transactions) {
-    const date = new Date(transaction.date);
-    if (Number.isNaN(date.getTime()) || !inRange(date, monthInterval)) {
+    if (!isDateInRangeByKey(transaction.date, monthInterval.start, monthInterval.end)) {
       continue;
     }
 
@@ -70,7 +66,7 @@ function buildCategoryTotals(
       continue;
     }
 
-    const amount = Math.abs(transaction.amount);
+    const amount = fromAmountCents(absAmountCents(transaction.amount));
     if (!Number.isFinite(amount) || amount <= 0) continue;
 
     const fallbackCategory = transaction.categoryId
@@ -103,7 +99,9 @@ function buildDonutSlices(items: CategorySpendItem[], totalSpent: number, topN =
   }
 
   const topItems = items.slice(0, topN);
-  const otherValue = items.slice(topN).reduce((sum, item) => sum + item.value, 0);
+  const otherValue = fromAmountCents(
+    items.slice(topN).reduce((sum, item) => sum + toAmountCents(item.value), 0)
+  );
 
   const slices = topItems.map((item) => ({
     id: item.categoryId ?? `uncategorized-${item.name}`,
@@ -177,7 +175,7 @@ function buildGroups(
       id: root.id,
       name: root.name,
       color: root.color || getCategoryColor(root.name),
-      total: round2(groupItems.reduce((sum, item) => sum + item.value, 0)),
+      total: fromAmountCents(groupItems.reduce((sum, item) => sum + toAmountCents(item.value), 0)),
       children: groupItems.sort((left, right) => right.value - left.value)
     });
   }
@@ -203,7 +201,7 @@ function buildGroups(
       id: "other-group",
       name: "Outros",
       color: "#94a3b8",
-      total: round2(orphanItems.reduce((sum, item) => sum + item.value, 0)),
+      total: fromAmountCents(orphanItems.reduce((sum, item) => sum + toAmountCents(item.value), 0)),
       children: orphanItems.sort((left, right) => right.value - left.value)
     });
   }
@@ -234,7 +232,7 @@ export function buildCategoryMonthAggregates(
     .map((item) => ({ ...item, value: round2(item.value) }))
     .sort((left, right) => right.value - left.value);
 
-  const totalSpent = round2(list.reduce((sum, item) => sum + item.value, 0));
+  const totalSpent = fromAmountCents(list.reduce((sum, item) => sum + toAmountCents(item.value), 0));
 
   const listWithShare = list.map((item) => ({
     ...item,

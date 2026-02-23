@@ -1,4 +1,6 @@
 import { eachMonthOfInterval, format } from "date-fns";
+import { isDateInRangeByKey, toMonthKey } from "@/lib/finance/date-keys";
+import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import type { TransactionDTO } from "@/lib/types";
 import type { IncomeRow } from "@/src/features/cashflow/types";
 
@@ -7,32 +9,28 @@ type BuildMonthlyIncomeOptions = {
   end: Date;
 };
 
-function toMonthKey(value: Date): string {
-  return format(value, "yyyy-MM");
-}
-
 export function buildMonthlyIncome(
   transactions: TransactionDTO[],
   { start, end }: BuildMonthlyIncomeOptions
 ): IncomeRow[] {
-  const monthKeys = eachMonthOfInterval({ start, end }).map(toMonthKey);
+  const monthKeys = eachMonthOfInterval({ start, end }).map((value) => format(value, "yyyy-MM"));
   const incomeByMonth = new Map<string, number>(monthKeys.map((month) => [month, 0]));
 
   for (const transaction of transactions) {
-    if (transaction.amount <= 0) continue;
+    if (transaction.type !== "income") continue;
 
-    const txDate = new Date(transaction.date);
-    if (txDate < start || txDate > end) continue;
+    if (!isDateInRangeByKey(transaction.date, start, end)) continue;
 
-    const month = toMonthKey(txDate);
+    const month = toMonthKey(transaction.date);
+    if (!month) continue;
     if (!incomeByMonth.has(month)) continue;
 
     const previous = incomeByMonth.get(month) ?? 0;
-    incomeByMonth.set(month, previous + transaction.amount);
+    incomeByMonth.set(month, previous + absAmountCents(transaction.amount));
   }
 
   return monthKeys.map((month) => ({
     month,
-    income: Number((incomeByMonth.get(month) ?? 0).toFixed(2))
+    income: fromAmountCents(incomeByMonth.get(month) ?? 0)
   }));
 }

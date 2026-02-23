@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { importObservabilityRepo } from "@/lib/server/import-observability.repo";
 
 type ImportEvent = "import.parse" | "import.mapping" | "import.commit";
 type ImportPhase = "parse" | "mapping" | "commit";
@@ -16,6 +17,9 @@ type ImportTelemetryInput = {
   skipped?: number;
   duplicates?: number;
   invalidRows?: number;
+  transferCreated?: number;
+  cardPaymentDetected?: number;
+  cardPaymentNotConverted?: number;
   errorCode?: string;
 };
 
@@ -33,9 +37,10 @@ function safeCounter(value: number | undefined): number | undefined {
 }
 
 export function logImportEvent(event: ImportEvent, input: ImportTelemetryInput): void {
+  const resolvedPhase = (input.phase ?? event.split(".")[1] ?? "unknown") as ImportPhase;
   const payload = {
     event,
-    phase: input.phase ?? event.split(".")[1] ?? "unknown",
+    phase: resolvedPhase,
     userIdHash: anonymizeUserId(input.userId),
     sourceType: input.sourceType ?? "unknown",
     fileName: input.fileName ?? "unknown",
@@ -47,8 +52,34 @@ export function logImportEvent(event: ImportEvent, input: ImportTelemetryInput):
     skipped: safeCounter(input.skipped),
     duplicates: safeCounter(input.duplicates),
     invalidRows: safeCounter(input.invalidRows),
+    transferCreated: safeCounter(input.transferCreated),
+    cardPaymentDetected: safeCounter(input.cardPaymentDetected),
+    cardPaymentNotConverted: safeCounter(input.cardPaymentNotConverted),
     errorCode: input.errorCode
   };
 
   console.info(`[IMPORT] ${JSON.stringify(payload)}`);
+
+  try {
+    importObservabilityRepo.record({
+      userId: input.userId,
+      sourceType: input.sourceType,
+      event,
+      phase: resolvedPhase,
+      errorCode: input.errorCode,
+      totalRows: input.totalRows,
+      validRows: input.validRows,
+      ignoredRows: input.ignoredRows,
+      errorRows: input.errorRows,
+      imported: input.imported,
+      skipped: input.skipped,
+      duplicates: input.duplicates,
+      invalidRows: input.invalidRows,
+      transferCreated: input.transferCreated,
+      cardPaymentDetected: input.cardPaymentDetected,
+      cardPaymentNotConverted: input.cardPaymentNotConverted
+    });
+  } catch {
+    // observability nao deve interromper o fluxo de importacao
+  }
 }

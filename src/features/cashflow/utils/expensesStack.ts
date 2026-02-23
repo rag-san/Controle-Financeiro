@@ -1,4 +1,5 @@
-import { format } from "date-fns";
+import { toMonthKey } from "@/lib/finance/date-keys";
+import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import type { TransactionDTO } from "@/lib/types";
 import type { ExpensesStackedRow } from "@/src/features/cashflow/types";
 
@@ -15,10 +16,6 @@ type BuildMonthlyExpensesStackResult = {
   topN: number;
 };
 
-function monthKey(dateValue: string): string {
-  return format(new Date(dateValue), "yyyy-MM");
-}
-
 export function buildMonthlyExpensesStack(
   transactions: TransactionDTO[],
   { topN = 8 }: BuildMonthlyExpensesStackOptions = {}
@@ -26,7 +23,7 @@ export function buildMonthlyExpensesStack(
   const monthCategoryMap = new Map<string, Map<string, number>>();
   const categoryTotals = new Map<string, number>();
 
-  const expenseTransactions = transactions.filter((transaction) => transaction.amount < 0);
+  const expenseTransactions = transactions.filter((transaction) => transaction.type === "expense");
   if (expenseTransactions.length === 0) {
     return {
       rows: [],
@@ -37,16 +34,18 @@ export function buildMonthlyExpensesStack(
   }
 
   for (const transaction of transactions) {
-    const month = monthKey(transaction.date);
+    const month = toMonthKey(transaction.date);
+    if (!month) continue;
     if (!monthCategoryMap.has(month)) {
       monthCategoryMap.set(month, new Map<string, number>());
     }
   }
 
   for (const transaction of expenseTransactions) {
-    const month = monthKey(transaction.date);
+    const month = toMonthKey(transaction.date);
+    if (!month) continue;
     const category = transaction.category?.name?.trim() || "Sem categoria";
-    const amount = Math.abs(transaction.amount);
+    const amountCents = absAmountCents(transaction.amount);
 
     if (!monthCategoryMap.has(month)) {
       monthCategoryMap.set(month, new Map<string, number>());
@@ -55,8 +54,8 @@ export function buildMonthlyExpensesStack(
     const monthValues = monthCategoryMap.get(month);
     if (!monthValues) continue;
 
-    monthValues.set(category, (monthValues.get(category) ?? 0) + amount);
-    categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + amount);
+    monthValues.set(category, (monthValues.get(category) ?? 0) + amountCents);
+    categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + amountCents);
   }
 
   const orderedCategories = [...categoryTotals.entries()]
@@ -84,15 +83,18 @@ export function buildMonthlyExpensesStack(
 
       for (const [category, value] of categoryValues.entries()) {
         if (topCategories.includes(category)) {
-          row[category] = Number((Number(row[category]) + value).toFixed(2));
+          const currentValueCents = absAmountCents(Number(row[category] ?? 0));
+          row[category] = fromAmountCents(currentValueCents + value);
         } else if (hasOther) {
-          row[OTHER_CATEGORY_KEY] = Number((Number(row[OTHER_CATEGORY_KEY]) + value).toFixed(2));
+          const currentOtherCents = absAmountCents(Number(row[OTHER_CATEGORY_KEY] ?? 0));
+          row[OTHER_CATEGORY_KEY] = fromAmountCents(currentOtherCents + value);
         }
       }
 
-      row.total = Number(
-        categories.reduce((sum, category) => sum + Number(row[category] ?? 0), 0).toFixed(2)
-      );
+      const totalCents = categories.reduce((sum, category) => {
+        return sum + absAmountCents(Number(row[category] ?? 0));
+      }, 0);
+      row.total = fromAmountCents(totalCents);
 
       return row;
     });

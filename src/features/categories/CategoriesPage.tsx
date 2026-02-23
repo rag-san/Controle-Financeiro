@@ -1,8 +1,10 @@
 "use client";
 
+import { format } from "date-fns";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
-import type { CategoryDTO, TransactionDTO } from "@/lib/types";
+import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
+import type { CategoryDTO } from "@/lib/types";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
 import { Skeleton } from "@/src/components/ui/Skeleton";
 import { useToast } from "@/src/components/ui/ToastProvider";
@@ -17,10 +19,11 @@ import {
   type NewCategoryPayload
 } from "@/src/features/categories/components/NewCategoryModal";
 import {
-  buildCategoryMonthAggregates,
+  type CategoryMonthAggregates,
   buildTransactionsMonthQuery,
   resolveMonthInterval,
-  shiftMonth
+  shiftMonth,
+  type MonthInterval
 } from "@/src/features/categories/utils/categoryAggregates";
 
 type CategoriesBootstrapResponse = {
@@ -28,48 +31,38 @@ type CategoriesBootstrapResponse = {
   rules: Array<{ id: string; name: string; enabled: boolean }>;
 };
 
-type TransactionsResponse = {
-  items: TransactionDTO[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    totalCount: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
+type CategoriesMetricsResponse = {
+  view: "categories";
+  month: string;
+  aggregates: Omit<CategoryMonthAggregates, "monthInterval"> & {
+    monthInterval: {
+      start: string;
+      end: string;
+    };
   };
 };
 
-async function fetchMonthTransactions(monthDate: Date, signal?: AbortSignal): Promise<TransactionDTO[]> {
-  const interval = resolveMonthInterval(monthDate);
-  const baseQuery = buildTransactionsMonthQuery(interval);
-  const items: TransactionDTO[] = [];
-  let page = 1;
-  let hasNextPage = true;
-
-  while (hasNextPage) {
-    const response = await fetch(`/api/transactions?${baseQuery}&page=${page}&pageSize=200`, { signal });
-    const data = (await response.json()) as TransactionsResponse | { error?: string };
-    if (!response.ok || !("items" in data)) {
-      throw new Error("error" in data && data.error ? data.error : "Falha ao carregar transações por categoria.");
-    }
-
-    items.push(...data.items);
-    hasNextPage = data.pagination.hasNextPage;
-    page += 1;
-  }
-
-  return items;
+function parseInterval(interval: { start: string; end: string }): MonthInterval {
+  return {
+    start: new Date(interval.start),
+    end: new Date(interval.end)
+  };
 }
 
 export function CategoriesPage(): React.JSX.Element {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<CategoriesTopTab>("categories");
   const [categories, setCategories] = useState<CategoryDTO[]>([]);
-  const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
+  const [monthAggregates, setMonthAggregates] = useState<CategoryMonthAggregates>({
+    totalSpent: 0,
+    list: [],
+    donut: [],
+    groups: [],
+    monthInterval: resolveMonthInterval(new Date())
+  });
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
-  const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
@@ -94,17 +87,41 @@ export function CategoriesPage(): React.JSX.Element {
     }
   }, []);
 
-  const loadTransactions = useCallback(async (monthDate: Date): Promise<void> => {
-    setLoadingTransactions(true);
+  const loadMonthMetrics = useCallback(async (monthDate: Date): Promise<void> => {
+    setLoadingMetrics(true);
     setError("");
     try {
-      const items = await fetchMonthTransactions(monthDate);
-      setTransactions(items);
+      const query = new URLSearchParams({
+        view: "categories",
+        month: format(monthDate, "yyyy-MM")
+      });
+      const response = await fetch(`/api/metrics/official?${query.toString()}`);
+      const { data, errorMessage } = await parseApiResponse<CategoriesMetricsResponse | { error?: unknown }>(
+        response
+      );
+      if (errorMessage) {
+        throw new Error(errorMessage);
+      }
+
+      if (!response.ok || !data || !("view" in data) || data.view !== "categories") {
+        throw new Error(extractApiError(data, "Falha ao carregar gastos do mês."));
+      }
+
+      setMonthAggregates({
+        ...data.aggregates,
+        monthInterval: parseInterval(data.aggregates.monthInterval)
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Falha ao carregar gastos do mês.");
-      setTransactions([]);
+      setMonthAggregates({
+        totalSpent: 0,
+        list: [],
+        donut: [],
+        groups: [],
+        monthInterval: resolveMonthInterval(monthDate)
+      });
     } finally {
-      setLoadingTransactions(false);
+      setLoadingMetrics(false);
     }
   }, []);
 
@@ -113,17 +130,12 @@ export function CategoriesPage(): React.JSX.Element {
   }, [loadBootstrap]);
 
   useEffect(() => {
-    void loadTransactions(selectedMonth);
-  }, [loadTransactions, selectedMonth]);
-
-  const monthAggregates = useMemo(
-    () => buildCategoryMonthAggregates(categories, transactions, selectedMonth),
-    [categories, transactions, selectedMonth]
-  );
+    void loadMonthMetrics(selectedMonth);
+  }, [loadMonthMetrics, selectedMonth]);
 
   const monthQuery = useMemo(
-    () => buildTransactionsMonthQuery(monthAggregates.monthInterval),
-    [monthAggregates.monthInterval]
+    () => buildTransactionsMonthQuery(resolveMonthInterval(selectedMonth)),
+    [selectedMonth]
   );
 
   const handleCreateCategory = useCallback(
@@ -174,7 +186,7 @@ export function CategoriesPage(): React.JSX.Element {
 
         {activeTab === "categories" ? (
           <section id="categories-panel-categories" role="tabpanel" className="space-y-4">
-            {loading || loadingTransactions ? (
+            {loading || loadingMetrics ? (
               <div className="space-y-4">
                 <Skeleton className="h-64 rounded-2xl" />
                 <Skeleton className="h-[520px] rounded-2xl" />

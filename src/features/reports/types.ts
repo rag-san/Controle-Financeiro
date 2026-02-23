@@ -88,7 +88,7 @@ export type ReportPreparedTransaction = {
   timestamp: number;
   amount: number;
   absAmount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   description: string;
   accountId: string;
   accountName: string;

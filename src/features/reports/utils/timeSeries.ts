@@ -1,12 +1,13 @@
 import { format, startOfMonth, startOfWeek } from "date-fns";
+import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import type { ReportPreparedTransaction, ReportsPeriodRange, ReportsTimeSeriesPoint } from "@/src/features/reports/types";
 
 type SeriesBucket = {
   key: string;
   from: Date;
   to: Date;
-  income: number;
-  expense: number;
+  incomeCents: number;
+  expenseCents: number;
 };
 
 function round2(value: number): number {
@@ -41,14 +42,15 @@ export function buildIncomeExpenseSeries(
       key: bucketKey,
       from: bucketStart,
       to: bucketStart,
-      income: 0,
-      expense: 0
+      incomeCents: 0,
+      expenseCents: 0
     };
 
+    const absCents = absAmountCents(transaction.absAmount);
     if (transaction.type === "income") {
-      bucket.income = round2(bucket.income + transaction.absAmount);
-    } else {
-      bucket.expense = round2(bucket.expense + transaction.absAmount);
+      bucket.incomeCents += absCents;
+    } else if (transaction.type === "expense") {
+      bucket.expenseCents += absCents;
     }
 
     if (transaction.date > bucket.to) {
@@ -65,9 +67,9 @@ export function buildIncomeExpenseSeries(
       label: granularity === "week" ? format(bucket.from, "dd/MM") : format(bucket.from, "MMM/yy"),
       from: bucket.from,
       to: bucket.to,
-      income: round2(bucket.income),
-      expense: round2(bucket.expense),
-      net: round2(bucket.income - bucket.expense)
+      income: round2(fromAmountCents(bucket.incomeCents)),
+      expense: round2(fromAmountCents(bucket.expenseCents)),
+      net: round2(fromAmountCents(bucket.incomeCents - bucket.expenseCents))
     }));
 }
 

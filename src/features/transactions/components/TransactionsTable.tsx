@@ -1,13 +1,11 @@
-import { ArrowDownUp, Search } from "lucide-react";
+import { ArrowDownUp } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
 import { Button } from "@/src/components/ui/Button";
 import { Checkbox } from "@/src/components/ui/Checkbox";
-import { Input } from "@/src/components/ui/Input";
 import type { Suggestion } from "@/src/features/categorization/suggestCategory";
 import { TransactionRow } from "@/src/features/transactions/components/TransactionRow";
-import { TransactionsSummary } from "@/src/features/transactions/components/TransactionsSummary";
 
 type SortField = "date" | "amount";
 type SortDirection = "asc" | "desc";
@@ -18,15 +16,10 @@ type TransactionsTableProps = {
   selectedIds: string[];
   suggestionsById: Map<string, Suggestion>;
   applyingSuggestionId?: string | null;
-  searchQuery: string;
   loading?: boolean;
   sortField: SortField;
   sortDirection: SortDirection;
   totalCount: number;
-  income: number;
-  expense: number;
-  balance: number;
-  onSearchQueryChange: (value: string) => void;
   onToggleSort: (field: SortField) => void;
   onToggleSelectAll: (checked: boolean) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
@@ -104,15 +97,10 @@ export function TransactionsTable({
   selectedIds,
   suggestionsById,
   applyingSuggestionId = null,
-  searchQuery,
   loading = false,
   sortField,
   sortDirection,
   totalCount,
-  income,
-  expense,
-  balance,
-  onSearchQueryChange,
   onToggleSort,
   onToggleSelectAll,
   onToggleSelect,
@@ -128,26 +116,9 @@ export function TransactionsTable({
   return (
     <section className="rounded-2xl border border-border/80 bg-card shadow-[0_4px_14px_rgba(15,23,42,0.04)]" aria-label="Tabela de transacoes">
       <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative w-full lg:max-w-sm">
-          <label htmlFor="transactions-search" className="sr-only">
-            Buscar transacoes
-          </label>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="transactions-search"
-            value={searchQuery}
-            onChange={(event) => onSearchQueryChange(event.target.value)}
-            placeholder="Buscar transações..."
-            className="h-10 rounded-xl border-border/90 bg-background pl-9"
-          />
-        </div>
-
-        <TransactionsSummary
-          totalCount={totalCount}
-          income={income}
-          expense={expense}
-          balance={balance}
-        />
+        <p className="text-sm text-muted-foreground">
+          Exibindo <span className="font-semibold text-foreground">{totalCount}</span> transacao(oes)
+        </p>
       </div>
 
       <div className="overflow-x-auto">

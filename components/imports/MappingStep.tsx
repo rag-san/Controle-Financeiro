@@ -27,6 +27,7 @@ type MappingStepProps = {
   };
   onChange: (mapping: Mapping) => void;
   onConfirm: () => void;
+  busy?: boolean;
 };
 
 export function MappingStep({
@@ -35,7 +36,8 @@ export function MappingStep({
   suggestedMapping,
   confidence,
   onChange,
-  onConfirm
+  onConfirm,
+  busy = false
 }: MappingStepProps): React.JSX.Element {
   const update = (key: keyof Mapping, value: string): void => {
     onChange({
@@ -170,8 +172,8 @@ export function MappingStep({
       </form>
 
       <div className="flex justify-end">
-        <Button disabled={!ready} onClick={onConfirm} className="w-full sm:w-auto">
-          Aplicar mapeamento
+        <Button disabled={!ready || busy} onClick={onConfirm} className="w-full sm:w-auto">
+          {busy ? "Aplicando..." : "Aplicar mapeamento"}
         </Button>
       </div>
     </section>

@@ -16,7 +16,7 @@ export type CanonicalImportRow = {
   documentType?: string | null;
   description: string;
   normalizedDescription: string;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   externalId?: string;
   accountHint?: string;
   accountId?: string;
@@ -40,7 +40,7 @@ type CanonicalInput = {
   transactionKindRaw?: string | null;
   counterpartyRaw?: string | null;
   description?: string | null;
-  type?: "income" | "expense";
+  type?: "income" | "expense" | "transfer";
   externalId?: string;
   accountHint?: string;
   accountId?: string;

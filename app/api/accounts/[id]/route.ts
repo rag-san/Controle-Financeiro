@@ -9,7 +9,8 @@ const updateAccountSchema = z.object({
   name: z.string().min(2).max(80).optional(),
   type: z.enum(["checking", "credit", "cash", "investment"]).optional(),
   institution: z.string().max(120).optional().nullable(),
-  currency: z.string().length(3).optional()
+  currency: z.string().length(3).optional(),
+  parentAccountId: z.string().min(6).max(128).optional().nullable()
 });
 
 export async function PATCH(
@@ -38,12 +39,26 @@ export async function PATCH(
     return NextResponse.json({ error: "Conta nao encontrada" }, { status: 404 });
   }
 
-  const account = accountsRepo.update({
-    id,
-    userId: auth.userId,
-    ...parsed.data,
-    currency: parsed.data.currency?.toUpperCase()
-  });
+  let account;
+  try {
+    account = accountsRepo.update({
+      id,
+      userId: auth.userId,
+      ...parsed.data,
+      currency: parsed.data.currency?.toUpperCase(),
+      parentAccountId: parsed.data.parentAccountId
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      ["PARENT_ACCOUNT_NOT_FOUND", "PARENT_ACCOUNT_INVALID_TYPE", "PARENT_ACCOUNT_SELF_REFERENCE"].includes(
+        error.message
+      )
+    ) {
+      return NextResponse.json({ error: "Conta mae invalida para este cadastro." }, { status: 400 });
+    }
+    throw error;
+  }
 
   if (!account) {
     return NextResponse.json({ error: "Conta nao encontrada" }, { status: 404 });

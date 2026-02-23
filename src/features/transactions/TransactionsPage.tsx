@@ -2,7 +2,9 @@
 
 import { endOfMonth, format, startOfMonth, subDays, subMonths } from "date-fns";
 import { Plus, Upload } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ImportTransactionsModal } from "@/components/import/ImportTransactionsModal";
 import { PageShell } from "@/components/layout/PageShell";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import type { AccountDTO, CategoryDTO, TransactionDTO } from "@/lib/types";
@@ -25,7 +27,6 @@ import { useToast } from "@/src/components/ui/ToastProvider";
 import { buildInsights } from "@/src/features/insights/buildInsights";
 import { InsightsBanner } from "@/src/features/insights/components/InsightsBanner";
 import { buildPeriodComparison } from "@/src/features/insights/utils/period";
-import { CsvImportPanel } from "@/src/features/transactions/CsvImportPanel";
 import { BulkActionsBar } from "@/src/features/transactions/components/BulkActionsBar";
 import { BulkCategoryModal } from "@/src/features/transactions/components/BulkCategoryModal";
 import { BulkDeleteModal } from "@/src/features/transactions/components/BulkDeleteModal";
@@ -37,6 +38,7 @@ import {
   type TransactionsFiltersState,
   TransactionsFiltersBar
 } from "@/src/features/transactions/components/TransactionsFiltersBar";
+import { TransactionsKpiCards } from "@/src/features/transactions/components/TransactionsKpiCards";
 import { TransactionsTable } from "@/src/features/transactions/components/TransactionsTable";
 import { useSelection } from "@/src/features/transactions/hooks/useSelection";
 
@@ -201,7 +203,7 @@ function resolvePeriodQuery(filters: TransactionsFiltersState): {
 }
 
 function resolveTypeFromQuery(value: string | null): TransactionsFiltersState["type"] {
-  if (value === "income" || value === "expense") {
+  if (value === "income" || value === "expense" || value === "transfer") {
     return value;
   }
   return "";
@@ -233,6 +235,9 @@ function isUncategorizedTransaction(transaction: TransactionDTO): boolean {
 }
 
 export function TransactionsPage(): React.JSX.Element {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const {
     selectedIds,
@@ -275,12 +280,13 @@ export function TransactionsPage(): React.JSX.Element {
   const [showBulkCategoryModal, setShowBulkCategoryModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [showImport, setShowImport] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [actionError, setActionError] = useState("");
   const [createError, setCreateError] = useState("");
   const shouldLoadMetaRef = useRef(true);
+  const importButtonRef = useRef<HTMLButtonElement | null>(null);
   const [newTx, setNewTx] = useState<NewTransactionDraft>(initialDraft);
+  const isImportOpen = searchParams.get("import") === "1";
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -973,32 +979,52 @@ export function TransactionsPage(): React.JSX.Element {
     setUncategorizedOnly(false);
   }, []);
 
+  const setImportModalOpen = useCallback(
+    (nextOpen: boolean): void => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (nextOpen) {
+        params.set("import", "1");
+      } else {
+        params.delete("import");
+      }
+
+      const queryString = params.toString();
+      router.push(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
   const actions = (
     <>
       <Button variant="outline" onClick={() => setShowCreate((prev) => !prev)} className="flex-1 sm:flex-none">
         <Plus className="h-4 w-4" />
         {showCreate ? "Fechar" : "Nova"}
       </Button>
-      <Button onClick={() => setShowImport((prev) => !prev)} className="flex-1 sm:flex-none">
+      <Button
+        ref={importButtonRef}
+        onClick={() => setImportModalOpen(true)}
+        className="flex-1 sm:flex-none"
+      >
         <Upload className="h-4 w-4" />
-        {showImport ? "Fechar importacao" : "Importar"}
+        Importar extrato
       </Button>
     </>
   );
 
   return (
     <PageShell title="Transações" subtitle="Lancamentos, filtros e categorizacao manual" actions={actions}>
+      <ImportTransactionsModal
+        open={isImportOpen}
+        accounts={accounts}
+        triggerRef={importButtonRef}
+        onOpenChange={setImportModalOpen}
+        onSuccess={() => {
+          void loadTransactions();
+        }}
+        onAccountsRefresh={() => refreshMetaAndData()}
+      />
       <div className="space-y-4">
-        <CsvImportPanel
-          open={showImport}
-          accounts={accounts}
-          onClose={() => setShowImport(false)}
-          onSuccess={() => {
-            setShowImport(false);
-            void loadTransactions();
-          }}
-          onAccountsRefresh={() => refreshMetaAndData()}
-        />
+        <TransactionsKpiCards income={summary.income} expense={summary.expense} balance={summary.balance} />
 
         {showCreate ? (
           <TransactionForm
@@ -1017,7 +1043,9 @@ export function TransactionsPage(): React.JSX.Element {
           filters={filters}
           accounts={accounts}
           categories={categories}
+          searchQuery={searchQuery}
           busy={loading}
+          onSearchQueryChange={setSearchQuery}
           onChange={(next) => setFilters((previous) => ({ ...previous, ...next }))}
           onClear={clearAllFilters}
         />
@@ -1046,15 +1074,10 @@ export function TransactionsPage(): React.JSX.Element {
           selectedIds={selectedIds}
           suggestionsById={suggestionsById}
           applyingSuggestionId={applyingSuggestionId}
-          searchQuery={searchQuery}
           loading={loading}
           sortField={sortState.field}
           sortDirection={sortState.direction}
           totalCount={pagination.totalCount}
-          income={summary.income}
-          expense={summary.expense}
-          balance={summary.balance}
-          onSearchQueryChange={setSearchQuery}
           onToggleSort={(field) =>
             setSortState((previous) => {
               if (previous.field === field) {

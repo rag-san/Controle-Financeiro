@@ -35,7 +35,7 @@ export type ParsedImportRow = {
   description: string;
   normalizedDescription: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   externalId?: string;
   accountHint?: string;
   raw: Record<string, unknown>;

@@ -34,7 +34,7 @@ export type PreparedTransaction = {
   monthKey: string;
   amount: number;
   absAmount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   categoryId: string | null;
   categoryName: string;
   merchantKey: string;

@@ -6,7 +6,7 @@ export type NormalizedTransactionDraft = {
   description: string;
   normalizedDescription: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
 };
 
 export function normalizeDescription(value: string): string {
@@ -98,12 +98,13 @@ export function normalizeTransaction(params: {
   const date = parseFlexibleDate(params.date);
   let amount = typeof params.amount === "number" ? params.amount : parseMoneyInput(params.amount);
   const loweredType = params.type?.toLowerCase() ?? "";
+  const isTransferType = loweredType.includes("transfer");
 
-  if (loweredType.includes("deb") || loweredType.includes("saida") || loweredType.includes("desp")) {
+  if (!isTransferType && (loweredType.includes("deb") || loweredType.includes("saida") || loweredType.includes("desp"))) {
     amount = amount > 0 ? -amount : amount;
   }
 
-  if (loweredType.includes("cred") || loweredType.includes("entrada") || loweredType.includes("rece")) {
+  if (!isTransferType && (loweredType.includes("cred") || loweredType.includes("entrada") || loweredType.includes("rece"))) {
     amount = amount < 0 ? Math.abs(amount) : amount;
   }
 
@@ -115,6 +116,6 @@ export function normalizeTransaction(params: {
     description,
     normalizedDescription,
     amount,
-    type: inferTypeFromAmount(amount)
+    type: isTransferType ? "transfer" : inferTypeFromAmount(amount)
   };
 }

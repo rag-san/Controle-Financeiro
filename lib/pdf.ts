@@ -16,7 +16,7 @@ export type ParsedPdfRow = {
   description: string;
   normalizedDescription: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   externalId?: string;
   accountHint?: string;
   raw: Record<string, unknown>;
@@ -26,7 +26,7 @@ type ParsedPdfCandidate = {
   date: Date;
   description: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   raw: {
     line: string;
     dateText: string;
@@ -38,13 +38,18 @@ type ParsedLine = {
   date: Date;
   description: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   dateText: string;
   amountText: string;
 };
 
 export type PdfDocumentType = "bank_statement" | "credit_card_invoice" | "unknown";
 export type PdfIssuerProfile = "inter_statement" | "inter_invoice" | "mercado_pago_invoice" | "unknown";
+export const SUPPORTED_PDF_ISSUER_PROFILES: PdfIssuerProfile[] = [
+  "inter_statement",
+  "inter_invoice",
+  "mercado_pago_invoice"
+];
 export type PdfImportErrorCode =
   | "password_required"
   | "password_invalid"
@@ -78,6 +83,9 @@ const dateRegex = /\b(\d{2}\/\d{2}\/\d{2,4}|\d{4}-\d{2}-\d{2})\b/;
 const amountTokenPattern = String.raw`[+-]?\s*(?:R\$\s*)?(?:\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,]\d{2})(?:\s*[CD])?`;
 const amountWithCurrencyPattern = /[-+]?\s*R\$\s*\d{1,3}(?:\.\d{3})*,\d{2}/gi;
 const ignoreDescriptionRegex = /\b(SALDO\s+ANTERIOR|SALDO\s+FINAL|SALDO\s+DISPON[IÍ]VEL|SALDO\s+DO\s+DIA)\b/i;
+const PDFJS_WORKER_MODULE_SPECIFIER = "pdfjs-dist/legacy/build/pdf.worker.mjs";
+
+let pdfWorkerConfigured = false;
 
 const portugueseMonthMap: Record<string, number> = {
   janeiro: 1,
@@ -617,11 +625,38 @@ async function loadPdfParseCtor(): Promise<new (params: { data: Buffer; password
   };
 }
 
+function configurePdfWorker(
+  PDFParseCtor: new (params: { data: Buffer; password?: string }) => {
+    getText: (params: { lineEnforce: boolean }) => Promise<{ text: string }>;
+    destroy: () => Promise<void>;
+  }
+): void {
+  if (pdfWorkerConfigured) {
+    return;
+  }
+
+  const withSetWorker = PDFParseCtor as unknown as {
+    setWorker?: (workerSrc?: string) => string;
+  };
+
+  if (typeof withSetWorker.setWorker !== "function") {
+    return;
+  }
+
+  try {
+    withSetWorker.setWorker(PDFJS_WORKER_MODULE_SPECIFIER);
+    pdfWorkerConfigured = true;
+  } catch {
+    // Keep default behavior if this runtime cannot override the worker source.
+  }
+}
+
 export async function parsePdfImport(
   buffer: Buffer,
   options: PdfParseOptions = {}
 ): Promise<PdfImportResult> {
   const PDFParseCtor = await loadPdfParseCtor();
+  configurePdfWorker(PDFParseCtor);
   const parser = new PDFParseCtor({
     data: buffer,
     password: options.password
@@ -646,7 +681,11 @@ export async function parsePdfImport(
     } else if (classification.issuerProfile === "mercado_pago_invoice") {
       parsedTransactions = parseMercadoPagoInvoiceTransactions(text, dueDate);
     } else {
-      parsedTransactions = parseTransactionsFromPdfText(text);
+      throw new PdfImportError(
+        "parser_unavailable",
+        "Suporte de PDF disponivel apenas para Banco Inter e Mercado Pago.",
+        `issuer_profile=${classification.issuerProfile}`
+      );
     }
 
     if (parsedTransactions.length === 0) {

@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
 import { getCache, setCache } from "@/lib/cache";
-import { privateCacheHeaders } from "@/lib/http";
+import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
+import { privateCacheHeaders, withDeprecatedApiHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
+
+const deprecatedReportsHeaders = withDeprecatedApiHeaders(privateCacheHeaders, {
+  successor: "/api/metrics/official?view=reports&preset=3M",
+  sunset: "Tue, 30 Jun 2026 23:59:59 GMT",
+  message: "Deprecated endpoint. Use /api/metrics/official?view=reports with a preset."
+});
 
 type SankeyNode = {
   name: string;
@@ -43,7 +50,7 @@ function toTopEntries(
   otherLabel: string
 ): Array<{ name: string; value: number }> {
   const entries = [...source.entries()]
-    .map(([name, value]) => ({ name, value: round2(value) }))
+    .map(([name, value]) => ({ name, value: round2(fromAmountCents(value)) }))
     .filter((entry) => entry.value > 0)
     .sort((left, right) => right.value - left.value);
 
@@ -63,7 +70,7 @@ function toTopEntries(
 function buildSankey(
   transactions: Array<{
     amount: number;
-    type: "income" | "expense";
+    type: "income" | "expense" | "transfer";
     account: { name: string } | null;
     category?: { name: string } | null;
   }>
@@ -72,19 +79,23 @@ function buildSankey(
   const expenseByCategory = new Map<string, number>();
 
   for (const transaction of transactions) {
-    const absoluteAmount = round2(Math.abs(transaction.amount));
-    if (!Number.isFinite(absoluteAmount) || absoluteAmount <= 0) continue;
+    const absoluteAmountCents = absAmountCents(transaction.amount);
+    if (absoluteAmountCents <= 0) continue;
 
     if (transaction.type === "income") {
       const accountName = transaction.account?.name?.trim() || "Outras receitas";
       const current = incomeByAccount.get(accountName) ?? 0;
-      incomeByAccount.set(accountName, round2(current + absoluteAmount));
+      incomeByAccount.set(accountName, current + absoluteAmountCents);
+      continue;
+    }
+
+    if (transaction.type !== "expense") {
       continue;
     }
 
     const categoryName = transaction.category?.name?.trim() || "Sem categoria";
     const current = expenseByCategory.get(categoryName) ?? 0;
-    expenseByCategory.set(categoryName, round2(current + absoluteAmount));
+    expenseByCategory.set(categoryName, current + absoluteAmountCents);
   }
 
   const incomeEntries = toTopEntries(incomeByAccount, 6, "Outras receitas");
@@ -137,44 +148,44 @@ function buildSankey(
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   return withRouteProfiling(request, "/api/reports.GET", async () => {
-  const auth = await requireUser(request);
-  if (auth instanceof NextResponse) return auth;
+    const auth = await requireUser(request);
+    if (auth instanceof NextResponse) return auth;
 
-  const cacheKey = `reports:${auth.userId}:summary`;
-  const cached = getCache<ReportsResponse>(cacheKey);
+    const cacheKey = `reports:${auth.userId}:summary`;
+    const cached = getCache<ReportsResponse>(cacheKey);
 
-  if (cached) {
-    return NextResponse.json(cached, { headers: privateCacheHeaders });
-  }
-
-  const transactions = transactionsRepo.listPaged(
-    { userId: auth.userId },
-    { page: 1, pageSize: 500 }
-  );
-
-  const sankeyData = buildSankey(transactions);
-
-  const payload: ReportsResponse = {
-    summary: {
-      income: sankeyData.income,
-      expense: sankeyData.expense,
-      saved: round2(sankeyData.income - sankeyData.expense)
-    },
-    sankey: {
-      phase: 2,
-      enabled: sankeyData.links.length > 0,
-      message:
-        sankeyData.links.length > 0
-          ? "Fluxo de receitas e despesas calculado a partir das últimas 500 transações."
-          : "Sem dados suficientes para gerar o Sankey neste período.",
-      nodes: sankeyData.nodes,
-      links: sankeyData.links
+    if (cached) {
+      return NextResponse.json(cached, { headers: deprecatedReportsHeaders });
     }
-  };
 
-  setCache(cacheKey, payload, 30_000);
+    const transactions = transactionsRepo.listPaged(
+      { userId: auth.userId },
+      { page: 1, pageSize: 500 }
+    );
 
-  return NextResponse.json(payload, { headers: privateCacheHeaders });
+    const sankeyData = buildSankey(transactions);
+
+    const payload: ReportsResponse = {
+      summary: {
+        income: sankeyData.income,
+        expense: sankeyData.expense,
+        saved: round2(sankeyData.income - sankeyData.expense)
+      },
+      sankey: {
+        phase: 2,
+        enabled: sankeyData.links.length > 0,
+        message:
+          sankeyData.links.length > 0
+            ? "Fluxo de receitas e despesas calculado a partir das últimas 500 transações."
+            : "Sem dados suficientes para gerar o Sankey neste período.",
+        nodes: sankeyData.nodes,
+        links: sankeyData.links
+      }
+    };
+
+    setCache(cacheKey, payload, 30_000);
+
+    return NextResponse.json(payload, { headers: deprecatedReportsHeaders });
   });
 }
 

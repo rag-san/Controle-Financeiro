@@ -9,6 +9,7 @@ type AccountRow = {
   type: "checking" | "credit" | "cash" | "investment";
   institution: string | null;
   currency: string;
+  parent_account_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -26,6 +27,7 @@ function mapAccount(row: AccountRow) {
     type: row.type,
     institution: row.institution,
     currency: row.currency,
+    parentAccountId: row.parent_account_id,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at)
   };
@@ -35,10 +37,10 @@ export const accountsRepo = {
   listByUser(userId: string) {
     const rows = db
       .prepare(
-        `SELECT id, user_id, name, type, institution, currency, created_at, updated_at
+        `SELECT id, user_id, name, type, institution, currency, parent_account_id, created_at, updated_at
          FROM accounts
          WHERE user_id = ?
-         ORDER BY type ASC, name ASC`
+         ORDER BY (parent_account_id IS NOT NULL) ASC, type ASC, name ASC`
       )
       .all(userId) as AccountRow[];
 
@@ -67,7 +69,7 @@ export const accountsRepo = {
   findByIdForUser(id: string, userId: string) {
     const row = db
       .prepare(
-        `SELECT id, user_id, name, type, institution, currency, created_at, updated_at
+        `SELECT id, user_id, name, type, institution, currency, parent_account_id, created_at, updated_at
          FROM accounts
          WHERE id = ? AND user_id = ?`
       )
@@ -82,12 +84,26 @@ export const accountsRepo = {
     type: "checking" | "credit" | "cash" | "investment";
     institution?: string | null;
     currency?: string;
+    parentAccountId?: string | null;
   }) {
     const id = createId();
     const now = nowIso();
+    const parentAccountId =
+      input.type === "credit" ? (input.parentAccountId !== undefined ? input.parentAccountId : null) : null;
+
+    if (parentAccountId) {
+      const parent = this.findByIdForUser(parentAccountId, input.userId);
+      if (!parent) {
+        throw new Error("PARENT_ACCOUNT_NOT_FOUND");
+      }
+      if (parent.type === "credit") {
+        throw new Error("PARENT_ACCOUNT_INVALID_TYPE");
+      }
+    }
+
     db.prepare(
-      `INSERT INTO accounts (id, user_id, name, type, institution, currency, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO accounts (id, user_id, name, type, institution, currency, parent_account_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.userId,
@@ -95,6 +111,7 @@ export const accountsRepo = {
       input.type,
       input.institution ?? null,
       (input.currency ?? "BRL").toUpperCase(),
+      parentAccountId,
       now,
       now
     );
@@ -109,20 +126,40 @@ export const accountsRepo = {
     type?: "checking" | "credit" | "cash" | "investment";
     institution?: string | null;
     currency?: string;
+    parentAccountId?: string | null;
   }) {
     const existing = this.findByIdForUser(input.id, input.userId);
     if (!existing) return null;
 
+    const nextType = input.type ?? existing.type;
+    const requestedParentAccountId =
+      input.parentAccountId !== undefined ? input.parentAccountId : existing.parentAccountId ?? null;
+    const nextParentAccountId = nextType === "credit" ? requestedParentAccountId : null;
+
+    if (nextParentAccountId) {
+      if (nextParentAccountId === input.id) {
+        throw new Error("PARENT_ACCOUNT_SELF_REFERENCE");
+      }
+      const parent = this.findByIdForUser(nextParentAccountId, input.userId);
+      if (!parent) {
+        throw new Error("PARENT_ACCOUNT_NOT_FOUND");
+      }
+      if (parent.type === "credit") {
+        throw new Error("PARENT_ACCOUNT_INVALID_TYPE");
+      }
+    }
+
     const now = nowIso();
     db.prepare(
       `UPDATE accounts
-       SET name = ?, type = ?, institution = ?, currency = ?, updated_at = ?
+       SET name = ?, type = ?, institution = ?, currency = ?, parent_account_id = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
     ).run(
       input.name ?? existing.name,
-      input.type ?? existing.type,
+      nextType,
       input.institution !== undefined ? input.institution : existing.institution,
       (input.currency ?? existing.currency).toUpperCase(),
+      nextParentAccountId,
       now,
       input.id,
       input.userId

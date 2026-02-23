@@ -1,5 +1,19 @@
 import { db } from "./db";
 
+type TableInfoRow = {
+  name: string;
+};
+
+function ensureColumn(table: string, column: string, ddlFragment: string): void {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
+  const hasColumn = rows.some((row) => row.name === column);
+  if (hasColumn) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddlFragment}`);
+}
+
 function runMigrations(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -19,9 +33,11 @@ function runMigrations(): void {
       type TEXT NOT NULL,
       institution TEXT,
       currency TEXT NOT NULL DEFAULT 'BRL',
+      parent_account_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_account_id) REFERENCES accounts(id) ON DELETE SET NULL
     );
     CREATE INDEX IF NOT EXISTS idx_accounts_user_type ON accounts(user_id, type);
     CREATE INDEX IF NOT EXISTS idx_accounts_user_name ON accounts(user_id, name);
@@ -56,6 +72,46 @@ function runMigrations(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_import_batches_user_imported ON import_batches(user_id, imported_at);
 
+    CREATE TABLE IF NOT EXISTS import_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      event TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      error_code TEXT,
+      total_rows INTEGER,
+      valid_rows INTEGER,
+      ignored_rows INTEGER,
+      error_rows INTEGER,
+      imported INTEGER,
+      skipped INTEGER,
+      duplicates INTEGER,
+      invalid_rows INTEGER,
+      transfer_created INTEGER,
+      card_payment_detected INTEGER,
+      card_payment_not_converted INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_import_events_user_created ON import_events(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_import_events_user_source_phase ON import_events(user_id, source_type, phase);
+    CREATE INDEX IF NOT EXISTS idx_import_events_user_error_code ON import_events(user_id, error_code, created_at);
+
+    CREATE TABLE IF NOT EXISTS official_metric_snapshots (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      metric_key TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_metric_snapshots_user_metric_period
+      ON official_metric_snapshots(user_id, metric_key, period_key);
+    CREATE INDEX IF NOT EXISTS idx_metric_snapshots_user_metric_period
+      ON official_metric_snapshots(user_id, metric_key, period_key, updated_at);
+
     CREATE TABLE IF NOT EXISTS transactions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -73,13 +129,16 @@ function runMigrations(): void {
       bank TEXT,
       external_id TEXT,
       imported_hash TEXT,
+      transfer_group_id TEXT,
+      transfer_peer_tx_id TEXT,
       raw_json TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
-      FOREIGN KEY (import_batch_id) REFERENCES import_batches(id) ON DELETE SET NULL
+      FOREIGN KEY (import_batch_id) REFERENCES import_batches(id) ON DELETE SET NULL,
+      FOREIGN KEY (transfer_peer_tx_id) REFERENCES transactions(id) ON DELETE SET NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_user_hash
       ON transactions(user_id, imported_hash)
@@ -153,6 +212,16 @@ function runMigrations(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_rules_user_priority ON category_rules(user_id, priority);
     CREATE INDEX IF NOT EXISTS idx_rules_user_enabled ON category_rules(user_id, enabled);
+  `);
+
+  ensureColumn("accounts", "parent_account_id", "TEXT");
+  ensureColumn("transactions", "transfer_group_id", "TEXT");
+  ensureColumn("transactions", "transfer_peer_tx_id", "TEXT");
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_accounts_user_parent ON accounts(user_id, parent_account_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_user_transfer_group ON transactions(user_id, transfer_group_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_account_transfer_group ON transactions(account_id, transfer_group_id);
   `);
 }
 

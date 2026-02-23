@@ -33,6 +33,7 @@ type ConnectAccountDraft = {
   type: AccountDTO["type"];
   institution: string;
   currency: string;
+  parentAccountId: string;
 };
 
 function EmptyGroupRow({
@@ -165,6 +166,29 @@ export function AccountsPage(): React.JSX.Element {
   }, [historicalSeries, previousInterval, summary]);
 
   const { creditCards, bankAccounts } = useMemo(() => splitAccountGroups(accounts), [accounts]);
+  const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const creditCardsGroupedByParent = useMemo(() => {
+    const grouped = new Map<string, AccountDTO[]>();
+    for (const card of creditCards) {
+      const key = card.parentAccountId ?? "__unlinked__";
+      const current = grouped.get(key) ?? [];
+      current.push(card);
+      grouped.set(key, current);
+    }
+
+    return [...grouped.entries()]
+      .map(([parentId, cards]) => ({
+        parentId: parentId === "__unlinked__" ? null : parentId,
+        parent: parentId === "__unlinked__" ? null : accountById.get(parentId) ?? null,
+        cards: cards.sort((left, right) => left.name.localeCompare(right.name))
+      }))
+      .sort((left, right) => {
+        if (left.parent && right.parent) return left.parent.name.localeCompare(right.parent.name);
+        if (left.parent && !right.parent) return -1;
+        if (!left.parent && right.parent) return 1;
+        return 0;
+      });
+  }, [accountById, creditCards]);
   const connections = useMemo(() => buildConnections(accounts), [accounts]);
 
   const totalCreditDebt = useMemo(
@@ -213,7 +237,8 @@ export function AccountsPage(): React.JSX.Element {
             name: draft.name.trim(),
             type: draft.type,
             institution: draft.institution.trim() || null,
-            currency: draft.currency.trim().toUpperCase() || "BRL"
+            currency: draft.currency.trim().toUpperCase() || "BRL",
+            parentAccountId: draft.type === "credit" ? draft.parentAccountId || null : null
           })
         });
 
@@ -286,22 +311,35 @@ export function AccountsPage(): React.JSX.Element {
                 onAction={() => setConnectModalOpen(true)}
               />
             ) : (
-              creditCards.map((account) => {
-                const debt = Math.abs(Math.min(account.currentBalance ?? 0, 0));
-                const institutionLabel = account.institution?.trim() || "Instituicao";
+              creditCardsGroupedByParent.flatMap((group) => {
+                const parentRow = group.parent ? (
+                  <div
+                    key={`parent-${group.parent.id}`}
+                    className="border-b border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400"
+                  >
+                    {group.parent.name}
+                  </div>
+                ) : null;
 
-                return (
-                  <AccountRow
-                    key={account.id}
-                    name={account.name}
-                    subtitle={`${institutionLabel} • Vence: --/--/----`}
-                    amount={debt}
-                    amountSign="negative"
-                    amountTone={debt > 0 ? "negative" : "muted"}
-                    metaRight="0.0% utilização"
-                    iconClassName="bg-rose-100 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300"
-                  />
-                );
+                const cardRows = group.cards.map((account) => {
+                  const debt = Math.abs(Math.min(account.currentBalance ?? 0, 0));
+                  const institutionLabel = account.institution?.trim() || "Instituicao";
+
+                  return (
+                    <AccountRow
+                      key={account.id}
+                      name={`${group.parent ? "↳ " : ""}${account.name}`}
+                      subtitle={`${institutionLabel} • Vence: --/--/----`}
+                      amount={debt}
+                      amountSign="negative"
+                      amountTone={debt > 0 ? "negative" : "muted"}
+                      metaRight={group.parent ? `Conta mae: ${group.parent.name}` : "Sem conta mae"}
+                      iconClassName="bg-rose-100 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300"
+                    />
+                  );
+                });
+
+                return parentRow ? [parentRow, ...cardRows] : cardRows;
               })
             )}
           </AccountGroupCard>
@@ -375,6 +413,7 @@ export function AccountsPage(): React.JSX.Element {
 
       <ConnectAccountModal
         open={connectModalOpen}
+        accounts={accounts}
         busy={savingAccount}
         errorMessage={connectErrorMessage}
         onClose={() => {

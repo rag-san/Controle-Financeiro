@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { dateKeyToNoonDate, toDateKey } from "@/lib/finance/date-keys";
 import type { CategoryDTO } from "@/lib/types";
 import { detectAnomalies } from "@/src/features/insights/detectors/anomalies";
 import { detectBiggestIncrease } from "@/src/features/insights/detectors/biggestIncrease";
@@ -30,9 +31,18 @@ function toPreparedTransactions(
   categoryById: Map<string, CategoryDTO>
 ): PreparedTransaction[] {
   return transactions
-    .map((transaction) => {
-      const date = new Date(transaction.date);
-      if (Number.isNaN(date.getTime())) {
+    .map<PreparedTransaction | null>((transaction) => {
+      if (transaction.type === "transfer") {
+        return null;
+      }
+
+      const dateKey = toDateKey(transaction.date);
+      if (!dateKey) {
+        return null;
+      }
+
+      const date = dateKeyToNoonDate(dateKey);
+      if (!date) {
         return null;
       }
 
@@ -55,7 +65,7 @@ function toPreparedTransactions(
         categoryId: transaction.categoryId ?? null,
         categoryName,
         merchantKey: extractMerchantKey(transaction)
-      } satisfies PreparedTransaction;
+      };
     })
     .filter((item): item is PreparedTransaction => item !== null);
 }

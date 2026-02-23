@@ -1,4 +1,6 @@
 import { eachMonthOfInterval, format } from "date-fns";
+import { isDateInRangeByKey, toMonthKey } from "@/lib/finance/date-keys";
+import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import type { TransactionDTO } from "@/lib/types";
 import type { NetResultRow } from "@/src/features/cashflow/types";
 
@@ -10,12 +12,8 @@ type BuildMonthlyNetResultOptions = {
   previousTransactions?: TransactionDTO[];
 };
 
-function toMonthKey(value: Date): string {
-  return format(value, "yyyy-MM");
-}
-
 function buildMonthKeys(start: Date, end: Date): string[] {
-  return eachMonthOfInterval({ start, end }).map(toMonthKey);
+  return eachMonthOfInterval({ start, end }).map((value) => format(value, "yyyy-MM"));
 }
 
 function buildMonthlyNetMap(
@@ -27,18 +25,21 @@ function buildMonthlyNetMap(
   const netByMonth = new Map<string, number>(monthKeys.map((key) => [key, 0]));
 
   for (const transaction of transactions) {
-    const txDate = new Date(transaction.date);
-    if (txDate < start || txDate > end) continue;
+    if (!isDateInRangeByKey(transaction.date, start, end)) continue;
+    if (transaction.type !== "income" && transaction.type !== "expense") continue;
 
-    const monthKey = toMonthKey(txDate);
+    const monthKey = toMonthKey(transaction.date);
+    if (!monthKey) continue;
     if (!netByMonth.has(monthKey)) continue;
 
     const previous = netByMonth.get(monthKey) ?? 0;
-    netByMonth.set(monthKey, previous + transaction.amount);
+    const signedAmountCents =
+      transaction.type === "income" ? absAmountCents(transaction.amount) : -absAmountCents(transaction.amount);
+    netByMonth.set(monthKey, previous + signedAmountCents);
   }
 
   for (const [key, value] of netByMonth.entries()) {
-    netByMonth.set(key, Number(value.toFixed(2)));
+    netByMonth.set(key, fromAmountCents(value));
   }
 
   return netByMonth;

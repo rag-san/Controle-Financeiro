@@ -11,7 +11,8 @@ const createAccountSchema = z.object({
   name: z.string().min(2).max(80),
   type: z.enum(["checking", "credit", "cash", "investment"]),
   institution: z.string().max(120).optional().nullable(),
-  currency: z.string().length(3).default("BRL")
+  currency: z.string().length(3).default("BRL"),
+  parentAccountId: z.string().min(6).max(128).optional().nullable()
 });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         type: "checking" | "credit" | "cash" | "investment";
         institution: string | null;
         currency: string;
+        parentAccountId: string | null;
         createdAt: Date;
         updatedAt: Date;
         currentBalance: number;
@@ -70,11 +72,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         ...parsed.data,
         name: parsed.data.name.trim(),
         institution: parsed.data.institution?.trim() || null,
-        currency: parsed.data.currency.toUpperCase()
+        currency: parsed.data.currency.toUpperCase(),
+        parentAccountId: parsed.data.parentAccountId ?? null
       });
     } catch (error) {
       if (error instanceof Error && error.message.includes("FOREIGN KEY")) {
         return NextResponse.json({ error: "Sessao invalida. Faca login novamente." }, { status: 401 });
+      }
+      if (
+        error instanceof Error &&
+        ["PARENT_ACCOUNT_NOT_FOUND", "PARENT_ACCOUNT_INVALID_TYPE", "PARENT_ACCOUNT_SELF_REFERENCE"].includes(
+          error.message
+        )
+      ) {
+        return NextResponse.json({ error: "Conta mae invalida para este cadastro." }, { status: 400 });
       }
       throw error;
     }

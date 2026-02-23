@@ -7,7 +7,7 @@ Aplicacao full-stack de controle financeiro pessoal com Next.js + SQLite local.
 - Frontend e backend no mesmo projeto (Next App Router + API Routes)
 - Autenticacao com NextAuth (Credentials)
 - Persistencia local com SQLite (`better-sqlite3`)
-- Importacao de extrato por CSV, OFX e PDF
+- Importacao de extrato por CSV, OFX e PDF (PDF: suporte atual para Inter e Mercado Pago)
 - Dashboard, relatorios, contas, categorias, recorrencias e patrimonio
 
 ## Stack
@@ -94,7 +94,7 @@ Arquivo de referencia: `.env.example`
 - `npm run typecheck`: TypeScript sem emitir arquivos
 - `npm run lint`: ESLint (Next)
 - `npm run verify`: typecheck + lint
-- `npm run test`: testes de integracao
+- `npm run test`: testes unitarios + integracao
 - `npm run seed`: seed deterministico para dados de backend
 - `npm run validate`: validacao de fluxo backend
 - `npm run build`: build de producao
@@ -121,6 +121,7 @@ npm run build
 Documentacao de testes:
 
 - `TESTING.md`
+- Roadmap de evolucao de parser PDF por banco: `docs/PDF_ROADMAP.md`
 
 ## Endpoints principais
 
@@ -128,11 +129,15 @@ Documentacao de testes:
 - Transacoes: `/api/transactions`, `/api/transactions/:id`
 - Importacao: `/api/imports`, `/api/imports/parse`, `/api/imports/commit`
 - Dashboard: `/api/dashboard`, `/api/dashboard/summary`
+- Metricas oficiais (fonte unificada): `/api/metrics/official`
+- Auditoria/export de reconciliacao: `/api/metrics/audit`
+- Observabilidade de importacao: `/api/metrics/import-observability`
 - Categorias: `/api/categories`, `/api/categories/:id`, `/api/categories/rules`
 - Contas: `/api/accounts`, `/api/accounts/:id`
 - Relatorios: `/api/reports`
 - Recorrencias: `/api/recurring`, `/api/recurring/:id`
 - Patrimonio: `/api/net-worth`, `/api/net-worth/:id`
+- Observacao: `/api/dashboard` e `/api/reports` estao mantidos por compatibilidade e marcados como `deprecated`.
 
 ## IA local opcional (Ollama)
 

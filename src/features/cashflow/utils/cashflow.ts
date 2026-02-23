@@ -9,6 +9,8 @@ import {
   subDays,
   subMonths
 } from "date-fns";
+import { isDateInRangeByKey, toMonthKey } from "@/lib/finance/date-keys";
+import { absAmountCents, accumulateOfficialFlow, fromAmountCents } from "@/lib/finance/official-metrics";
 import type { TransactionDTO } from "@/lib/types";
 import {
   formatDateRange,
@@ -75,15 +77,8 @@ export function resolvePreviousRange(currentRange: DateRange): DateRange {
   return { from: previousFrom, to: previousTo };
 }
 
-function isDateWithinRange(date: Date, range: DateRange): boolean {
-  return date >= range.from && date <= range.to;
-}
-
 export function splitByRange(transactions: TransactionDTO[], range: DateRange): TransactionDTO[] {
-  return transactions.filter((transaction) => {
-    const txDate = new Date(transaction.date);
-    return isDateWithinRange(txDate, range);
-  });
+  return transactions.filter((transaction) => isDateInRangeByKey(transaction.date, range.from, range.to));
 }
 
 export function calculateTotals(transactions: TransactionDTO[]): {
@@ -91,21 +86,17 @@ export function calculateTotals(transactions: TransactionDTO[]): {
   expense: number;
   net: number;
 } {
-  let income = 0;
-  let expense = 0;
-
-  for (const transaction of transactions) {
-    if (transaction.amount >= 0) {
-      income += transaction.amount;
-    } else {
-      expense += Math.abs(transaction.amount);
-    }
-  }
+  const totals = accumulateOfficialFlow(
+    transactions.map((transaction) => ({
+      type: transaction.type,
+      amount: transaction.amount
+    }))
+  );
 
   return {
-    income: Number(income.toFixed(2)),
-    expense: Number(expense.toFixed(2)),
-    net: Number((income - expense).toFixed(2))
+    income: totals.income,
+    expense: totals.expense,
+    net: totals.net
   };
 }
 
@@ -142,15 +133,15 @@ export function aggregateMonthly(
   }
 
   for (const transaction of transactions) {
-    const txDate = new Date(transaction.date);
-    const monthKey = format(txDate, "yyyy-MM");
+    const monthKey = toMonthKey(transaction.date);
+    if (!monthKey) continue;
     const current = baseMap.get(monthKey);
     if (!current) continue;
 
-    if (transaction.amount >= 0) {
-      current.income += transaction.amount;
-    } else {
-      current.expense += Math.abs(transaction.amount);
+    if (transaction.type === "income") {
+      current.income += fromAmountCents(absAmountCents(transaction.amount));
+    } else if (transaction.type === "expense") {
+      current.expense += fromAmountCents(absAmountCents(transaction.amount));
     }
   }
 

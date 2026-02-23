@@ -1,4 +1,5 @@
 import { endOfMonth, format, isSameMonth, startOfMonth, subMonths } from "date-fns";
+import { absAmountCents, accumulateOfficialFlowCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { netWorthRepo } from "@/lib/server/net-worth.repo";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
@@ -27,7 +28,11 @@ function safeVariation(current: number, previous: number): number {
 }
 
 function monthKey(date: Date): string {
-  return format(date, "yyyy-MM");
+  return date.toISOString().slice(0, 7);
+}
+
+function dayOfMonth(date: Date): number {
+  return Number(date.toISOString().slice(8, 10));
 }
 
 function round2(value: number): number {
@@ -37,32 +42,26 @@ function round2(value: number): number {
 export const dashboardRepo = {
   summaryByRange(userId: string, from: Date, to: Date) {
     const txs = transactionsRepo.listByDateRange(userId, from, to, true);
-
-    let incomeCents = 0;
-    let expenseCents = 0;
+    const totals = accumulateOfficialFlowCents(txs.map((tx) => ({ type: tx.type, amount: tx.amount })));
     const byCategoryMap = new Map<string, { totalCents: number; name: string; color: string }>();
 
     const categories = categoriesRepo.listByUser(userId);
     const categoryById = new Map(categories.map((item) => [item.id, item]));
 
     for (const tx of txs) {
-      const cents = Math.round(tx.amount * 100);
-      if (tx.amount >= 0) {
-        incomeCents += cents;
-      } else {
-        const absCents = Math.abs(cents);
-        expenseCents += absCents;
+      if (tx.type !== "expense") continue;
+      const absCents = absAmountCents(tx.amount);
+      if (absCents <= 0) continue;
 
-        const categoryId = tx.categoryId ?? "uncategorized";
-        const category = tx.categoryId ? categoryById.get(tx.categoryId) : null;
-        const current = byCategoryMap.get(categoryId) ?? {
-          totalCents: 0,
-          name: category?.name ?? "Sem categoria",
-          color: category?.color ?? "#94a3b8"
-        };
-        current.totalCents += absCents;
-        byCategoryMap.set(categoryId, current);
-      }
+      const categoryId = tx.categoryId ?? "uncategorized";
+      const category = tx.categoryId ? categoryById.get(tx.categoryId) : null;
+      const current = byCategoryMap.get(categoryId) ?? {
+        totalCents: 0,
+        name: category?.name ?? "Sem categoria",
+        color: category?.color ?? "#94a3b8"
+      };
+      current.totalCents += absCents;
+      byCategoryMap.set(categoryId, current);
     }
 
     const byCategory = [...byCategoryMap.entries()]
@@ -77,17 +76,17 @@ export const dashboardRepo = {
 
     return {
       totals: {
-        income: incomeCents,
-        expenses: expenseCents,
-        net: incomeCents - expenseCents
+        income: totals.incomeCents,
+        expenses: totals.expenseCents,
+        net: totals.netCents
       },
       byCategory
     };
   },
 
-  fullDashboard(userId: string, now = new Date()) {
+  fullDashboard(userId: string, now = new Date(), options?: { forceReferenceDate?: boolean }) {
     const latestTransactionDate = transactionsRepo.latestPostedAt(userId);
-    const referenceDate = latestTransactionDate ?? now;
+    const referenceDate = options?.forceReferenceDate ? now : latestTransactionDate ?? now;
     const currentMonthStart = startOfMonth(referenceDate);
     const currentMonthEnd = endOfMonth(referenceDate);
     const previousMonthStart = startOfMonth(subMonths(referenceDate, 1));
@@ -98,22 +97,11 @@ export const dashboardRepo = {
     const previousTransactions = transactionsRepo.listByDateRange(userId, previousMonthStart, previousMonthEnd, true);
     const monthlyTransactions = transactionsRepo.listByDateRange(userId, sixMonthsAgo, currentMonthEnd, false);
 
-    const monthSummary = currentTransactions.reduce(
-      (acc, tx) => {
-        if (tx.amount >= 0) acc.income += tx.amount;
-        else acc.expense += Math.abs(tx.amount);
-        return acc;
-      },
-      { income: 0, expense: 0 }
+    const monthSummary = accumulateOfficialFlowCents(
+      currentTransactions.map((tx) => ({ type: tx.type, amount: tx.amount }))
     );
-
-    const previousSummary = previousTransactions.reduce(
-      (acc, tx) => {
-        if (tx.amount >= 0) acc.income += tx.amount;
-        else acc.expense += Math.abs(tx.amount);
-        return acc;
-      },
-      { income: 0, expense: 0 }
+    const previousSummary = accumulateOfficialFlowCents(
+      previousTransactions.map((tx) => ({ type: tx.type, amount: tx.amount }))
     );
 
     const maxDays = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
@@ -121,15 +109,17 @@ export const dashboardRepo = {
     const previousDayTotals = new Map<number, number>();
 
     for (const tx of currentTransactions) {
-      if (tx.amount >= 0) continue;
-      const day = tx.date.getDate();
-      currentDayTotals.set(day, (currentDayTotals.get(day) ?? 0) + Math.abs(tx.amount));
+      if (tx.type !== "expense") continue;
+      const day = dayOfMonth(tx.date);
+      const current = currentDayTotals.get(day) ?? 0;
+      currentDayTotals.set(day, current + fromAmountCents(absAmountCents(tx.amount)));
     }
 
     for (const tx of previousTransactions) {
-      if (tx.amount >= 0) continue;
-      const day = tx.date.getDate();
-      previousDayTotals.set(day, (previousDayTotals.get(day) ?? 0) + Math.abs(tx.amount));
+      if (tx.type !== "expense") continue;
+      const day = dayOfMonth(tx.date);
+      const current = previousDayTotals.get(day) ?? 0;
+      previousDayTotals.set(day, current + fromAmountCents(absAmountCents(tx.amount)));
     }
 
     let runningCurrent = 0;
@@ -152,13 +142,13 @@ export const dashboardRepo = {
     const previousByCategory = new Map<string, number>();
 
     for (const tx of currentTransactions) {
-      if (!tx.categoryId || tx.amount >= 0) continue;
-      currentByCategory.set(tx.categoryId, (currentByCategory.get(tx.categoryId) ?? 0) + Math.abs(tx.amount));
+      if (!tx.categoryId || tx.type !== "expense") continue;
+      currentByCategory.set(tx.categoryId, (currentByCategory.get(tx.categoryId) ?? 0) + absAmountCents(tx.amount));
     }
 
     for (const tx of previousTransactions) {
-      if (!tx.categoryId || tx.amount >= 0) continue;
-      previousByCategory.set(tx.categoryId, (previousByCategory.get(tx.categoryId) ?? 0) + Math.abs(tx.amount));
+      if (!tx.categoryId || tx.type !== "expense") continue;
+      previousByCategory.set(tx.categoryId, (previousByCategory.get(tx.categoryId) ?? 0) + absAmountCents(tx.amount));
     }
 
     const topCategories: CategoryComparison[] = [...currentByCategory.entries()]
@@ -167,27 +157,29 @@ export const dashboardRepo = {
       .map(([categoryId, total]) => {
         const previous = previousByCategory.get(categoryId) ?? 0;
         const category = categoryById.get(categoryId);
+        const totalAmount = fromAmountCents(total);
+        const previousAmount = fromAmountCents(previous);
 
         return {
           categoryId,
           name: category?.name ?? "Sem categoria",
           color: category?.color ?? "#94a3b8",
           icon: category?.icon ?? null,
-          current: round2(total),
-          previous: round2(previous),
-          variation: round2(safeVariation(total, previous))
+          current: round2(totalAmount),
+          previous: round2(previousAmount),
+          variation: round2(safeVariation(totalAmount, previousAmount))
         };
       });
 
-    const monthlyAccumulator = new Map<string, { income: number; expense: number }>();
+    const monthlyAccumulator = new Map<string, { incomeCents: number; expenseCents: number }>();
     for (const tx of monthlyTransactions) {
       const key = monthKey(tx.date);
-      const current = monthlyAccumulator.get(key) ?? { income: 0, expense: 0 };
+      const current = monthlyAccumulator.get(key) ?? { incomeCents: 0, expenseCents: 0 };
 
-      if (tx.amount >= 0) {
-        current.income += Math.abs(tx.amount);
-      } else {
-        current.expense += tx.amount;
+      if (tx.type === "income") {
+        current.incomeCents += absAmountCents(tx.amount);
+      } else if (tx.type === "expense") {
+        current.expenseCents += absAmountCents(tx.amount);
       }
 
       monthlyAccumulator.set(key, current);
@@ -196,8 +188,8 @@ export const dashboardRepo = {
     const cashflow = [...monthlyAccumulator.entries()]
       .sort(([a], [b]) => (a > b ? 1 : -1))
       .map(([month, values]) => {
-        const income = round2(values.income);
-        const expense = round2(values.expense);
+        const income = round2(fromAmountCents(values.incomeCents));
+        const expense = round2(-fromAmountCents(values.expenseCents));
         return {
           month,
           income,
@@ -224,30 +216,34 @@ export const dashboardRepo = {
     const previousNetWorth = netWorthSeries[netWorthSeries.length - 2]?.value ?? currentNetWorth;
     const netWorthDelta = round2(currentNetWorth - previousNetWorth);
 
-    const currentResult = monthSummary.income - monthSummary.expense;
-    const previousResult = previousSummary.income - previousSummary.expense;
+    const monthIncome = fromAmountCents(monthSummary.incomeCents);
+    const monthExpense = fromAmountCents(monthSummary.expenseCents);
+    const previousIncome = fromAmountCents(previousSummary.incomeCents);
+    const previousExpense = fromAmountCents(previousSummary.expenseCents);
+    const currentResult = fromAmountCents(monthSummary.netCents);
+    const previousResult = fromAmountCents(previousSummary.netCents);
 
     return {
       referenceMonth: monthKey(referenceDate),
       isCurrentMonthReference: isSameMonth(referenceDate, now),
       cards: {
-        income: round2(monthSummary.income),
-        expense: round2(monthSummary.expense),
+        income: round2(monthIncome),
+        expense: round2(monthExpense),
         result: round2(currentResult),
         netWorth: currentNetWorth,
-        spendPaceDelta: round2(safeVariation(monthSummary.expense, previousSummary.expense)),
+        spendPaceDelta: round2(safeVariation(monthExpense, previousExpense)),
         resultDelta: round2(safeVariation(currentResult, previousResult))
       },
       periodComparison: {
         current: {
-          income: round2(monthSummary.income),
-          expense: round2(monthSummary.expense),
+          income: round2(monthIncome),
+          expense: round2(monthExpense),
           result: round2(currentResult),
           excluded: 0
         },
         previous: {
-          income: round2(previousSummary.income),
-          expense: round2(previousSummary.expense),
+          income: round2(previousIncome),
+          expense: round2(previousExpense),
           result: round2(previousResult),
           excluded: 0
         }

@@ -3,6 +3,7 @@ import { invalidateCacheByPrefix } from "@/lib/cache";
 export function invalidateFinanceCaches(userId: string): void {
   invalidateCacheByPrefix(`dashboard:${userId}:`);
   invalidateCacheByPrefix(`reports:${userId}:`);
+  invalidateCacheByPrefix(`official-metrics:${userId}:`);
   invalidateCacheByPrefix(`bootstrap:${userId}:`);
   invalidateCacheByPrefix(`accounts:${userId}:`);
   invalidateCacheByPrefix(`categories:${userId}:`);

@@ -257,7 +257,7 @@ export function DashboardPage(): React.JSX.Element {
       setError("");
 
       try {
-        const response = await fetch("/api/dashboard");
+        const response = await fetch("/api/metrics/official?view=dashboard");
         const { data: payload, errorMessage } = await parseApiResponse<DashboardPayload | { error?: unknown }>(response);
 
         if (errorMessage) {

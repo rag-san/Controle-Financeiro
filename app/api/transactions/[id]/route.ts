@@ -47,6 +47,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Transacao nao encontrada" }, { status: 404 });
   }
 
+  if (existing.type === "transfer") {
+    return NextResponse.json(
+      {
+        error: "Transacoes de transferencia nao podem ser editadas. Exclua e recrie o par."
+      },
+      { status: 409 }
+    );
+  }
+
   let amount = parsed.data.amount !== undefined ? parseMoneyInput(parsed.data.amount) : existing.amount;
 
   if (parsed.data.type === "expense") {

@@ -45,6 +45,7 @@ export function TransactionRow({
 }: TransactionRowProps): React.JSX.Element {
   const [showCategorySelect, setShowCategorySelect] = React.useState(false);
   const categorySelectRef = React.useRef<HTMLSelectElement | null>(null);
+  const isTransfer = transaction.type === "transfer";
 
   React.useEffect(() => {
     if (!showCategorySelect) return;
@@ -71,7 +72,10 @@ export function TransactionRow({
 
       <TableCell className="min-w-[240px]">
         <div className="flex flex-wrap items-center gap-2">
-          <CategoryPill name={transaction.category?.name ?? "Sem categoria"} size="sm" />
+          <CategoryPill
+            name={isTransfer ? "Transferencia" : transaction.category?.name ?? "Sem categoria"}
+            size="sm"
+          />
           {suggestion ? (
             <span
               className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300"
@@ -95,7 +99,7 @@ export function TransactionRow({
               Aplicar
             </Button>
           ) : null}
-          {showCategorySelect ? (
+          {showCategorySelect && !isTransfer ? (
             <Select
               ref={categorySelectRef}
               aria-label={`Selecionar categoria para ${transaction.description}`}
@@ -139,18 +143,22 @@ export function TransactionRow({
             trigger={<MoreHorizontal className="h-4 w-4" />}
             triggerAriaLabel={`Acoes da transacao ${transaction.description}`}
             items={[
-              {
-                key: "edit",
-                label: "Editar transacao",
-                icon: <Pencil className="h-4 w-4" />,
-                onSelect: () => onEdit?.(transaction.id)
-              },
-              {
-                key: "change-category",
-                label: "Alterar categoria",
-                icon: <Tag className="h-4 w-4" />,
-                onSelect: () => setShowCategorySelect(true)
-              },
+              ...(!isTransfer
+                ? [
+                    {
+                      key: "edit",
+                      label: "Editar transacao",
+                      icon: <Pencil className="h-4 w-4" />,
+                      onSelect: () => onEdit?.(transaction.id)
+                    },
+                    {
+                      key: "change-category",
+                      label: "Alterar categoria",
+                      icon: <Tag className="h-4 w-4" />,
+                      onSelect: () => setShowCategorySelect(true)
+                    }
+                  ]
+                : []),
               {
                 key: "delete",
                 label: "Excluir",

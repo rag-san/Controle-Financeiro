@@ -1,7 +1,10 @@
-"use client";
-
+import { Suspense } from "react";
 import { TransactionsPage } from "@/src/features/transactions/TransactionsPage";
 
 export default function TransactionsRoutePage(): React.JSX.Element {
-  return <TransactionsPage />;
+  return (
+    <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Carregando transacoes...</div>}>
+      <TransactionsPage />
+    </Suspense>
+  );
 }

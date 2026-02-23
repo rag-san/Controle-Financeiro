@@ -103,7 +103,8 @@ async function apiRequest(routePath, options = {}) {
 
   return {
     status: response.status,
-    payload
+    payload,
+    headers: response.headers
   };
 }
 
@@ -248,14 +249,16 @@ test("critical backend flow via API", async () => {
     method: "POST",
     cookies: authCookies,
     json: {
-      name: "Cartao",
+      name: "Cartao Inter",
       type: "credit",
       institution: "QA Bank",
-      currency: "BRL"
+      currency: "BRL",
+      parentAccountId: checkingAccountId
     }
   });
   assert.equal(creditAccount.status, 201);
-  assert.ok(typeof creditAccount.payload?.id === "string");
+  const creditAccountId = creditAccount.payload?.id;
+  assert.ok(typeof creditAccountId === "string");
 
   const marketCategory = await apiRequest("/api/categories", {
     method: "POST",
@@ -392,6 +395,169 @@ test("critical backend flow via API", async () => {
   const transactionId = createdTransaction.payload?.id;
   assert.ok(typeof transactionId === "string");
 
+  const balancesBeforeTransferFlow = await apiRequest("/api/accounts", { cookies: authCookies });
+  assert.equal(balancesBeforeTransferFlow.status, 200);
+  const checkingBalanceBeforeTransfer =
+    balancesBeforeTransferFlow.payload.find((item) => item.id === checkingAccountId)?.currentBalance ?? 0;
+  const creditBalanceBeforeTransfer =
+    balancesBeforeTransferFlow.payload.find((item) => item.id === creditAccountId)?.currentBalance ?? 0;
+
+  const statementWithCardPaymentCommitPayload = {
+    sourceType: "csv",
+    fileName: "statement-card-payment.csv",
+    defaultAccountId: checkingAccountId,
+    mapping: {
+      convertCardPaymentsToTransfer: true,
+      cardPaymentTargetAccountId: creditAccountId
+    },
+    applyRules: false,
+    rows: [
+      {
+        date: "2026-02-20",
+        description: "Compra mercado QA statement",
+        amount: -120
+      },
+      {
+        date: "2026-02-21",
+        description: "Pagamento Fatura Cartao Inter",
+        amount: -500
+      }
+    ]
+  };
+
+  const statementWithCardPaymentCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: statementWithCardPaymentCommitPayload
+  });
+  assert.equal(statementWithCardPaymentCommit.status, 201);
+  assert.equal(statementWithCardPaymentCommit.payload?.totalTransfersCreated, 1);
+  assert.equal(statementWithCardPaymentCommit.payload?.totalCardPaymentsDetected, 1);
+  assert.equal(statementWithCardPaymentCommit.payload?.totalCardPaymentsNotConverted, 0);
+
+  const transactionsAfterStatementTransfer = await apiRequest("/api/transactions?period=all&page=1&pageSize=200", {
+    cookies: authCookies
+  });
+  assert.equal(transactionsAfterStatementTransfer.status, 200);
+
+  const cardPaymentTransferLegs = transactionsAfterStatementTransfer.payload.items.filter(
+    (item) =>
+      item.type === "transfer" &&
+      item.description.includes("Pagamento Fatura Cartao Inter")
+  );
+  assert.equal(cardPaymentTransferLegs.length, 2);
+  assert.ok(cardPaymentTransferLegs.some((item) => item.accountId === checkingAccountId && Number(item.amount) < 0));
+  assert.ok(cardPaymentTransferLegs.some((item) => item.accountId === creditAccountId && Number(item.amount) > 0));
+
+  const invoiceCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "pdf",
+      fileName: "invoice-credit-card.pdf",
+      defaultAccountId: creditAccountId,
+      mapping: {
+        skipCardPaymentLines: true
+      },
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-02-22",
+          description: "Compra no credito teste",
+          amount: -250,
+          documentType: "credit_card_invoice"
+        },
+        {
+          date: "2026-02-22",
+          description: "Pagamento Recebido Fatura",
+          amount: 250,
+          documentType: "credit_card_invoice"
+        }
+      ]
+    }
+  });
+  assert.equal(invoiceCommit.status, 201);
+  assert.equal(invoiceCommit.payload?.totalImported, 1);
+  assert.ok(invoiceCommit.payload?.totalSkipped >= 1);
+
+  const invoiceWrongDefaultCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "pdf",
+      fileName: "invoice-credit-card-wrong-default.pdf",
+      defaultAccountId: checkingAccountId,
+      mapping: {
+        skipCardPaymentLines: true
+      },
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-02-23",
+          description: "Compra no credito roteada para cartao",
+          amount: -130,
+          documentType: "credit_card_invoice"
+        }
+      ]
+    }
+  });
+  assert.equal(invoiceWrongDefaultCommit.status, 201);
+  assert.equal(invoiceWrongDefaultCommit.payload?.totalImported, 1);
+
+  const statementReimport = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: statementWithCardPaymentCommitPayload
+  });
+  assert.equal(statementReimport.status, 201);
+  assert.equal(statementReimport.payload?.totalTransfersCreated, 0);
+  assert.ok(statementReimport.payload?.duplicates >= 2);
+
+  const transactionsAfterStatementReimport = await apiRequest("/api/transactions?period=all&page=1&pageSize=200", {
+    cookies: authCookies
+  });
+  assert.equal(transactionsAfterStatementReimport.status, 200);
+  const transferLegsAfterReimport = transactionsAfterStatementReimport.payload.items.filter(
+    (item) =>
+      item.type === "transfer" &&
+      item.description.includes("Pagamento Fatura Cartao Inter")
+  );
+  assert.equal(transferLegsAfterReimport.length, 2);
+
+  const routedCreditPurchase = transactionsAfterStatementReimport.payload.items.find(
+    (item) => item.description === "Compra no credito roteada para cartao"
+  );
+  assert.ok(routedCreditPurchase);
+  assert.equal(routedCreditPurchase.accountId, creditAccountId);
+
+  const balancesAfterTransferFlow = await apiRequest("/api/accounts", { cookies: authCookies });
+  assert.equal(balancesAfterTransferFlow.status, 200);
+  const checkingBalanceAfterTransfer =
+    balancesAfterTransferFlow.payload.find((item) => item.id === checkingAccountId)?.currentBalance ?? 0;
+  const creditBalanceAfterTransfer =
+    balancesAfterTransferFlow.payload.find((item) => item.id === creditAccountId)?.currentBalance ?? 0;
+
+  assert.equal(Number((checkingBalanceAfterTransfer - checkingBalanceBeforeTransfer).toFixed(2)), -620);
+  assert.equal(Number((creditBalanceAfterTransfer - creditBalanceBeforeTransfer).toFixed(2)), 120);
+
+  const februarySummary = await apiRequest(
+    `/api/dashboard/summary?from=${encodeURIComponent("2026-02-01T00:00:00.000Z")}&to=${encodeURIComponent("2026-02-28T23:59:59.999Z")}`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(februarySummary.status, 200);
+
+  const februaryTransactions = transactionsAfterStatementReimport.payload.items.filter((item) => {
+    const postedAt = new Date(item.date).getTime();
+    return postedAt >= new Date("2026-02-01T00:00:00.000Z").getTime() &&
+      postedAt <= new Date("2026-02-28T23:59:59.999Z").getTime();
+  });
+  const expectedFebruaryExpensesCents = februaryTransactions
+    .filter((item) => item.type === "expense")
+    .reduce((sum, item) => sum + Math.round(Math.abs(Number(item.amount)) * 100), 0);
+  assert.equal(februarySummary.payload?.totals?.expenses, expectedFebruaryExpensesCents);
+
   const secondUserCookies = new Map();
   const secondUserEmail = `integration.second.${uniqueToken}@example.com`;
   const secondRegister = await apiRequest("/api/auth/register", {
@@ -425,6 +591,63 @@ test("critical backend flow via API", async () => {
     body: secondLoginForm.toString()
   });
   assert.ok([200, 302].includes(secondLogin.status));
+
+  const secondCheckingAccount = await apiRequest("/api/accounts", {
+    method: "POST",
+    cookies: secondUserCookies,
+    json: {
+      name: "Inter",
+      type: "checking",
+      institution: "Inter",
+      currency: "BRL"
+    }
+  });
+  assert.equal(secondCheckingAccount.status, 201);
+  const secondCheckingAccountId = secondCheckingAccount.payload?.id;
+  assert.ok(typeof secondCheckingAccountId === "string");
+
+  const secondUserInvoiceCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: secondUserCookies,
+    json: {
+      sourceType: "pdf",
+      fileName: "fatura-inter-segundo-usuario.pdf",
+      defaultAccountId: secondCheckingAccountId,
+      mapping: {
+        skipCardPaymentLines: true
+      },
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-02-24",
+          description: "Compra no credito auto criada",
+          amount: -89.9,
+          documentType: "credit_card_invoice"
+        }
+      ]
+    }
+  });
+  assert.equal(secondUserInvoiceCommit.status, 201);
+  assert.equal(secondUserInvoiceCommit.payload?.totalImported, 1);
+
+  const secondUserAccountsAfterInvoice = await apiRequest("/api/accounts", {
+    cookies: secondUserCookies
+  });
+  assert.equal(secondUserAccountsAfterInvoice.status, 200);
+  const secondUserAutoCreatedCredit = secondUserAccountsAfterInvoice.payload.find(
+    (item) => item.type === "credit" && item.parentAccountId === secondCheckingAccountId
+  );
+  assert.ok(secondUserAutoCreatedCredit);
+
+  const secondUserTransactionsAfterInvoice = await apiRequest("/api/transactions?period=all&page=1&pageSize=100", {
+    cookies: secondUserCookies
+  });
+  assert.equal(secondUserTransactionsAfterInvoice.status, 200);
+  const secondUserInvoiceTx = secondUserTransactionsAfterInvoice.payload.items.find(
+    (item) => item.description === "Compra no credito auto criada"
+  );
+  assert.ok(secondUserInvoiceTx);
+  assert.equal(secondUserInvoiceTx.accountId, secondUserAutoCreatedCredit.id);
 
   const crossUserMutation = await apiRequest(`/api/transactions/${transactionId}`, {
     method: "PATCH",
@@ -555,8 +778,7 @@ test("critical backend flow via API", async () => {
     formData: invalidPdfFormData
   });
   assert.equal(invalidPdfParse.status, 422);
-  assert.equal(invalidPdfParse.payload?.supported, false);
-  assert.equal(invalidPdfParse.payload?.phase, "parse");
+  assert.ok(["source_parser_unavailable", "pdf_no_transactions"].includes(invalidPdfParse.payload?.code));
 
   const invalidOfxFormData = new FormData();
   invalidOfxFormData.set("file", new Blob([Buffer.from("<OFX><BANKMSGSRSV1></BANKMSGSRSV1></OFX>")], { type: "application/ofx" }), "invalid.ofx");
@@ -567,8 +789,8 @@ test("critical backend flow via API", async () => {
     formData: invalidOfxFormData
   });
   assert.equal(invalidOfxParse.status, 422);
-  assert.equal(invalidOfxParse.payload?.supported, false);
-  assert.equal(invalidOfxParse.payload?.phase, "parse");
+  assert.equal(invalidOfxParse.payload?.code, "source_parser_unavailable");
+  assert.equal(invalidOfxParse.payload?.details?.sourceType, "ofx");
 
   const historicoDescricaoBuffer = await fs.readFile(fixtureHistoricoDescricaoPath);
   const historicoDescricaoFormData = new FormData();
@@ -728,8 +950,7 @@ test("critical backend flow via API", async () => {
     assert.ok(parsedInterStatementPdf.payload?.preview?.[0]?.transactionKind?.length > 0);
   } else {
     assert.equal(parsedInterStatementPdf.status, 422);
-    assert.equal(parsedInterStatementPdf.payload?.supported, false);
-    assert.equal(parsedInterStatementPdf.payload?.phase, "parse");
+    assert.ok(["source_parser_unavailable", "pdf_no_transactions"].includes(parsedInterStatementPdf.payload?.code));
   }
 
   const interInvoicePdfBuffer = await fs.readFile(fixtureInterInvoicePdfPath);
@@ -748,8 +969,7 @@ test("critical backend flow via API", async () => {
     assert.ok(parsedInterInvoicePdf.payload?.rows?.length > 0);
   } else {
     assert.equal(parsedInterInvoicePdf.status, 422);
-    assert.equal(parsedInterInvoicePdf.payload?.supported, false);
-    assert.equal(parsedInterInvoicePdf.payload?.phase, "parse");
+    assert.ok(["source_parser_unavailable", "pdf_no_transactions"].includes(parsedInterInvoicePdf.payload?.code));
   }
 
   const mercadoPagoPdfBuffer = await fs.readFile(fixtureMercadoPagoPdfPath);
@@ -761,13 +981,11 @@ test("critical backend flow via API", async () => {
     cookies: authCookies,
     formData: mercadoPagoPdfFormData
   });
-
   if (parsedMercadoPagoPdf.status === 200) {
     assert.equal(parsedMercadoPagoPdf.payload?.sourceType, "pdf");
     assert.ok(parsedMercadoPagoPdf.payload?.rows?.length > 0);
   } else if (parsedMercadoPagoPdf.status === 422) {
-    assert.equal(parsedMercadoPagoPdf.payload?.supported, false);
-    assert.equal(parsedMercadoPagoPdf.payload?.phase, "parse");
+    assert.ok(["source_parser_unavailable", "pdf_no_transactions"].includes(parsedMercadoPagoPdf.payload?.code));
   } else {
     assert.equal(parsedMercadoPagoPdf.status, 400);
     assert.equal(parsedMercadoPagoPdf.payload?.code, "pdf_password_required");
@@ -938,9 +1156,9 @@ test("critical backend flow via API", async () => {
     }
 
     const absCents = Math.round(Math.abs(Number(item.amount)) * 100);
-    if (Number(item.amount) >= 0) {
+    if (item.type === "income") {
       expectedIncomeCents += absCents;
-    } else {
+    } else if (item.type === "expense") {
       expectedExpenseCents += absCents;
     }
   }
@@ -952,5 +1170,102 @@ test("critical backend flow via API", async () => {
 
   const dashboard = await apiRequest("/api/dashboard", { cookies: authCookies });
   assert.equal(dashboard.status, 200);
+  assert.equal(dashboard.headers.get("Deprecation"), "true");
+  assert.equal(dashboard.headers.get("X-API-Successor"), "/api/metrics/official?view=dashboard");
   assert.ok(Array.isArray(dashboard.payload?.topCategories));
+
+  const legacyReports = await apiRequest("/api/reports", { cookies: authCookies });
+  assert.equal(legacyReports.status, 200);
+  assert.equal(legacyReports.headers.get("Deprecation"), "true");
+  assert.equal(
+    legacyReports.headers.get("X-API-Successor"),
+    "/api/metrics/official?view=reports&preset=3M"
+  );
+
+  const officialDashboard = await apiRequest("/api/metrics/official?view=dashboard", {
+    cookies: authCookies
+  });
+  assert.equal(officialDashboard.status, 200);
+  assert.equal(officialDashboard.payload?.view, "dashboard");
+  assert.equal(typeof officialDashboard.payload?.cards?.income, "number");
+  assert.equal(typeof officialDashboard.payload?.cards?.expense, "number");
+  assert.equal(typeof officialDashboard.payload?.cards?.result, "number");
+  assert.ok(Array.isArray(officialDashboard.payload?.topCategories));
+
+  const officialDashboardHistorical = await apiRequest("/api/metrics/official?view=dashboard&month=2026-02", {
+    cookies: authCookies
+  });
+  assert.equal(officialDashboardHistorical.status, 200);
+  assert.equal(officialDashboardHistorical.payload?.view, "dashboard");
+  assert.equal(officialDashboardHistorical.payload?.referenceMonth, "2026-02");
+
+  const officialReports = await apiRequest("/api/metrics/official?view=reports&preset=3M", {
+    cookies: authCookies
+  });
+  assert.equal(officialReports.status, 200);
+  assert.equal(officialReports.payload?.view, "reports");
+  assert.ok(Array.isArray(officialReports.payload?.accounts));
+  assert.ok(Array.isArray(officialReports.payload?.categories));
+  assert.ok(Array.isArray(officialReports.payload?.model?.categorySpending));
+  const officialCategorySum = (officialReports.payload?.model?.categorySpending ?? []).reduce(
+    (sum, item) => sum + Number(item.value ?? 0),
+    0
+  );
+  assert.ok(
+    Math.abs(officialCategorySum - Number(officialReports.payload?.model?.currentTotals?.expense ?? 0)) <= 0.01
+  );
+
+  const officialCashflow = await apiRequest("/api/metrics/official?view=cashflow&period=3m", {
+    cookies: authCookies
+  });
+  assert.equal(officialCashflow.status, 200);
+  assert.equal(officialCashflow.payload?.view, "cashflow");
+  assert.equal(typeof officialCashflow.payload?.data?.income?.current, "number");
+  assert.equal(typeof officialCashflow.payload?.data?.expense?.current, "number");
+  assert.equal(typeof officialCashflow.payload?.data?.netResult?.current, "number");
+
+  const officialCategories = await apiRequest("/api/metrics/official?view=categories&month=2026-02", {
+    cookies: authCookies
+  });
+  assert.equal(officialCategories.status, 200);
+  assert.equal(officialCategories.payload?.view, "categories");
+  assert.equal(officialCategories.payload?.month, "2026-02");
+  assert.ok(Array.isArray(officialCategories.payload?.aggregates?.groups));
+  assert.equal(typeof officialCategories.payload?.aggregates?.totalSpent, "number");
+
+  const importObservability = await apiRequest("/api/metrics/import-observability", {
+    cookies: authCookies
+  });
+  assert.equal(importObservability.status, 200);
+  assert.equal(importObservability.payload?.view, "import-observability");
+  assert.ok(Array.isArray(importObservability.payload?.bySourcePhase));
+  assert.ok(Array.isArray(importObservability.payload?.recentErrors));
+  assert.ok(
+    importObservability.payload.bySourcePhase.some(
+      (item) => item.sourceType === "csv" && item.phase === "commit" && item.events >= 1
+    )
+  );
+
+  const metricsAudit = await apiRequest(
+    `/api/metrics/audit?from=${encodeURIComponent("2026-02-01T00:00:00.000Z")}&to=${encodeURIComponent("2026-02-28T23:59:59.999Z")}`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(metricsAudit.status, 200);
+  assert.equal(metricsAudit.payload?.view, "metrics-audit");
+  assert.equal(typeof metricsAudit.payload?.totals?.income, "number");
+  assert.equal(typeof metricsAudit.payload?.totals?.expense, "number");
+  assert.equal(typeof metricsAudit.payload?.totals?.net, "number");
+  assert.ok(Array.isArray(metricsAudit.payload?.checks));
+
+  const metricsAuditCsv = await apiRequest(
+    `/api/metrics/audit?format=csv&from=${encodeURIComponent("2026-02-01T00:00:00.000Z")}&to=${encodeURIComponent("2026-02-28T23:59:59.999Z")}`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(metricsAuditCsv.status, 200);
+  assert.equal(typeof metricsAuditCsv.payload, "string");
+  assert.ok(metricsAuditCsv.payload.includes("key,expected,actual,difference,status"));
 });

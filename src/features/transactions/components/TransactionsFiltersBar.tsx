@@ -1,4 +1,4 @@
-import { CalendarDays, Funnel } from "lucide-react";
+import { CalendarDays, Funnel, Search } from "lucide-react";
 import type { AccountDTO, CategoryDTO } from "@/lib/types";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
@@ -9,7 +9,7 @@ export type TransactionsPeriod = "7d" | "30d" | "90d" | "this-month" | "last-mon
 export type TransactionsFiltersState = {
   period: TransactionsPeriod;
   accountId: string;
-  type: "" | "income" | "expense";
+  type: "" | "income" | "expense" | "transfer";
   categoryId: string;
   from: string;
   to: string;
@@ -19,7 +19,9 @@ type TransactionsFiltersBarProps = {
   filters: TransactionsFiltersState;
   accounts: AccountDTO[];
   categories: CategoryDTO[];
+  searchQuery: string;
   busy?: boolean;
+  onSearchQueryChange: (value: string) => void;
   onChange: (next: Partial<TransactionsFiltersState>) => void;
   onClear: () => void;
 };
@@ -61,7 +63,9 @@ export function TransactionsFiltersBar({
   filters,
   accounts,
   categories,
+  searchQuery,
   busy = false,
+  onSearchQueryChange,
   onChange,
   onClear
 }: TransactionsFiltersBarProps): React.JSX.Element {
@@ -77,6 +81,21 @@ export function TransactionsFiltersBar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
+          <label htmlFor="tx-filter-search" className="sr-only">
+            Buscar transacoes
+          </label>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="tx-filter-search"
+            value={searchQuery}
+            onChange={(event) => onSearchQueryChange(event.target.value)}
+            placeholder="Buscar descricao ou estabelecimento"
+            disabled={busy}
+            className="h-10 rounded-xl border-border/90 bg-card/80 pl-9"
+          />
+        </div>
+
         <FilterSelect
           id="tx-filter-period"
           label="Periodo"
@@ -118,6 +137,7 @@ export function TransactionsFiltersBar({
           <option value="">Todas as transacoes</option>
           <option value="income">Receitas</option>
           <option value="expense">Despesas</option>
+          <option value="transfer">Transferencias</option>
         </FilterSelect>
 
         <FilterSelect

@@ -19,7 +19,7 @@ export function FileDropzone({ onSelect, accept = ".csv,.ofx,.pdf" }: FileDropzo
         <Upload className="h-5 w-5" />
       </div>
       <p id="file-dropzone-title" className="text-sm text-muted-foreground">
-        Arraste um arquivo CSV, OFX ou PDF, ou selecione manualmente.
+        Selecione um arquivo CSV, OFX ou PDF (Inter/Mercado Pago).
       </p>
       <Button className="mt-4" variant="secondary" onClick={() => inputRef.current?.click()} aria-controls={inputId}>
         Selecionar arquivo

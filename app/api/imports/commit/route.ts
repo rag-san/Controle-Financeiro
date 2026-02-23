@@ -104,7 +104,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         imported: result.totalImported,
         skipped: result.totalSkipped,
         duplicates: result.duplicates,
-        invalidRows: result.invalidRows
+        invalidRows: result.invalidRows,
+        transferCreated: result.totalTransfersCreated,
+        cardPaymentDetected: result.totalCardPaymentsDetected,
+        cardPaymentNotConverted: result.totalCardPaymentsNotConverted
       });
 
       return NextResponse.json(result, { status: 201 });

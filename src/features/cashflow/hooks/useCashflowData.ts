@@ -1,34 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { endOfDay } from "date-fns";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
-import type { TransactionDTO } from "@/lib/types";
-import type { CashflowPeriodKey, CashflowViewData, DateRange } from "@/src/features/cashflow/types";
-import {
-  calculateTotals,
-  formatRange,
-  resolveCurrentRange,
-  resolvePreviousRange,
-  splitByRange,
-  toComparisonMetric,
-  toIsoDate
-} from "@/src/features/cashflow/utils/cashflow";
-import { buildMonthlyExpensesStack } from "@/src/features/cashflow/utils/expensesStack";
-import { buildMonthlyNetResult } from "@/src/features/cashflow/utils/netResult";
-import { buildMonthlyIncome } from "@/src/features/cashflow/utils/income";
-
-type TransactionsResponse = {
-  items: TransactionDTO[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    totalCount: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
-  };
-};
+import type { CashflowPeriodKey, CashflowViewData } from "@/src/features/cashflow/types";
 
 type UseCashflowDataResult = {
   data: CashflowViewData | null;
@@ -36,60 +10,10 @@ type UseCashflowDataResult = {
   error: string;
 };
 
-async function fetchPagedTransactions(range: DateRange): Promise<TransactionDTO[]> {
-  const items: TransactionDTO[] = [];
-  let page = 1;
-  let hasNextPage = true;
-
-  while (hasNextPage) {
-    const params = new URLSearchParams({
-      period: "custom",
-      from: toIsoDate(range.from),
-      to: endOfDay(range.to).toISOString(),
-      page: String(page),
-      pageSize: "200"
-    });
-
-    const response = await fetch(`/api/transactions?${params.toString()}`);
-    const { data, errorMessage } = await parseApiResponse<TransactionsResponse | { error?: unknown }>(response);
-
-    if (errorMessage) {
-      throw new Error(errorMessage);
-    }
-
-    if (!response.ok || !data || !("items" in data)) {
-      throw new Error(extractApiError(data, "Nao foi possivel carregar dados de fluxo de caixa."));
-    }
-
-    items.push(...data.items);
-    hasNextPage = data.pagination.hasNextPage;
-    page += 1;
-  }
-
-  return items;
-}
-
-async function fetchLatestTransactionDate(): Promise<Date> {
-  const params = new URLSearchParams({
-    period: "all",
-    page: "1",
-    pageSize: "10"
-  });
-
-  const response = await fetch(`/api/transactions?${params.toString()}`);
-  const { data, errorMessage } = await parseApiResponse<TransactionsResponse | { error?: unknown }>(response);
-
-  if (errorMessage) {
-    throw new Error(errorMessage);
-  }
-
-  if (!response.ok || !data || !("items" in data)) {
-    throw new Error(extractApiError(data, "Nao foi possivel determinar o periodo de referencia."));
-  }
-
-  const latestItem = data.items[0];
-  return latestItem ? new Date(latestItem.date) : new Date();
-}
+type CashflowMetricsResponse = {
+  view: "cashflow";
+  data: CashflowViewData;
+};
 
 export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResult {
   const [data, setData] = useState<CashflowViewData | null>(null);
@@ -103,45 +27,27 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
       setLoading(true);
       setError("");
 
+      const query = new URLSearchParams({
+        view: "cashflow",
+        period
+      });
+
       try {
-        const referenceDate = await fetchLatestTransactionDate();
-        const currentRange = resolveCurrentRange(period, referenceDate);
-        const previousRange = resolvePreviousRange(currentRange);
+        const response = await fetch(`/api/metrics/official?${query.toString()}`);
+        const { data: payload, errorMessage } = await parseApiResponse<
+          CashflowMetricsResponse | { error?: unknown }
+        >(response);
 
-        const mergedRange: DateRange = {
-          from: previousRange.from,
-          to: currentRange.to
-        };
+        if (errorMessage) {
+          throw new Error(errorMessage);
+        }
 
-        const rangeTransactions = await fetchPagedTransactions(mergedRange);
-        const currentTransactions = splitByRange(rangeTransactions, currentRange);
-        const previousTransactions = splitByRange(rangeTransactions, previousRange);
-
-        const currentTotals = calculateTotals(currentTransactions);
-        const previousTotals = calculateTotals(previousTransactions);
-
-        const payload: CashflowViewData = {
-          currentRangeLabel: formatRange(currentRange),
-          previousRangeLabel: formatRange(previousRange),
-          netResult: toComparisonMetric(currentTotals.net, previousTotals.net),
-          income: toComparisonMetric(currentTotals.income, previousTotals.income),
-          expense: toComparisonMetric(currentTotals.expense, previousTotals.expense),
-          netChart: buildMonthlyNetResult(currentTransactions, {
-            start: currentRange.from,
-            end: currentRange.to,
-            previousTransactions,
-            previousStart: previousRange.from,
-            previousEnd: previousRange.to
-          }),
-          incomeChart: buildMonthlyIncome(currentTransactions, {
-            start: currentRange.from,
-            end: currentRange.to
-          }),
-          expensesChart: buildMonthlyExpensesStack(currentTransactions, { topN: 8 })
-        };
+        if (!response.ok || !payload || !("view" in payload) || payload.view !== "cashflow") {
+          throw new Error(extractApiError(payload, "Nao foi possivel carregar o fluxo de caixa oficial."));
+        }
 
         if (!active) return;
-        setData(payload);
+        setData(payload.data);
       } catch (loadError) {
         if (!active) return;
         setData(null);

@@ -3,12 +3,12 @@
 import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
-import type { AccountDTO, CategoryDTO, TransactionDTO } from "@/lib/types";
+import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
+import type { AccountDTO, CategoryDTO } from "@/lib/types";
 import { EmptyState } from "@/src/components/ui/EmptyState";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
 import { IconButton } from "@/src/components/ui/IconButton";
 import { Skeleton } from "@/src/components/ui/Skeleton";
-import { buildReportsModel } from "@/src/features/reports/buildReportsModel";
 import { IncomeVsExpensesChartCard } from "@/src/features/reports/components/IncomeVsExpensesChartCard";
 import { KpiGrid } from "@/src/features/reports/components/KpiGrid";
 import { RecurringDetectedCard } from "@/src/features/reports/components/RecurringDetectedCard";
@@ -16,8 +16,7 @@ import { ReportsFilters } from "@/src/features/reports/components/ReportsFilters
 import { SpendingByCategoryCard } from "@/src/features/reports/components/SpendingByCategoryCard";
 import { TopMerchantsCard } from "@/src/features/reports/components/TopMerchantsCard";
 import { SankeyCard } from "@/src/features/reports/sankey/SankeyCard";
-import type { ReportsPeriodPreset } from "@/src/features/reports/types";
-import { buildPeriodComparison } from "@/src/features/reports/utils/period";
+import type { ReportsModel, ReportsPeriodComparison, ReportsPeriodPreset } from "@/src/features/reports/types";
 
 function ReportsLoading(): React.JSX.Element {
   return (
@@ -42,97 +41,126 @@ function ReportsLoading(): React.JSX.Element {
   );
 }
 
-type TransactionsResponse = {
-  items: TransactionDTO[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    totalCount: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
+type SerializedPeriodRange = {
+  preset: ReportsPeriodPreset;
+  label: string;
+  start: string;
+  end: string;
+};
+
+type ReportsMetricsResponse = {
+  view: "reports";
+  period: {
+    current: SerializedPeriodRange;
+    previous: SerializedPeriodRange;
   };
-  meta?: {
-    accounts?: AccountDTO[];
-    categories?: CategoryDTO[];
+  accounts: AccountDTO[];
+  categories: CategoryDTO[];
+  model: Omit<ReportsModel, "timeSeries" | "recurringDetected"> & {
+    timeSeries: Array<
+      Omit<ReportsModel["timeSeries"][number], "from" | "to"> & {
+        from: string;
+        to: string;
+      }
+    >;
+    recurringDetected: Array<
+      Omit<ReportsModel["recurringDetected"][number], "nextExpectedDate"> & {
+        nextExpectedDate: string | null;
+      }
+    >;
   };
 };
 
-async function fetchAllTransactionsForReports(signal?: AbortSignal): Promise<{
-  transactions: TransactionDTO[];
-  accounts: AccountDTO[];
-  categories: CategoryDTO[];
-}> {
-  const transactions: TransactionDTO[] = [];
-  let accounts: AccountDTO[] = [];
-  let categories: CategoryDTO[] = [];
-  let page = 1;
-  let hasNextPage = true;
+function parseDate(value: string): Date {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : new Date();
+}
 
-  while (hasNextPage) {
-    const query = new URLSearchParams({
-      period: "all",
-      page: String(page),
-      pageSize: "200"
-    });
-
-    if (page === 1) {
-      query.set("includeMeta", "1");
+function deserializePeriod(period: ReportsMetricsResponse["period"]): ReportsPeriodComparison {
+  return {
+    current: {
+      ...period.current,
+      start: parseDate(period.current.start),
+      end: parseDate(period.current.end)
+    },
+    previous: {
+      ...period.previous,
+      start: parseDate(period.previous.start),
+      end: parseDate(period.previous.end)
     }
+  };
+}
 
-    const response = await fetch(`/api/transactions?${query.toString()}`, { signal });
-    const payload = (await response.json()) as TransactionsResponse | { error?: string };
-
-    if (!response.ok || !("items" in payload)) {
-      throw new Error("error" in payload && payload.error ? payload.error : "Falha ao carregar dados de relatórios.");
-    }
-
-    transactions.push(...payload.items);
-
-    if (page === 1) {
-      accounts = payload.meta?.accounts ?? [];
-      categories = payload.meta?.categories ?? [];
-    }
-
-    hasNextPage = payload.pagination.hasNextPage;
-    page += 1;
-  }
-
-  return { transactions, accounts, categories };
+function deserializeModel(model: ReportsMetricsResponse["model"]): ReportsModel {
+  return {
+    ...model,
+    timeSeries: model.timeSeries.map((item) => ({
+      ...item,
+      from: parseDate(item.from),
+      to: parseDate(item.to)
+    })),
+    recurringDetected: model.recurringDetected.map((item) => ({
+      ...item,
+      nextExpectedDate: item.nextExpectedDate ? parseDate(item.nextExpectedDate) : null
+    }))
+  };
 }
 
 export function ReportsPage(): React.JSX.Element {
-  const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
   const [accounts, setAccounts] = useState<AccountDTO[]>([]);
   const [categories, setCategories] = useState<CategoryDTO[]>([]);
   const [preset, setPreset] = useState<ReportsPeriodPreset>("3M");
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [periodComparison, setPeriodComparison] = useState<ReportsPeriodComparison | null>(null);
+  const [model, setModel] = useState<ReportsModel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async (signal?: AbortSignal): Promise<void> => {
-    setLoading(true);
-    setError("");
+  const load = useCallback(
+    async (signal?: AbortSignal): Promise<void> => {
+      setLoading(true);
+      setError("");
 
-    try {
-      const payload = await fetchAllTransactionsForReports(signal);
-      setTransactions(payload.transactions);
-      setAccounts(payload.accounts);
-      setCategories(payload.categories);
-    } catch (loadError) {
-      if (loadError instanceof DOMException && loadError.name === "AbortError") {
-        return;
+      const query = new URLSearchParams({
+        view: "reports",
+        preset
+      });
+      if (accountId) query.set("accountId", accountId);
+      if (categoryId) query.set("categoryId", categoryId);
+
+      try {
+        const response = await fetch(`/api/metrics/official?${query.toString()}`, { signal });
+        const { data, errorMessage } = await parseApiResponse<ReportsMetricsResponse | { error?: unknown }>(response);
+
+        if (errorMessage) {
+          throw new Error(errorMessage);
+        }
+
+        if (!response.ok || !data || !("view" in data) || data.view !== "reports") {
+          throw new Error(extractApiError(data, "Falha ao carregar métricas oficiais de relatórios."));
+        }
+
+        setAccounts(data.accounts);
+        setCategories(data.categories);
+        setPeriodComparison(deserializePeriod(data.period));
+        setModel(deserializeModel(data.model));
+      } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+          return;
+        }
+
+        setAccounts([]);
+        setCategories([]);
+        setPeriodComparison(null);
+        setModel(null);
+        setError(loadError instanceof Error ? loadError.message : "Falha ao carregar relatórios.");
+      } finally {
+        setLoading(false);
       }
-
-      setTransactions([]);
-      setAccounts([]);
-      setCategories([]);
-      setError(loadError instanceof Error ? loadError.message : "Falha ao carregar relatórios.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [accountId, categoryId, preset]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -140,44 +168,16 @@ export function ReportsPage(): React.JSX.Element {
     return () => controller.abort();
   }, [load]);
 
-  const earliestDate = useMemo(() => {
-    if (transactions.length === 0) return undefined;
-
-    let minTimestamp = Number.POSITIVE_INFINITY;
-    for (const transaction of transactions) {
-      const timestamp = new Date(transaction.date).getTime();
-      if (Number.isFinite(timestamp) && timestamp < minTimestamp) {
-        minTimestamp = timestamp;
-      }
-    }
-
-    return Number.isFinite(minTimestamp) ? new Date(minTimestamp) : undefined;
-  }, [transactions]);
-
-  const periodComparison = useMemo(
-    () => buildPeriodComparison(preset, { now: new Date(), earliestDate }),
-    [earliestDate, preset]
-  );
-
-  const model = useMemo(
-    () =>
-      buildReportsModel({
-        transactions,
-        categories,
-        period: periodComparison,
-        accountId: accountId || undefined,
-        categoryId: categoryId || undefined
-      }),
-    [accountId, categories, categoryId, periodComparison, transactions]
-  );
-
-  const actions = (
-    <IconButton
-      aria-label="Atualizar relatórios"
-      icon={<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />}
-      onClick={() => void load()}
-      disabled={loading}
-    />
+  const actions = useMemo(
+    () => (
+      <IconButton
+        aria-label="Atualizar relatórios"
+        icon={<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />}
+        onClick={() => void load()}
+        disabled={loading}
+      />
+    ),
+    [load, loading]
   );
 
   return (
@@ -190,6 +190,8 @@ export function ReportsPage(): React.JSX.Element {
         <ReportsLoading />
       ) : error ? (
         <FeedbackMessage variant="error">{error}</FeedbackMessage>
+      ) : !model || !periodComparison ? (
+        <FeedbackMessage variant="error">Falha ao montar o modelo oficial de relatórios.</FeedbackMessage>
       ) : (
         <div className="space-y-4">
           <ReportsFilters

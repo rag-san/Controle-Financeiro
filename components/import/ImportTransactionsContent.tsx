@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { FileDropzone } from "@/components/imports/FileDropzone";
 import { MappingStep } from "@/components/imports/MappingStep";
@@ -29,10 +30,12 @@ type ParsedRow = {
   description: string;
   normalizedDescription?: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   accountHint?: string;
   accountId?: string;
   categoryId?: string | null;
+  transferToAccountId?: string;
+  transferFromAccountId?: string;
   externalId?: string;
   raw?: Record<string, unknown>;
 };
@@ -49,7 +52,7 @@ type PreviewRow = {
   counterparty: string;
   merchantKey: string;
   amount: number | null;
-  type: "income" | "expense" | null;
+  type: "income" | "expense" | "transfer" | null;
   accountHint?: string;
 };
 
@@ -101,17 +104,31 @@ type ParseResponse = {
     missingRequired: string[];
     message: string;
   };
-  supported?: boolean;
-  phase?: string;
   message?: string;
   code?: string;
-  error?: string;
+  details?: Record<string, unknown>;
 };
 
-type ImportWizardProps = {
+export type ImportTransactionsFooterState = {
+  validRows: number;
+  errorRows: number;
+  ignoredRows: number;
+  importing: boolean;
+  canImport: boolean;
+  importLabel: string;
+};
+
+export type ImportTransactionsContentHandle = {
+  submitImport: () => Promise<void>;
+};
+
+type ImportTransactionsContentProps = {
   accounts: AccountDTO[];
   onSuccess: () => void;
   onAccountsRefresh?: () => Promise<void> | void;
+  onFooterStateChange?: (state: ImportTransactionsFooterState) => void;
+  showInlineCommitButton?: boolean;
+  previewMaxHeightClassName?: string;
 };
 
 type ImportCommitResult = {
@@ -119,6 +136,10 @@ type ImportCommitResult = {
   totalSkipped: number;
   duplicates?: number;
   invalidRows?: number;
+  totalTransfersCreated?: number;
+  totalCardPaymentsDetected?: number;
+  totalCardPaymentsNotConverted?: number;
+  warnings?: string[];
   summary?: {
     imported: number;
     skipped: number;
@@ -140,11 +161,49 @@ function formatShortDate(value: string): string {
   return new Intl.DateTimeFormat("pt-BR").format(date);
 }
 
-export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportWizardProps): React.JSX.Element {
+const PDF_PARSE_UNAVAILABLE_MESSAGE =
+  "Suporte de PDF atual: Banco Inter e Mercado Pago. Para outros bancos, use CSV/OFX.";
+const PDF_PASSWORD_REQUIRED_MESSAGE = "Este PDF parece protegido por senha. Informe a senha e tente novamente.";
+
+function getFileExtension(filename: string): string {
+  const lower = filename.toLowerCase();
+  const index = lower.lastIndexOf(".");
+  return index >= 0 ? lower.slice(index) : "";
+}
+
+function buildParseRequestSignature(
+  file: File,
+  overrideMapping?: Record<string, string>,
+  options?: { pdfPassword?: string }
+): string {
+  const mappingSignature = overrideMapping ? JSON.stringify(overrideMapping) : "";
+  const pdfPasswordSignature = options?.pdfPassword ?? "";
+  return [file.name, String(file.size), String(file.lastModified), mappingSignature, pdfPasswordSignature].join("|");
+}
+
+function isParseSupportedFile(file: File): boolean {
+  const extension = getFileExtension(file.name);
+  return extension === ".csv" || extension === ".ofx" || extension === ".pdf";
+}
+
+export const ImportTransactionsContent = forwardRef<
+  ImportTransactionsContentHandle,
+  ImportTransactionsContentProps
+>(function ImportTransactionsContent(
+  {
+    accounts,
+    onSuccess,
+    onAccountsRefresh,
+    onFooterStateChange,
+    showInlineCommitButton = false,
+    previewMaxHeightClassName
+  },
+  ref
+): React.JSX.Element {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [pdfPassword, setPdfPassword] = useState("");
-  const [errorCode, setErrorCode] = useState("");
+  const [parseErrorCode, setParseErrorCode] = useState("");
   const [parseData, setParseData] = useState<ParseResponse | null>(null);
   const [mapping, setMapping] = useState({
     date: "",
@@ -167,13 +226,21 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     name: "",
     type: "checking" as AccountDTO["type"],
     institution: "",
-    currency: "BRL"
+    currency: "BRL",
+    parentAccountId: ""
   });
+  const [convertCardPaymentsToTransfer, setConvertCardPaymentsToTransfer] = useState(true);
+  const [cardPaymentTargetAccountId, setCardPaymentTargetAccountId] = useState("");
+  const [skipCardPaymentLines, setSkipCardPaymentLines] = useState(true);
   const [result, setResult] = useState<ImportCommitResult | null>(null);
   const [error, setError] = useState("");
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [manualCategoryByCommitIndex, setManualCategoryByCommitIndex] = useState<Record<number, string>>({});
   const [saveRuleByCommitIndex, setSaveRuleByCommitIndex] = useState<Record<number, boolean>>({});
+  const [isParsing, setIsParsing] = useState(false);
+  const inFlightParseSignatureRef = useRef<string | null>(null);
+  const lastCompletedParseSignatureRef = useRef<string | null>(null);
+  const lastParseToastKeyRef = useRef<string | null>(null);
 
   const mergedAccounts = useMemo(() => {
     const byId = new Map<string, AccountDTO>();
@@ -181,12 +248,76 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     createdAccounts.forEach((account) => byId.set(account.id, account));
     return [...byId.values()];
   }, [accounts, createdAccounts]);
+  const defaultAccount = useMemo(
+    () => mergedAccounts.find((account) => account.id === defaultAccountId) ?? null,
+    [defaultAccountId, mergedAccounts]
+  );
+  const creditAccounts = useMemo(
+    () => mergedAccounts.filter((account) => account.type === "credit"),
+    [mergedAccounts]
+  );
+  const nonCreditAccounts = useMemo(
+    () => mergedAccounts.filter((account) => account.type !== "credit"),
+    [mergedAccounts]
+  );
 
   useEffect(() => {
     if (!defaultAccountId && mergedAccounts[0]) {
       setDefaultAccountId(mergedAccounts[0].id);
     }
   }, [defaultAccountId, mergedAccounts]);
+
+  useEffect(() => {
+    if (parseData?.documentType !== "credit_card_invoice") {
+      return;
+    }
+
+    if (defaultAccount?.type === "credit") {
+      return;
+    }
+
+    if (defaultAccount) {
+      const linkedCards = creditAccounts.filter((account) => account.parentAccountId === defaultAccount.id);
+      if (linkedCards.length === 1) {
+        setDefaultAccountId(linkedCards[0].id);
+        return;
+      }
+    }
+
+    if (creditAccounts.length === 1) {
+      setDefaultAccountId(creditAccounts[0].id);
+    }
+  }, [creditAccounts, defaultAccount, parseData?.documentType]);
+
+  useEffect(() => {
+    if (!defaultAccount || (defaultAccount.type !== "checking" && defaultAccount.type !== "cash")) {
+      return;
+    }
+
+    if (cardPaymentTargetAccountId) {
+      return;
+    }
+
+    const linkedCards = creditAccounts.filter((account) => account.parentAccountId === defaultAccount.id);
+    if (linkedCards.length === 1) {
+      setCardPaymentTargetAccountId(linkedCards[0].id);
+      return;
+    }
+
+    if (creditAccounts.length === 1) {
+      setCardPaymentTargetAccountId(creditAccounts[0].id);
+    }
+  }, [cardPaymentTargetAccountId, creditAccounts, defaultAccount]);
+
+  useEffect(() => {
+    if (quickAccount.type === "credit") {
+      return;
+    }
+
+    if (quickAccount.parentAccountId) {
+      setQuickAccount((previous) => ({ ...previous, parentAccountId: "" }));
+    }
+  }, [quickAccount.parentAccountId, quickAccount.type]);
 
   useEffect(() => {
     if (!showQuickAccountForm) return;
@@ -244,10 +375,10 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     setSaveRuleByCommitIndex({});
   }, [parseData]);
 
-  const commitRows = parseData?.rows ?? [];
-  const isPdfUpload = Boolean(file?.name.toLowerCase().endsWith(".pdf"));
-  const needsPdfPassword =
-    errorCode === "pdf_password_required" || errorCode === "pdf_password_invalid";
+  const commitRows = useMemo(() => parseData?.rows ?? [], [parseData]);
+  const selectedFileExtension = file ? getFileExtension(file.name) : "";
+  const isPdfUpload = selectedFileExtension === ".pdf";
+  const needsPdfPassword = parseErrorCode === "pdf_password_required" || parseErrorCode === "pdf_password_invalid";
   const topReasonEntries = useMemo(
     () =>
       Object.entries(parseData?.reasons ?? {})
@@ -261,14 +392,86 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     if (!file) return "upload";
     if (!parseData) return "upload";
     if (parseData.needsMapping) return "mapping";
-    if (!result) return "preview";
-    return "done";
-  }, [file, parseData, result]);
+    return "preview";
+  }, [file, parseData]);
+
+  const validRowsCount = useMemo(() => {
+    if (!parseData) return 0;
+    if (typeof parseData.validRows === "number") return parseData.validRows;
+    return parseData.preview.filter((row) => row.status === "ok").length;
+  }, [parseData]);
+
+  const ignoredRowsCount = useMemo(() => {
+    if (!parseData) return 0;
+    if (typeof parseData.ignoredRows === "number") return parseData.ignoredRows;
+    return parseData.preview.filter((row) => row.status === "ignored").length;
+  }, [parseData]);
+
+  const errorRowsCount = useMemo(() => {
+    if (!parseData) return 0;
+    if (typeof parseData.errorRows === "number") return parseData.errorRows;
+    return parseData.preview.filter((row) => row.status === "error").length;
+  }, [parseData]);
+
+  const canImport = steps === "preview" && validRowsCount > 0 && !loading;
+  const importLabel = validRowsCount === 1 ? "Importar 1 linha" : `Importar ${validRowsCount} linhas`;
+
+  useEffect(() => {
+    onFooterStateChange?.({
+      validRows: validRowsCount,
+      errorRows: errorRowsCount,
+      ignoredRows: ignoredRowsCount,
+      importing: loading,
+      canImport,
+      importLabel
+    });
+  }, [
+    canImport,
+    errorRowsCount,
+    ignoredRowsCount,
+    importLabel,
+    loading,
+    onFooterStateChange,
+    validRowsCount
+  ]);
+
+  const showParseErrorToastOnce = (message: string, key: string): void => {
+    if (lastParseToastKeyRef.current === key) {
+      return;
+    }
+    lastParseToastKeyRef.current = key;
+    toast({ variant: "error", title: "Falha na analise", description: message });
+  };
 
   const parseFile = async (inputFile: File, overrideMapping?: Record<string, string>): Promise<void> => {
+    if (isParsing) {
+      return;
+    }
+
+    if (!isParseSupportedFile(inputFile)) {
+      setParseData(null);
+      const message = "Tipo de arquivo nao suportado. Use arquivos CSV, OFX ou PDF.";
+      setError(message);
+      showParseErrorToastOnce(message, "file_not_supported");
+      return;
+    }
+
+    const requestSignature = buildParseRequestSignature(inputFile, overrideMapping, {
+      pdfPassword: inputFile.name.toLowerCase().endsWith(".pdf") ? pdfPassword.trim() : ""
+    });
+    if (inFlightParseSignatureRef.current === requestSignature) {
+      return;
+    }
+
+    if (lastCompletedParseSignatureRef.current === requestSignature && parseData) {
+      return;
+    }
+
+    inFlightParseSignatureRef.current = requestSignature;
+    setIsParsing(true);
     setLoading(true);
     setError("");
-    setErrorCode("");
+    setParseErrorCode("");
 
     try {
       const formData = new FormData();
@@ -295,12 +498,21 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       }
 
       if (!response.ok) {
-        setErrorCode(data.code ?? "parse_error");
-        throw new Error(data.error ?? data.message ?? "Falha ao analisar arquivo.");
+        const code = data.code ?? "parse_error";
+        setParseErrorCode(code);
+        const message =
+          code === "pdf_password_required" || code === "pdf_password_invalid"
+            ? PDF_PASSWORD_REQUIRED_MESSAGE
+            : response.status === 422 && code === "source_parser_unavailable" && data.details?.sourceType === "pdf"
+              ? PDF_PARSE_UNAVAILABLE_MESSAGE
+            : data.message ?? "Falha ao analisar arquivo.";
+        throw new Error(message);
       }
 
-      setErrorCode("");
       setParseData(data);
+      setParseErrorCode("");
+      lastCompletedParseSignatureRef.current = requestSignature;
+      lastParseToastKeyRef.current = null;
 
       if (data.appliedMapping) {
         setMapping((prev) => ({ ...prev, ...data.appliedMapping }));
@@ -315,19 +527,37 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       const message = err instanceof Error ? err.message : "Erro inesperado";
       setParseData(null);
       setError(message);
-      toast({ variant: "error", title: "Falha na analise", description: message });
+      showParseErrorToastOnce(message, `${requestSignature}:${message}`);
     } finally {
+      inFlightParseSignatureRef.current = null;
+      setIsParsing(false);
       setLoading(false);
     }
   };
 
-  const handleUpload = async (selectedFile: File): Promise<void> => {
+  const handleUpload = (selectedFile: File): void => {
+    const extension = getFileExtension(selectedFile.name);
+    const isSupported = isParseSupportedFile(selectedFile);
+
     setFile(selectedFile);
     setParseData(null);
     setResult(null);
     setError("");
-    setErrorCode("");
-    await parseFile(selectedFile);
+    setParseErrorCode("");
+    setIsParsing(false);
+    if (extension !== ".pdf") {
+      setPdfPassword("");
+    }
+    inFlightParseSignatureRef.current = null;
+    lastCompletedParseSignatureRef.current = null;
+    lastParseToastKeyRef.current = null;
+
+    if (!isSupported) {
+      const message =
+        "Tipo de arquivo nao suportado. Use arquivos CSV, OFX ou PDF.";
+      setError(message);
+      showParseErrorToastOnce(message, `${extension || "unknown"}_not_supported`);
+    }
   };
 
   const handleCreateAccount = async (): Promise<void> => {
@@ -352,7 +582,8 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
           name,
           type: quickAccount.type,
           institution: quickAccount.institution.trim() || null,
-          currency: quickAccount.currency.toUpperCase()
+          currency: quickAccount.currency.toUpperCase(),
+          parentAccountId: quickAccount.type === "credit" ? quickAccount.parentAccountId || null : null
         })
       });
 
@@ -374,7 +605,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         return [...prev, data];
       });
       setDefaultAccountId(data.id);
-      setQuickAccount((prev) => ({ ...prev, name: "", institution: "" }));
+      setQuickAccount((prev) => ({ ...prev, name: "", institution: "", parentAccountId: "" }));
       setShowQuickAccountForm(false);
       toast({ variant: "success", title: "Conta criada", description: `${data.name} pronta para uso na importacao.` });
 
@@ -390,50 +621,53 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     }
   };
 
-  const saveReusableRules = async (rowsToCommit: ParsedRow[]): Promise<void> => {
-    const unique = new Map<string, { categoryId: string; merchantKey: string }>();
+  const saveReusableRules = useCallback(
+    async (rowsToCommit: ParsedRow[]): Promise<void> => {
+      const unique = new Map<string, { categoryId: string; merchantKey: string }>();
 
-    rowsToCommit.forEach((row, index) => {
-      if (!saveRuleByCommitIndex[index]) return;
-      if (!row.categoryId) return;
-      if (!row.merchantKey || row.merchantKey === "transacao") return;
+      rowsToCommit.forEach((row, index) => {
+        if (!saveRuleByCommitIndex[index]) return;
+        if (!row.categoryId) return;
+        if (!row.merchantKey || row.merchantKey === "transacao") return;
 
-      const key = `${row.categoryId}|${row.merchantKey}`;
-      if (!unique.has(key)) {
-        unique.set(key, {
-          categoryId: row.categoryId,
-          merchantKey: row.merchantKey
-        });
-      }
-    });
-
-    if (unique.size === 0) {
-      return;
-    }
-
-    for (const entry of unique.values()) {
-      const response = await fetch("/api/categories/rules", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          name: `Import ${entry.merchantKey}`,
-          priority: 50,
-          enabled: true,
-          matchType: "contains",
-          pattern: entry.merchantKey.toUpperCase(),
-          categoryId: entry.categoryId
-        })
+        const key = `${row.categoryId}|${row.merchantKey}`;
+        if (!unique.has(key)) {
+          unique.set(key, {
+            categoryId: row.categoryId,
+            merchantKey: row.merchantKey
+          });
+        }
       });
 
-      if (!response.ok) {
-        throw new Error("Nao foi possivel salvar uma ou mais regras de estabelecimento.");
+      if (unique.size === 0) {
+        return;
       }
-    }
-  };
 
-  const handleCommit = async (): Promise<void> => {
+      for (const entry of unique.values()) {
+        const response = await fetch("/api/categories/rules", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            name: `Import ${entry.merchantKey}`,
+            priority: 50,
+            enabled: true,
+            matchType: "contains",
+            pattern: entry.merchantKey.toUpperCase(),
+            categoryId: entry.categoryId
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("Nao foi possivel salvar uma ou mais regras de estabelecimento.");
+        }
+      }
+    },
+    [saveRuleByCommitIndex]
+  );
+
+  const handleCommit = useCallback(async (): Promise<void> => {
     if (!file || !parseData) return;
 
     if (!defaultAccountId && !commitRows.some((row) => row.accountId || row.accountHint)) {
@@ -461,7 +695,12 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
           sourceType: parseData.sourceType,
           fileName: file.name,
           defaultAccountId: defaultAccountId || undefined,
-          mapping,
+          mapping: {
+            ...mapping,
+            convertCardPaymentsToTransfer,
+            cardPaymentTargetAccountId: cardPaymentTargetAccountId || null,
+            skipCardPaymentLines
+          },
           applyRules,
           applyLocalAi: false,
           rows: rowsForCommit
@@ -493,6 +732,12 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
         totalSkipped: data.totalSkipped,
         duplicates: data.duplicates ?? data.summary?.duplicates ?? 0,
         invalidRows: data.invalidRows ?? data.summary?.invalid ?? 0,
+        totalTransfersCreated: "totalTransfersCreated" in data ? data.totalTransfersCreated ?? 0 : 0,
+        totalCardPaymentsDetected:
+          "totalCardPaymentsDetected" in data ? data.totalCardPaymentsDetected ?? 0 : 0,
+        totalCardPaymentsNotConverted:
+          "totalCardPaymentsNotConverted" in data ? data.totalCardPaymentsNotConverted ?? 0 : 0,
+        warnings: "warnings" in data && Array.isArray(data.warnings) ? data.warnings : [],
         summary: data.summary,
         deterministicCategorizedCount:
           "deterministicCategorizedCount" in data ? data.deterministicCategorizedCount ?? 0 : 0,
@@ -520,7 +765,34 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    applyRules,
+    cardPaymentTargetAccountId,
+    commitRows,
+    convertCardPaymentsToTransfer,
+    defaultAccountId,
+    file,
+    manualCategoryByCommitIndex,
+    mapping,
+    onSuccess,
+    parseData,
+    saveReusableRules,
+    skipCardPaymentLines,
+    toast
+  ]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      submitImport: async (): Promise<void> => {
+        if (!canImport) {
+          return;
+        }
+        await handleCommit();
+      }
+    }),
+    [canImport, handleCommit]
+  );
 
   return (
     <Card>
@@ -532,41 +804,53 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       </CardHeader>
       <CardContent className="space-y-4" aria-busy={loading || creatingAccount}>
         {steps === "upload" ? <FileDropzone onSelect={handleUpload} /> : null}
-        {steps === "upload" && isPdfUpload ? (
-          <FeedbackMessage variant={needsPdfPassword ? "warning" : "info"} className="space-y-3 p-4">
-            <p className="font-medium">
-              {needsPdfPassword
-                ? "Este PDF precisa de senha para leitura."
-                : "Se este PDF estiver protegido, informe a senha para tentar novamente."}
-            </p>
-            <FormField
-              id="import-pdf-password"
-              label="Senha do PDF (opcional)"
-              hint="A senha e usada apenas para leitura do arquivo no parse."
-            >
-              {(fieldProps) => (
-                <Input
-                  {...fieldProps}
-                  type="password"
-                  value={pdfPassword}
-                  onChange={(event) => setPdfPassword(event.target.value)}
-                  autoComplete="off"
-                />
-              )}
-            </FormField>
+        {steps === "upload" && file ? (
+          <FeedbackMessage variant={isPdfUpload ? "warning" : "info"} className="space-y-3 p-4">
+            <div className="space-y-1">
+              <p className="font-medium">Arquivo selecionado: {file.name}</p>
+              <p className="text-sm text-muted-foreground">
+                Tamanho: {(file.size / 1024).toFixed(1)} KB | Tipo: {selectedFileExtension || "desconhecido"}
+              </p>
+            </div>
+            {isPdfUpload ? (
+              <>
+                <p className="text-sm">
+                  PDF sera processado automaticamente. Se estiver protegido, informe a senha antes de analisar.
+                </p>
+                <FormField
+                  id="import-pdf-password"
+                  label="Senha do PDF (opcional)"
+                  hint="Usada apenas para leitura do arquivo durante o parse."
+                >
+                  {(fieldProps) => (
+                    <Input
+                      {...fieldProps}
+                      type="password"
+                      value={pdfPassword}
+                      onChange={(event) => setPdfPassword(event.target.value)}
+                      autoComplete="off"
+                    />
+                  )}
+                </FormField>
+                {needsPdfPassword ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-300">
+                    Senha obrigatoria ou invalida. Informe a senha correta e clique em analisar novamente.
+                  </p>
+                ) : null}
+              </>
+            ) : null}
             <div className="flex justify-end">
               <Button
                 type="button"
-                variant="outline"
                 onClick={() => {
                   if (file) {
                     void parseFile(file);
                   }
                 }}
-                isLoading={loading}
-                disabled={loading || !file || (needsPdfPassword && pdfPassword.trim().length === 0)}
+                isLoading={isParsing}
+                disabled={isParsing || !file}
               >
-                {loading ? "Validando PDF..." : "Tentar novamente"}
+                {isParsing ? "Analisando arquivo..." : "Analisar arquivo"}
               </Button>
             </div>
           </FeedbackMessage>
@@ -584,10 +868,11 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
                 void parseFile(file, mapping);
               }
             }}
+            busy={isParsing}
           />
         ) : null}
 
-        {(steps === "preview" || steps === "done") && parseData ? (
+        {steps === "preview" && parseData ? (
           <>
             <div className="grid gap-3 md:grid-cols-2">
               <FormField id="import-default-account" label="Conta padrao (fallback)" hint="Usada quando a linha importada nao indicar conta.">
@@ -618,11 +903,11 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
                 )}
               </FormField>
 
-              <FeedbackMessage variant="info">
+              <FeedbackMessage variant="info" className="space-y-1 p-4">
                 <p>Total detectado: {parseData.totalRows} linhas</p>
-                {typeof parseData.validRows === "number" ? <p>Linhas validas: {parseData.validRows}</p> : null}
-                {typeof parseData.ignoredRows === "number" ? <p>Linhas ignoradas: {parseData.ignoredRows}</p> : null}
-                {typeof parseData.errorRows === "number" ? <p>Linhas com erro: {parseData.errorRows}</p> : null}
+                <p>Linhas validas: {validRowsCount}</p>
+                <p>Linhas ignoradas: {ignoredRowsCount}</p>
+                <p>Linhas com erro: {errorRowsCount}</p>
                 <p>Tipo de origem: {parseData.sourceType.toUpperCase()}</p>
                 {parseData.documentType ? <p>Tipo de documento: {parseData.documentType}</p> : null}
                 {parseData.issuerProfile ? <p>Perfil detectado: {parseData.issuerProfile}</p> : null}
@@ -633,6 +918,84 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
               </FeedbackMessage>
             </div>
 
+            {parseData.documentType === "credit_card_invoice" && defaultAccount?.type !== "credit" ? (
+              <FeedbackMessage variant="warning" className="p-4">
+                Este arquivo foi detectado como fatura de cartao. Selecione uma conta do tipo cartao de credito para
+                manter os lancamentos separados da conta corrente. Se nao existir conta de cartao para a instituicao,
+                o sistema tentara criar automaticamente uma conta de cartao vinculada.
+              </FeedbackMessage>
+            ) : null}
+
+            {(defaultAccount?.type === "checking" || defaultAccount?.type === "cash") && creditAccounts.length > 0 ? (
+              <FeedbackMessage variant="info" className="space-y-3 p-4">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="convert-card-payment-transfer"
+                    checked={convertCardPaymentsToTransfer}
+                    onChange={(event) => setConvertCardPaymentsToTransfer(Boolean(event.target.checked))}
+                  />
+                  <div>
+                    <label htmlFor="convert-card-payment-transfer" className="font-medium">
+                      Converter pagamentos de fatura em transferencia para cartao
+                    </label>
+                    <p className="text-sm text-muted-foreground">
+                      Debito sai da conta corrente e entra na conta de cartao, sem virar despesa duplicada.
+                    </p>
+                  </div>
+                </div>
+
+                {convertCardPaymentsToTransfer ? (
+                  <FormField
+                    id="card-payment-target-account"
+                    label="Conta cartao destino (opcional)"
+                    hint="Se vazio, o sistema tenta inferir pelo vinculo de conta mae."
+                  >
+                    {(fieldProps) => (
+                      <Select
+                        {...fieldProps}
+                        value={cardPaymentTargetAccountId}
+                        onChange={(event) => setCardPaymentTargetAccountId(event.target.value)}
+                      >
+                        <option value="">Inferir automaticamente</option>
+                        {creditAccounts.map((account) => {
+                          const parent = account.parentAccountId
+                            ? nonCreditAccounts.find((item) => item.id === account.parentAccountId)
+                            : null;
+                          const parentLabel = parent ? ` (Conta mae: ${parent.name})` : "";
+                          return (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                              {parentLabel}
+                            </option>
+                          );
+                        })}
+                      </Select>
+                    )}
+                  </FormField>
+                ) : null}
+              </FeedbackMessage>
+            ) : null}
+
+            {defaultAccount?.type === "credit" ? (
+              <FeedbackMessage variant="warning" className="space-y-3 p-4">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="skip-card-payment-lines"
+                    checked={skipCardPaymentLines}
+                    onChange={(event) => setSkipCardPaymentLines(Boolean(event.target.checked))}
+                  />
+                  <div>
+                    <label htmlFor="skip-card-payment-lines" className="font-medium">
+                      Ignorar linhas de pagamento na fatura do cartao
+                    </label>
+                    <p className="text-sm text-muted-foreground">
+                      Evita importar o credito de pagamento da fatura e duplicar com o extrato da conta corrente.
+                    </p>
+                  </div>
+                </div>
+              </FeedbackMessage>
+            ) : null}
+
             {showQuickAccountForm || mergedAccounts.length === 0 ? (
               <FeedbackMessage variant="warning" className="space-y-3 p-4" role="status">
                 <p className="font-medium">
@@ -642,7 +1005,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
                 </p>
                 <form
                   id="quick-account-form"
-                  className="grid gap-3 md:grid-cols-5"
+                  className="grid gap-3 md:grid-cols-6"
                   onSubmit={(event) => {
                     event.preventDefault();
                     void handleCreateAccount();
@@ -696,6 +1059,26 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
                       />
                     )}
                   </FormField>
+                  {quickAccount.type === "credit" ? (
+                    <FormField id="quick-account-parent" label="Conta mae (opcional)">
+                      {(fieldProps) => (
+                        <Select
+                          {...fieldProps}
+                          value={quickAccount.parentAccountId}
+                          onChange={(event) =>
+                            setQuickAccount((prev) => ({ ...prev, parentAccountId: event.target.value }))
+                          }
+                        >
+                          <option value="">Sem conta mae</option>
+                          {nonCreditAccounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                    </FormField>
+                  ) : null}
                   <div className="flex items-end">
                     <Button type="submit" isLoading={creatingAccount} disabled={creatingAccount} className="w-full md:w-auto">
                       {creatingAccount ? "Criando..." : "Criar conta"}
@@ -714,6 +1097,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
               categories={categories}
               manualCategoryByCommitIndex={manualCategoryByCommitIndex}
               saveRuleByCommitIndex={saveRuleByCommitIndex}
+              maxHeightClassName={previewMaxHeightClassName}
               onCategoryChange={(commitIndex, categoryId) => {
                 if (commitIndex < 0) return;
                 setManualCategoryByCommitIndex((previous) => ({
@@ -737,10 +1121,15 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
               }}
             />
 
-            {steps === "preview" ? (
+            {showInlineCommitButton && steps === "preview" ? (
               <div className="flex justify-end">
-                <Button onClick={handleCommit} isLoading={loading} disabled={loading} className="w-full sm:w-auto">
-                  {loading ? "Importando..." : "Confirmar importacao"}
+                <Button
+                  onClick={handleCommit}
+                  isLoading={loading}
+                  disabled={!canImport}
+                  className="w-full sm:w-auto"
+                >
+                  {loading ? "Importando..." : importLabel}
                 </Button>
               </div>
             ) : null}
@@ -752,8 +1141,24 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
             <p>
               Importacao concluida: {result.totalImported} novas transacoes e {result.totalSkipped} ignoradas.
             </p>
+            <p className="text-muted-foreground">
+              Dica: voce pode ajustar mapeamento/conta destino e importar novamente o mesmo preview.
+            </p>
             {typeof result.duplicates === "number" ? <p>Duplicadas: {result.duplicates}</p> : null}
             {typeof result.invalidRows === "number" ? <p>Invalidas: {result.invalidRows}</p> : null}
+            {typeof result.totalTransfersCreated === "number" && result.totalTransfersCreated > 0 ? (
+              <p>Transferencias criadas: {result.totalTransfersCreated}</p>
+            ) : null}
+            {typeof result.totalCardPaymentsDetected === "number" && result.totalCardPaymentsDetected > 0 ? (
+              <p>Pagamentos de fatura detectados: {result.totalCardPaymentsDetected}</p>
+            ) : null}
+            {typeof result.totalCardPaymentsNotConverted === "number" &&
+            result.totalCardPaymentsNotConverted > 0 ? (
+              <p>
+                Pagamentos nao convertidos: {result.totalCardPaymentsNotConverted}. Selecione um cartao destino e
+                importe novamente.
+              </p>
+            ) : null}
             {typeof result.deterministicCategorizedCount === "number" && result.deterministicCategorizedCount > 0 ? (
               <p>Categorizacao deterministica aplicada em {result.deterministicCategorizedCount} transacoes.</p>
             ) : null}
@@ -764,6 +1169,13 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
               </p>
             ) : null}
             {result.aiUnavailableReason ? <p className="text-amber-700 dark:text-amber-300">{result.aiUnavailableReason}</p> : null}
+            {Array.isArray(result.warnings) && result.warnings.length > 0
+              ? result.warnings.map((warning, index) => (
+                  <p key={`warning-${index}`} className="text-amber-700 dark:text-amber-300">
+                    {warning}
+                  </p>
+                ))
+              : null}
           </FeedbackMessage>
         ) : null}
 
@@ -771,5 +1183,7 @@ export function ImportWizard({ accounts, onSuccess, onAccountsRefresh }: ImportW
       </CardContent>
     </Card>
   );
-}
+});
+
+ImportTransactionsContent.displayName = "ImportTransactionsContent";
 

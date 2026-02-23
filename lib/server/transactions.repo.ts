@@ -15,12 +15,14 @@ type TransactionRow = {
   normalized_description: string;
   amount_cents: number;
   currency: string;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   status: "posted" | "pending";
   account: string | null;
   bank: string | null;
   external_id: string | null;
   imported_hash: string | null;
+  transfer_group_id: string | null;
+  transfer_peer_tx_id: string | null;
   raw_json: string | null;
   created_at: string;
   updated_at: string;
@@ -31,6 +33,7 @@ type TransactionJoinedRow = TransactionRow & {
   account_type?: "checking" | "credit" | "cash" | "investment" | null;
   account_institution?: string | null;
   account_currency?: string | null;
+  account_parent_account_id?: string | null;
   category_name?: string | null;
   category_color?: string | null;
   category_icon?: string | null;
@@ -55,6 +58,8 @@ function mapBase(row: TransactionRow) {
     bank: row.bank,
     externalId: row.external_id,
     importedHash: row.imported_hash,
+    transferGroupId: row.transfer_group_id,
+    transferPeerTxId: row.transfer_peer_tx_id,
     raw: row.raw_json ? JSON.parse(row.raw_json) : null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at)
@@ -70,7 +75,8 @@ function mapWithRelations(row: TransactionJoinedRow) {
       name: row.account_name ?? "",
       type: row.account_type ?? "checking",
       institution: row.account_institution ?? null,
-      currency: row.account_currency ?? "BRL"
+      currency: row.account_currency ?? "BRL",
+      parentAccountId: row.account_parent_account_id ?? null
     },
     category: row.category_name
       ? {
@@ -90,7 +96,7 @@ type FilterInput = {
   dateTo?: Date;
   accountId?: string;
   categoryId?: string;
-  type?: "income" | "expense";
+  type?: "income" | "expense" | "transfer";
   normalizedQuery?: string;
 };
 
@@ -130,6 +136,12 @@ function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[]
 }
 
 export const transactionsRepo = {
+  listAll(filter: FilterInput) {
+    const total = this.count(filter);
+    if (total <= 0) return [];
+    return this.listPaged(filter, { page: 1, pageSize: total });
+  },
+
   listPaged(
     filter: FilterInput,
     pagination: { page: number; pageSize: number }
@@ -142,8 +154,8 @@ export const transactionsRepo = {
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
             t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.status,
-            t.account, t.bank, t.external_id, t.imported_hash, t.raw_json, t.created_at, t.updated_at,
-            a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency,
+            t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.raw_json, t.created_at, t.updated_at,
+            a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency, a.parent_account_id AS account_parent_account_id,
             c.name AS category_name, c.color AS category_color, c.icon AS category_icon, c.parent_id AS category_parent_id
          FROM transactions t
          LEFT JOIN accounts a ON a.id = t.account_id
@@ -166,7 +178,7 @@ export const transactionsRepo = {
     return row.count;
   },
 
-  sumByType(filter: FilterInput): Array<{ type: "income" | "expense"; amount: number }> {
+  sumByType(filter: FilterInput): Array<{ type: "income" | "expense" | "transfer"; amount: number }> {
     const { sql, params } = buildFilterWhere(filter);
     const rows = db
       .prepare(
@@ -175,7 +187,7 @@ export const transactionsRepo = {
          WHERE ${sql}
          GROUP BY t.type`
       )
-      .all(...params) as Array<{ type: "income" | "expense"; total_cents: number | null }>;
+      .all(...params) as Array<{ type: "income" | "expense" | "transfer"; total_cents: number | null }>;
 
     return rows.map((row) => ({
       type: row.type,
@@ -189,8 +201,8 @@ export const transactionsRepo = {
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
             t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.status,
-            t.account, t.bank, t.external_id, t.imported_hash, t.raw_json, t.created_at, t.updated_at,
-            a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency,
+            t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.raw_json, t.created_at, t.updated_at,
+            a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency, a.parent_account_id AS account_parent_account_id,
             c.name AS category_name, c.color AS category_color, c.icon AS category_icon, c.parent_id AS category_parent_id
          FROM transactions t
          LEFT JOIN accounts a ON a.id = t.account_id
@@ -210,25 +222,28 @@ export const transactionsRepo = {
     description: string;
     normalizedDescription: string;
     amount: number;
-    type: "income" | "expense";
+    type: "income" | "expense" | "transfer";
     status: "posted" | "pending";
     importBatchId?: string | null;
     importedHash?: string | null;
+    transferGroupId?: string | null;
+    transferPeerTxId?: string | null;
     raw?: Record<string, unknown> | null;
   }) {
     const id = createId();
     const now = nowIso();
+    const categoryId = input.type === "transfer" ? null : (input.categoryId ?? null);
 
     db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, status, imported_hash, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, status, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.userId,
       input.accountId,
-      input.categoryId ?? null,
+      categoryId,
       input.importBatchId ?? null,
       input.date.toISOString(),
       input.description,
@@ -237,6 +252,8 @@ export const transactionsRepo = {
       input.type,
       input.status,
       input.importedHash ?? null,
+      input.transferGroupId ?? null,
+      input.transferPeerTxId ?? null,
       input.raw ? JSON.stringify(input.raw) : null,
       now,
       now
@@ -255,9 +272,11 @@ export const transactionsRepo = {
       description: string;
       normalizedDescription: string;
       amount: number;
-      type: "income" | "expense";
+      type: "income" | "expense" | "transfer";
       status: "posted" | "pending";
       importedHash?: string | null;
+      transferGroupId?: string | null;
+      transferPeerTxId?: string | null;
       raw?: Record<string, unknown> | null;
     }>
   ): { count: number } {
@@ -269,18 +288,19 @@ export const transactionsRepo = {
     const insert = db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, status, imported_hash, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, status, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const run = db.transaction(() => {
       let count = 0;
       for (const row of rows) {
+        const categoryId = row.type === "transfer" ? null : (row.categoryId ?? null);
         insert.run(
           createId(),
           row.userId,
           row.accountId,
-          row.categoryId ?? null,
+          categoryId,
           row.importBatchId ?? null,
           row.date.toISOString(),
           row.description,
@@ -289,6 +309,8 @@ export const transactionsRepo = {
           row.type,
           row.status,
           row.importedHash ?? null,
+          row.transferGroupId ?? null,
+          row.transferPeerTxId ?? null,
           row.raw ? JSON.stringify(row.raw) : null,
           now,
           now
@@ -301,6 +323,178 @@ export const transactionsRepo = {
     return { count: run() };
   },
 
+  createTransferPair(input: {
+    userId: string;
+    fromAccountId: string;
+    toAccountId: string;
+    date: Date;
+    description: string;
+    normalizedDescription: string;
+    amount: number;
+    status: "posted" | "pending";
+    importBatchId?: string | null;
+    importedHashBase?: string | null;
+    raw?: Record<string, unknown> | null;
+  }): {
+    created: boolean;
+    reason?: "duplicate";
+    transferGroupId: string | null;
+    outTxId: string | null;
+    inTxId: string | null;
+    outImportedHash: string | null;
+    inImportedHash: string | null;
+  } {
+    if (input.fromAccountId === input.toAccountId) {
+      throw new Error("TRANSFER_SAME_ACCOUNT");
+    }
+
+    const absoluteAmount = Math.abs(input.amount);
+    if (!Number.isFinite(absoluteAmount) || absoluteAmount <= 0) {
+      throw new Error("TRANSFER_INVALID_AMOUNT");
+    }
+
+    const importedHashBase = input.importedHashBase?.trim() ? input.importedHashBase.trim() : null;
+    const outImportedHash = importedHashBase ? `${importedHashBase}:OUT` : null;
+    const inImportedHash = importedHashBase ? `${importedHashBase}:IN` : null;
+
+    const duplicateResult = {
+      created: false as const,
+      reason: "duplicate" as const,
+      transferGroupId: null,
+      outTxId: null,
+      inTxId: null,
+      outImportedHash,
+      inImportedHash
+    };
+
+    try {
+      return dbTransaction(() => {
+        const fromAccountExists = db
+          .prepare(
+            `SELECT id
+             FROM accounts
+             WHERE user_id = ? AND id = ?
+             LIMIT 1`
+          )
+          .get(input.userId, input.fromAccountId) as { id: string } | undefined;
+        if (!fromAccountExists) {
+          throw new Error("TRANSFER_FROM_ACCOUNT_NOT_FOUND");
+        }
+
+        const toAccountExists = db
+          .prepare(
+            `SELECT id
+             FROM accounts
+             WHERE user_id = ? AND id = ?
+             LIMIT 1`
+          )
+          .get(input.userId, input.toAccountId) as { id: string } | undefined;
+        if (!toAccountExists) {
+          throw new Error("TRANSFER_TO_ACCOUNT_NOT_FOUND");
+        }
+
+        if (outImportedHash && inImportedHash) {
+          const existing = db
+            .prepare(
+              `SELECT id
+               FROM transactions
+               WHERE user_id = ?
+                 AND imported_hash IN (?, ?)
+               LIMIT 1`
+            )
+            .get(input.userId, outImportedHash, inImportedHash) as { id: string } | undefined;
+
+          if (existing) {
+            return duplicateResult;
+          }
+        }
+
+        const transferGroupId = createId();
+        const outTxId = createId();
+        const inTxId = createId();
+        const now = nowIso();
+
+        const insert = db.prepare(
+          `INSERT INTO transactions (
+             id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
+             amount_cents, currency, type, status, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
+           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', 'transfer', ?, ?, ?, NULL, ?, ?, ?)`
+        );
+
+        insert.run(
+          outTxId,
+          input.userId,
+          input.fromAccountId,
+          input.importBatchId ?? null,
+          input.date.toISOString(),
+          input.description,
+          input.normalizedDescription,
+          toCents(-absoluteAmount),
+          input.status,
+          outImportedHash,
+          transferGroupId,
+          input.raw
+            ? JSON.stringify({
+                ...input.raw,
+                transferDirection: "out"
+              })
+            : JSON.stringify({ transferDirection: "out" }),
+          now,
+          now
+        );
+
+        insert.run(
+          inTxId,
+          input.userId,
+          input.toAccountId,
+          input.importBatchId ?? null,
+          input.date.toISOString(),
+          input.description,
+          input.normalizedDescription,
+          toCents(absoluteAmount),
+          input.status,
+          inImportedHash,
+          transferGroupId,
+          input.raw
+            ? JSON.stringify({
+                ...input.raw,
+                transferDirection: "in"
+              })
+            : JSON.stringify({ transferDirection: "in" }),
+          now,
+          now
+        );
+
+        const updatePeer = db.prepare(
+          `UPDATE transactions
+           SET transfer_peer_tx_id = ?, updated_at = ?
+           WHERE id = ? AND user_id = ?`
+        );
+        updatePeer.run(inTxId, now, outTxId, input.userId);
+        updatePeer.run(outTxId, now, inTxId, input.userId);
+
+        return {
+          created: true,
+          transferGroupId,
+          outTxId,
+          inTxId,
+          outImportedHash,
+          inImportedHash
+        };
+      });
+    } catch (error) {
+      if (
+        outImportedHash &&
+        inImportedHash &&
+        error instanceof Error &&
+        error.message.toLowerCase().includes("unique")
+      ) {
+        return duplicateResult;
+      }
+      throw error;
+    }
+  },
+
   update(input: {
     id: string;
     userId: string;
@@ -310,7 +504,7 @@ export const transactionsRepo = {
     description?: string;
     normalizedDescription?: string;
     amount?: number;
-    type?: "income" | "expense";
+    type?: "income" | "expense" | "transfer";
     status?: "posted" | "pending";
   }) {
     const existing = this.findByIdForUser(input.id, input.userId);
@@ -319,7 +513,14 @@ export const transactionsRepo = {
     const nextDescription = input.description ?? existing.description;
     const nextNormalizedDescription = input.normalizedDescription ?? existing.normalizedDescription;
     const nextAmount = input.amount ?? existing.amount;
-    const nextType = input.type ?? (nextAmount >= 0 ? "income" : "expense");
+    const nextType =
+      input.type ?? (existing.type === "transfer" ? "transfer" : nextAmount >= 0 ? "income" : "expense");
+    const nextCategoryId =
+      nextType === "transfer"
+        ? null
+        : input.categoryId !== undefined
+          ? input.categoryId
+          : existing.categoryId;
 
     db.prepare(
       `UPDATE transactions
@@ -328,7 +529,7 @@ export const transactionsRepo = {
        WHERE id = ? AND user_id = ?`
     ).run(
       input.accountId ?? existing.accountId,
-      input.categoryId !== undefined ? input.categoryId : existing.categoryId,
+      nextCategoryId,
       (input.date ?? existing.date).toISOString(),
       nextDescription,
       nextNormalizedDescription,
@@ -344,25 +545,116 @@ export const transactionsRepo = {
   },
 
   deleteByIdForUser(id: string, userId: string): number {
+    const existing = db
+      .prepare(
+        `SELECT id, type, transfer_peer_tx_id, transfer_group_id
+         FROM transactions
+         WHERE id = ? AND user_id = ?`
+      )
+      .get(id, userId) as
+      | {
+          id: string;
+          type: "income" | "expense" | "transfer";
+          transfer_peer_tx_id: string | null;
+          transfer_group_id: string | null;
+        }
+      | undefined;
+
+    if (!existing) {
+      return 0;
+    }
+
+    const idsToDelete = new Set<string>([existing.id]);
+    if (existing.type === "transfer") {
+      if (existing.transfer_peer_tx_id) {
+        idsToDelete.add(existing.transfer_peer_tx_id);
+      }
+
+      if (existing.transfer_group_id) {
+        const groupedRows = db
+          .prepare(
+            `SELECT id
+             FROM transactions
+             WHERE user_id = ? AND transfer_group_id = ?`
+          )
+          .all(userId, existing.transfer_group_id) as Array<{ id: string }>;
+
+        for (const row of groupedRows) {
+          idsToDelete.add(row.id);
+        }
+      }
+    }
+
+    const finalIds = [...idsToDelete];
+    const placeholders = finalIds.map(() => "?").join(",");
     const result = db
       .prepare(
         `DELETE FROM transactions
-         WHERE id = ? AND user_id = ?`
+         WHERE user_id = ? AND id IN (${placeholders})`
       )
-      .run(id, userId);
+      .run(userId, ...finalIds);
+
     return result.changes;
   },
 
   deleteManyByIdsForUser(ids: string[], userId: string): number {
     if (ids.length === 0) return 0;
 
-    const placeholders = ids.map(() => "?").join(",");
+    const selectedIds = [...new Set(ids)];
+    const selectedPlaceholders = selectedIds.map(() => "?").join(",");
+    const selectedRows = db
+      .prepare(
+        `SELECT id, type, transfer_peer_tx_id, transfer_group_id
+         FROM transactions
+         WHERE user_id = ? AND id IN (${selectedPlaceholders})`
+      )
+      .all(userId, ...selectedIds) as Array<{
+      id: string;
+      type: "income" | "expense" | "transfer";
+      transfer_peer_tx_id: string | null;
+      transfer_group_id: string | null;
+    }>;
+
+    if (selectedRows.length === 0) {
+      return 0;
+    }
+
+    const idsToDelete = new Set<string>(selectedRows.map((row) => row.id));
+    const transferGroupIds = new Set<string>();
+
+    for (const row of selectedRows) {
+      if (row.type !== "transfer") continue;
+      if (row.transfer_peer_tx_id) {
+        idsToDelete.add(row.transfer_peer_tx_id);
+      }
+      if (row.transfer_group_id) {
+        transferGroupIds.add(row.transfer_group_id);
+      }
+    }
+
+    if (transferGroupIds.size > 0) {
+      const groupPlaceholders = [...transferGroupIds].map(() => "?").join(",");
+      const groupedRows = db
+        .prepare(
+          `SELECT id
+           FROM transactions
+           WHERE user_id = ? AND transfer_group_id IN (${groupPlaceholders})`
+        )
+        .all(userId, ...transferGroupIds) as Array<{ id: string }>;
+
+      for (const row of groupedRows) {
+        idsToDelete.add(row.id);
+      }
+    }
+
+    const finalIds = [...idsToDelete];
+    const placeholders = finalIds.map(() => "?").join(",");
     const result = db
       .prepare(
         `DELETE FROM transactions
          WHERE user_id = ? AND id IN (${placeholders})`
       )
-      .run(userId, ...ids);
+      .run(userId, ...finalIds);
 
     return result.changes;
   },
@@ -373,6 +665,7 @@ export const transactionsRepo = {
         `SELECT id, description, normalized_description, amount_cents, account_id, category_id
          FROM transactions
          WHERE user_id = ?
+           AND type IN ('income', 'expense')
            ${onlyUncategorized ? "AND category_id IS NULL" : ""}
          ORDER BY posted_at DESC, created_at DESC`
       )
@@ -444,7 +737,7 @@ export const transactionsRepo = {
     const rows = db
       .prepare(
         `SELECT id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-                amount_cents, currency, type, status, account, bank, external_id, imported_hash, raw_json, created_at, updated_at
+                amount_cents, currency, type, status, account, bank, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
          FROM transactions
          WHERE user_id = ? AND posted_at >= ? AND posted_at <= ?
          ORDER BY posted_at ASC`
@@ -478,6 +771,25 @@ export const transactionsRepo = {
          FROM transactions
          WHERE user_id = ?
          ORDER BY posted_at DESC
+         LIMIT 1`
+      )
+      .get(userId) as { posted_at: string } | undefined;
+
+    if (!row?.posted_at) {
+      return null;
+    }
+
+    const parsed = new Date(row.posted_at);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  },
+
+  oldestPostedAt(userId: string): Date | null {
+    const row = db
+      .prepare(
+        `SELECT posted_at
+         FROM transactions
+         WHERE user_id = ?
+         ORDER BY posted_at ASC
          LIMIT 1`
       )
       .get(userId) as { posted_at: string } | undefined;

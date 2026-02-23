@@ -11,10 +11,12 @@ type ConnectAccountDraft = {
   type: AccountDTO["type"];
   institution: string;
   currency: string;
+  parentAccountId: string;
 };
 
 type ConnectAccountModalProps = {
   open: boolean;
+  accounts: AccountDTO[];
   busy?: boolean;
   errorMessage?: string;
   onClose: () => void;
@@ -25,11 +27,13 @@ const initialDraft: ConnectAccountDraft = {
   name: "",
   type: "checking",
   institution: "",
-  currency: "BRL"
+  currency: "BRL",
+  parentAccountId: ""
 };
 
 export function ConnectAccountModal({
   open,
+  accounts,
   busy = false,
   errorMessage = "",
   onClose,
@@ -38,6 +42,20 @@ export function ConnectAccountModal({
   const [draft, setDraft] = React.useState<ConnectAccountDraft>(initialDraft);
   const nameInputRef = React.useRef<HTMLInputElement | null>(null);
   const previousFocusRef = React.useRef<HTMLElement | null>(null);
+  const parentAccounts = React.useMemo(
+    () => accounts.filter((account) => account.type !== "credit"),
+    [accounts]
+  );
+
+  React.useEffect(() => {
+    if (draft.type === "credit") {
+      return;
+    }
+
+    if (draft.parentAccountId) {
+      setDraft((previous) => ({ ...previous, parentAccountId: "" }));
+    }
+  }, [draft.parentAccountId, draft.type]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -101,7 +119,8 @@ export function ConnectAccountModal({
               ...draft,
               name: draft.name.trim(),
               institution: draft.institution.trim(),
-              currency: draft.currency.trim().toUpperCase() || "BRL"
+              currency: draft.currency.trim().toUpperCase() || "BRL",
+              parentAccountId: draft.type === "credit" ? draft.parentAccountId : ""
             });
           }}
         >
@@ -165,6 +184,30 @@ export function ConnectAccountModal({
               disabled={busy}
             />
           </div>
+
+          {draft.type === "credit" ? (
+            <div className="sm:col-span-2">
+              <label
+                htmlFor="connect-account-parent"
+                className="mb-1 block text-sm font-medium text-muted-foreground"
+              >
+                Conta mae (opcional)
+              </label>
+              <Select
+                id="connect-account-parent"
+                value={draft.parentAccountId}
+                onChange={(event) => setDraft((prev) => ({ ...prev, parentAccountId: event.target.value }))}
+                disabled={busy}
+              >
+                <option value="">Sem conta mae</option>
+                {parentAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : null}
 
           {errorMessage ? (
             <p className="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">

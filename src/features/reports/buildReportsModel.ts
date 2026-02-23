@@ -1,4 +1,6 @@
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
+import { dateKeyToNoonDate, isDateInRangeByKey, toDateKey } from "@/lib/finance/date-keys";
+import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import { getCategoryColor } from "@/src/features/categories/categoryColors";
 import type {
   ReportPreparedTransaction,
@@ -24,7 +26,7 @@ type BuildReportsModelInput = {
 type CategoryAccumulator = {
   categoryId: string | null;
   name: string;
-  value: number;
+  valueCents: number;
   color: string;
   icon: string | null;
 };
@@ -32,16 +34,12 @@ type CategoryAccumulator = {
 type MerchantAccumulator = {
   merchantKey: string;
   merchantLabel: string;
-  total: number;
+  totalCents: number;
   count: number;
 };
 
 function round2(value: number): number {
   return Number(value.toFixed(2));
-}
-
-function inRange(timestamp: number, start: Date, end: Date): boolean {
-  return timestamp >= start.getTime() && timestamp <= end.getTime();
 }
 
 function resolveCategoryData(
@@ -84,16 +82,21 @@ function toMerchantLabel(description: string, merchantKey: string): string {
     .join(" ");
 }
 
-function createEmptyTotals(): ReportsTotals {
-  return { income: 0, expense: 0, net: 0 };
+type ReportsTotalsCents = {
+  incomeCents: number;
+  expenseCents: number;
+};
+
+function createEmptyTotals(): ReportsTotalsCents {
+  return { incomeCents: 0, expenseCents: 0 };
 }
 
-function finalizeTotals(totals: ReportsTotals): ReportsTotals {
-  const income = round2(totals.income);
-  const expense = round2(totals.expense);
+function finalizeTotals(totals: ReportsTotalsCents): ReportsTotals {
+  const income = fromAmountCents(totals.incomeCents);
+  const expense = fromAmountCents(totals.expenseCents);
   return {
-    income,
-    expense,
+    income: round2(income),
+    expense: round2(expense),
     net: round2(income - expense)
   };
 }
@@ -112,12 +115,15 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
     if (input.accountId && transaction.accountId !== input.accountId) continue;
     if (input.categoryId && (transaction.categoryId ?? "") !== input.categoryId) continue;
 
-    const date = new Date(transaction.date);
+    const dateKey = toDateKey(transaction.date);
+    if (!dateKey) continue;
+    const date = dateKeyToNoonDate(dateKey);
+    if (!date) continue;
     const timestamp = date.getTime();
-    if (!Number.isFinite(timestamp)) continue;
 
-    const absAmount = round2(Math.abs(transaction.amount));
-    if (!Number.isFinite(absAmount) || absAmount <= 0) continue;
+    const absCents = absAmountCents(transaction.amount);
+    if (absCents <= 0) continue;
+    const absAmount = fromAmountCents(absCents);
 
     const category = resolveCategoryData(transaction, categoriesById);
     const merchantKey = extractMerchantKey(transaction);
@@ -142,35 +148,35 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
     };
     prepared.push(preparedTx);
 
-    const inCurrent = inRange(timestamp, input.period.current.start, input.period.current.end);
-    const inPrevious = inRange(timestamp, input.period.previous.start, input.period.previous.end);
+    const inCurrent = isDateInRangeByKey(dateKey, input.period.current.start, input.period.current.end);
+    const inPrevious = isDateInRangeByKey(dateKey, input.period.previous.start, input.period.previous.end);
 
     if (inCurrent) {
       currentPeriodTransactions.push(preparedTx);
 
       if (preparedTx.type === "income") {
-        currentTotals.income = round2(currentTotals.income + absAmount);
-      } else {
-        currentTotals.expense = round2(currentTotals.expense + absAmount);
+        currentTotals.incomeCents += absCents;
+      } else if (preparedTx.type === "expense") {
+        currentTotals.expenseCents += absCents;
 
         const categoryKey = preparedTx.categoryId ?? "__uncategorized";
         const categoryCurrent = categoryById.get(categoryKey) ?? {
           categoryId: preparedTx.categoryId,
           name: preparedTx.categoryName,
-          value: 0,
+          valueCents: 0,
           color: preparedTx.categoryColor,
           icon: preparedTx.categoryIcon
         };
-        categoryCurrent.value = round2(categoryCurrent.value + absAmount);
+        categoryCurrent.valueCents += absCents;
         categoryById.set(categoryKey, categoryCurrent);
 
         const merchantCurrent = merchantByKey.get(merchantKey) ?? {
           merchantKey,
           merchantLabel: toMerchantLabel(preparedTx.description, merchantKey),
-          total: 0,
+          totalCents: 0,
           count: 0
         };
-        merchantCurrent.total = round2(merchantCurrent.total + absAmount);
+        merchantCurrent.totalCents += absCents;
         merchantCurrent.count += 1;
         merchantByKey.set(merchantKey, merchantCurrent);
       }
@@ -178,9 +184,9 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
 
     if (inPrevious) {
       if (preparedTx.type === "income") {
-        previousTotals.income = round2(previousTotals.income + absAmount);
-      } else {
-        previousTotals.expense = round2(previousTotals.expense + absAmount);
+        previousTotals.incomeCents += absCents;
+      } else if (preparedTx.type === "expense") {
+        previousTotals.expenseCents += absCents;
       }
     }
   }
@@ -190,23 +196,23 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
   const expenseTotal = Math.max(0, finalizedCurrentTotals.expense);
 
   const categorySpending: ReportsCategorySpend[] = [...categoryById.values()]
-    .sort((left, right) => right.value - left.value)
+    .sort((left, right) => right.valueCents - left.valueCents)
     .map((item) => ({
       categoryId: item.categoryId,
       name: item.name,
-      value: round2(item.value),
-      share: expenseTotal > 0 ? round2((item.value / expenseTotal) * 100) : 0,
+      value: round2(fromAmountCents(item.valueCents)),
+      share: expenseTotal > 0 ? round2((fromAmountCents(item.valueCents) / expenseTotal) * 100) : 0,
       color: item.color,
       icon: item.icon
     }));
 
   const topMerchants: ReportsMerchantSpend[] = [...merchantByKey.values()]
-    .sort((left, right) => right.total - left.total)
+    .sort((left, right) => right.totalCents - left.totalCents)
     .slice(0, 10)
     .map((item) => ({
       merchantKey: item.merchantKey,
       merchantLabel: item.merchantLabel,
-      total: round2(item.total),
+      total: round2(fromAmountCents(item.totalCents)),
       count: item.count
     }));
 

@@ -1,4 +1,11 @@
+import { dateKeyToNoonDate, toDateKey } from "../lib/finance/date-keys";
+import { db } from "../lib/db";
+import { fromAmountCents, totalsFromGroupedTypes } from "../lib/finance/official-metrics";
+import { normalizeDescription } from "../lib/normalize";
+import { accountsRepo } from "../lib/server/accounts.repo";
 import { categoriesRepo } from "../lib/server/categories.repo";
+import { dashboardRepo } from "../lib/server/dashboard.repo";
+import { transactionsRepo } from "../lib/server/transactions.repo";
 import { createTransactionForUser, listTransactionsForUser } from "../lib/server/transactions.service";
 import type { TransactionDTO } from "../lib/types";
 import { buildReportsModel } from "../src/features/reports/buildReportsModel";
@@ -22,7 +29,20 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
+function tableColumns(table: string): string[] {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return rows.map((row) => row.name);
+}
+
+function tableIndexes(table: string): string[] {
+  const rows = db.prepare(`PRAGMA index_list(${table})`).all() as Array<{ name: string }>;
+  return rows.map((row) => row.name);
+}
+
 function toDate(value: string | Date): Date {
+  const dateKey = toDateKey(value);
+  const normalized = dateKey ? dateKeyToNoonDate(dateKey) : null;
+  if (normalized) return normalized;
   return value instanceof Date ? value : new Date(value);
 }
 
@@ -56,20 +76,14 @@ function normalizeTransactionsForReports(items: TransactionItem[]): TransactionD
 }
 
 function sumByType(items: TransactionItem[]): { income: number; expense: number; net: number } {
-  let income = 0;
-  let expense = 0;
-
-  for (const item of items) {
-    const amount = Math.abs(item.amount);
-    if (!Number.isFinite(amount)) continue;
-    if (item.type === "income") {
-      income = round2(income + amount);
-    } else {
-      expense = round2(expense + amount);
-    }
-  }
-
-  return { income, expense, net: round2(income - expense) };
+  const totals = totalsFromGroupedTypes(
+    items.map((item) => ({ type: item.type, amount: item.amount }))
+  );
+  return {
+    income: totals.income,
+    expense: totals.expense,
+    net: totals.net
+  };
 }
 
 async function run(): Promise<void> {
@@ -78,6 +92,35 @@ async function run(): Promise<void> {
   console.log(
     `[validate] seeded transactions=${seeded.createdCount}, income=${seeded.totals.income}, expense=${seeded.totals.expense}, net=${seeded.totals.net}`
   );
+
+  const accountColumns = tableColumns("accounts");
+  assert(accountColumns.includes("parent_account_id"), "Schema sem coluna accounts.parent_account_id.");
+  const transactionColumns = tableColumns("transactions");
+  assert(transactionColumns.includes("transfer_group_id"), "Schema sem coluna transactions.transfer_group_id.");
+  assert(transactionColumns.includes("transfer_peer_tx_id"), "Schema sem coluna transactions.transfer_peer_tx_id.");
+  const importEventsColumns = tableColumns("import_events");
+  assert(importEventsColumns.includes("source_type"), "Schema sem coluna import_events.source_type.");
+  const snapshotColumns = tableColumns("official_metric_snapshots");
+  assert(snapshotColumns.includes("metric_key"), "Schema sem coluna official_metric_snapshots.metric_key.");
+
+  const accountIndexes = tableIndexes("accounts");
+  assert(accountIndexes.includes("idx_accounts_user_parent"), "Indice idx_accounts_user_parent ausente.");
+  const transactionIndexes = tableIndexes("transactions");
+  assert(
+    transactionIndexes.includes("idx_transactions_user_transfer_group"),
+    "Indice idx_transactions_user_transfer_group ausente."
+  );
+  assert(
+    transactionIndexes.includes("idx_transactions_account_transfer_group"),
+    "Indice idx_transactions_account_transfer_group ausente."
+  );
+  const snapshotIndexes = tableIndexes("official_metric_snapshots");
+  assert(
+    snapshotIndexes.includes("idx_metric_snapshots_user_metric_period"),
+    "Indice idx_metric_snapshots_user_metric_period ausente."
+  );
+  const importEventsIndexes = tableIndexes("import_events");
+  assert(importEventsIndexes.includes("idx_import_events_user_created"), "Indice idx_import_events_user_created ausente.");
 
   const allBefore = listTransactionsForUser(seeded.userId, {
     period: "all",
@@ -114,13 +157,74 @@ async function run(): Promise<void> {
     includeMeta: true
   });
 
+  const summaryBeforeTransfer = { ...allAfter.summary };
+
   assert(
     allAfter.pagination.totalCount === seeded.createdCount + 1,
     "Total de transações após create não corresponde ao esperado."
   );
 
+  const createdTransfer = transactionsRepo.createTransferPair({
+    userId: seeded.userId,
+    fromAccountId: seeded.accounts.checkingId,
+    toAccountId: seeded.accounts.creditId,
+    date: new Date("2026-02-22T12:00:00.000Z"),
+    description: "Pagamento fatura cartao QA",
+    normalizedDescription: normalizeDescription("Pagamento fatura cartao QA"),
+    amount: 250,
+    status: "posted"
+  });
+
+  assert(createdTransfer.created, "Falha ao criar transferencia de validacao.");
+
+  const allAfterTransfer = listTransactionsForUser(seeded.userId, {
+    period: "all",
+    page: 1,
+    pageSize: 300,
+    includeMeta: true
+  });
+
+  assert(
+    allAfterTransfer.pagination.totalCount === seeded.createdCount + 3,
+    "Total de transações após transferencia não corresponde ao esperado."
+  );
+  assert(
+    approxEqual(allAfterTransfer.summary.income, summaryBeforeTransfer.income),
+    "Transferencia alterou indevidamente o total de receitas."
+  );
+  assert(
+    approxEqual(allAfterTransfer.summary.expense, summaryBeforeTransfer.expense),
+    "Transferencia alterou indevidamente o total de despesas."
+  );
+  assert(
+    approxEqual(allAfterTransfer.summary.balance, summaryBeforeTransfer.balance),
+    "Transferencia alterou indevidamente o saldo (income-expense)."
+  );
+
+  const transferRows = allAfterTransfer.items.filter((item) => item.type === "transfer");
+  assert(transferRows.length === 2, "Esperado exatamente 2 pernas de transferencia.");
+  assert(transferRows.every((item) => item.categoryId === null), "Transferencia nao deve possuir categoria.");
+
+  const transferOut = transferRows.find((item) => item.accountId === seeded.accounts.checkingId && item.amount < 0);
+  const transferIn = transferRows.find((item) => item.accountId === seeded.accounts.creditId && item.amount > 0);
+  assert(Boolean(transferOut), "Perna de saida da transferencia nao encontrada.");
+  assert(Boolean(transferIn), "Perna de entrada da transferencia nao encontrada.");
+
+  const accountBalances = accountsRepo.listByUserWithBalance(seeded.userId);
+  const manualBalanceByAccount = new Map<string, number>();
+  for (const item of allAfterTransfer.items) {
+    manualBalanceByAccount.set(item.accountId, round2((manualBalanceByAccount.get(item.accountId) ?? 0) + item.amount));
+  }
+  for (const account of accountBalances) {
+    const expectedBalance = manualBalanceByAccount.get(account.id) ?? 0;
+    assert(
+      approxEqual(account.currentBalance ?? 0, expectedBalance),
+      `Saldo da conta ${account.name} divergente. esperado=${expectedBalance} atual=${account.currentBalance ?? 0}`
+    );
+  }
+
   const now = new Date("2026-02-21T12:00:00.000Z");
-  const earliestDate = allAfter.items.reduce<Date | undefined>((earliest, item) => {
+  const earliestDate = allAfterTransfer.items.reduce<Date | undefined>((earliest, item) => {
     const parsed = toDate(item.date);
     if (!Number.isFinite(parsed.getTime())) return earliest;
     if (!earliest) return parsed;
@@ -130,12 +234,12 @@ async function run(): Promise<void> {
   const period = buildPeriodComparison("3M", { now, earliestDate });
   const categories = categoriesRepo.listByUser(seeded.userId);
   const model = buildReportsModel({
-    transactions: normalizeTransactionsForReports(allAfter.items),
+    transactions: normalizeTransactionsForReports(allAfterTransfer.items),
     categories,
     period
   });
 
-  const currentItems = allAfter.items.filter((item) => {
+  const currentItems = allAfterTransfer.items.filter((item) => {
     const ts = toDate(item.date).getTime();
     return ts >= period.current.start.getTime() && ts <= period.current.end.getTime();
   });
@@ -144,6 +248,43 @@ async function run(): Promise<void> {
   assert(approxEqual(model.currentTotals.income, manualCurrent.income), "Receita atual no model diverge do cálculo manual.");
   assert(approxEqual(model.currentTotals.expense, manualCurrent.expense), "Despesa atual no model diverge do cálculo manual.");
   assert(approxEqual(model.currentTotals.net, manualCurrent.net), "Saldo atual no model diverge do cálculo manual.");
+  const currentCategorySum = round2(model.categorySpending.reduce((sum, item) => sum + item.value, 0));
+  assert(
+    approxEqual(currentCategorySum, model.currentTotals.expense),
+    `Soma de categorias diverge do total de despesas. categorias=${currentCategorySum} total=${model.currentTotals.expense}`
+  );
+  assert(
+    approxEqual(model.sankey.totalIncome, model.currentTotals.income),
+    `Sankey (receitas) diverge do total do período. sankey=${model.sankey.totalIncome} total=${model.currentTotals.income}`
+  );
+  assert(
+    approxEqual(model.sankey.totalExpense, model.currentTotals.expense),
+    `Sankey (despesas) diverge do total do período. sankey=${model.sankey.totalExpense} total=${model.currentTotals.expense}`
+  );
+  const timeSeriesIncomeSum = round2(model.timeSeries.reduce((sum, item) => sum + item.income, 0));
+  const timeSeriesExpenseSum = round2(model.timeSeries.reduce((sum, item) => sum + item.expense, 0));
+  assert(
+    approxEqual(timeSeriesIncomeSum, model.currentTotals.income),
+    `Serie temporal (receitas) diverge do total do período. serie=${timeSeriesIncomeSum} total=${model.currentTotals.income}`
+  );
+  assert(
+    approxEqual(timeSeriesExpenseSum, model.currentTotals.expense),
+    `Serie temporal (despesas) diverge do total do período. serie=${timeSeriesExpenseSum} total=${model.currentTotals.expense}`
+  );
+
+  const dashboardSummary = dashboardRepo.summaryByRange(seeded.userId, period.current.start, period.current.end);
+  assert(
+    approxEqual(fromAmountCents(dashboardSummary.totals.income), model.currentTotals.income),
+    "Dashboard summary income diverge do total oficial de relatórios."
+  );
+  assert(
+    approxEqual(fromAmountCents(dashboardSummary.totals.expenses), model.currentTotals.expense),
+    "Dashboard summary expense diverge do total oficial de relatórios."
+  );
+  assert(
+    approxEqual(fromAmountCents(dashboardSummary.totals.net), model.currentTotals.net),
+    "Dashboard summary net diverge do total oficial de relatórios."
+  );
   assert(model.timeSeries.length > 0, "Série temporal de relatórios vazia.");
   assert(model.categorySpending.length > 0, "Agregação de categorias vazia.");
   assert(model.topMerchants.length > 0, "Agregação de estabelecimentos vazia.");
@@ -155,7 +296,9 @@ async function run(): Promise<void> {
 
   console.log("[validate] transactions.list + summary: OK");
   console.log("[validate] transactions.create: OK");
+  console.log("[validate] transfer pair + account balances reconciliation: OK");
   console.log("[validate] reports aggregates + sankey + recurring: OK");
+  console.log("[validate] consistency checks (categorias/serie/sankey/dashboard): OK");
   console.log(
     `[validate] current period totals => income=${model.currentTotals.income} expense=${model.currentTotals.expense} net=${model.currentTotals.net}`
   );

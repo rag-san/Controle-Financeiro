@@ -1,5 +1,6 @@
 import { addDays, endOfMonth, startOfMonth } from "date-fns";
 import { z } from "zod";
+import { totalsFromGroupedTypes } from "@/lib/finance/official-metrics";
 import { isValidFlexibleDate, normalizeDescription, normalizeTransaction, parseFlexibleDate } from "@/lib/normalize";
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import { categoriesRepo } from "@/lib/server/categories.repo";
@@ -28,7 +29,7 @@ export const transactionsQuerySchema = z.object({
   to: z.string().optional(),
   accountId: z.string().min(6).max(128).optional(),
   categoryId: z.string().min(6).max(128).optional(),
-  type: z.enum(["income", "expense"]).optional(),
+  type: z.enum(["income", "expense", "transfer"]).optional(),
   q: z.string().optional(),
   includeMeta: z.coerce.boolean().optional().default(false),
   page: z.coerce.number().int().min(1).default(1),
@@ -116,18 +117,16 @@ export function listTransactionsForUser(userId: string, params: TransactionsQuer
   const items = transactionsRepo.listPaged(filter, { page, pageSize });
   const totalCount = transactionsRepo.count(filter);
   const totalsByType = transactionsRepo.sumByType(filter);
-
-  const income = totalsByType.find((item) => item.type === "income")?.amount ?? 0;
-  const expenseRaw = totalsByType.find((item) => item.type === "expense")?.amount ?? 0;
+  const totals = totalsFromGroupedTypes(totalsByType);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return {
     items,
     summary: {
-      income,
-      expense: Math.abs(expenseRaw),
-      balance: income + expenseRaw
+      income: totals.income,
+      expense: totals.expense,
+      balance: totals.net
     },
     pagination: {
       page,

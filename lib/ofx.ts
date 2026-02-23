@@ -6,7 +6,7 @@ export type OfxParsedTransaction = {
   description: string;
   normalizedDescription: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   externalId?: string;
   raw: Record<string, string>;
 };
