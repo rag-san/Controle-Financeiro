@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { X } from "lucide-react";
+import { AlertTriangle, Lightbulb, Repeat2, X } from "lucide-react";
 import { IconButton } from "@/src/components/ui/IconButton";
 import type { Insight } from "@/src/features/insights/types";
 
@@ -8,10 +8,24 @@ type InsightNotificationItemProps = {
   onDismiss: (id: string) => void;
 };
 
-function resolveIcon(insight: Insight): string {
-  if (insight.id.includes("subscription")) return "🔁";
-  if (insight.severity === "warning") return "⚠️";
-  return "💡";
+function resolveIcon(insight: Insight): React.JSX.Element {
+  if (insight.id.includes("subscription")) {
+    return <Repeat2 className="h-4 w-4" aria-hidden="true" />;
+  }
+
+  if (insight.severity === "warning") {
+    return <AlertTriangle className="h-4 w-4" aria-hidden="true" />;
+  }
+
+  return <Lightbulb className="h-4 w-4" aria-hidden="true" />;
+}
+
+function resolveIconClass(severity: Insight["severity"]): string {
+  if (severity === "warning") {
+    return "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300";
+  }
+
+  return "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
 }
 
 function resolveContainerClass(severity: Insight["severity"]): string {
@@ -29,7 +43,10 @@ export function InsightNotificationItem({
   return (
     <li className={`rounded-xl border p-3 ${resolveContainerClass(insight.severity)}`}>
       <div className="flex items-start gap-3">
-        <span className="text-base leading-none" aria-hidden="true">
+        <span
+          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${resolveIconClass(insight.severity)}`}
+          aria-hidden="true"
+        >
           {resolveIcon(insight)}
         </span>
 
@@ -52,7 +69,7 @@ export function InsightNotificationItem({
 
           <IconButton
             size="sm"
-            aria-label={`Dismiss insight: ${insight.title}`}
+            aria-label={`Dispensar insight: ${insight.title}`}
             icon={<X className="h-4 w-4" />}
             onClick={() => onDismiss(insight.id)}
           />

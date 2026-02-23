@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AlertTriangle, Lightbulb, Repeat2 } from "lucide-react";
 import type { Insight } from "@/src/features/insights/types";
 
 export type NotificationItemProps = {
@@ -7,10 +8,24 @@ export type NotificationItemProps = {
   onSnooze: (days: 1 | 7) => void;
 };
 
-function resolveIcon(insight: Insight): string {
-  if (insight.id.includes("subscription")) return "🔁";
-  if (insight.severity === "warning") return "⚠️";
-  return "💡";
+function resolveIcon(insight: Insight): React.JSX.Element {
+  if (insight.id.includes("subscription")) {
+    return <Repeat2 className="h-4 w-4" aria-hidden="true" />;
+  }
+
+  if (insight.severity === "warning") {
+    return <AlertTriangle className="h-4 w-4" aria-hidden="true" />;
+  }
+
+  return <Lightbulb className="h-4 w-4" aria-hidden="true" />;
+}
+
+function resolveIconClass(severity: Insight["severity"]): string {
+  if (severity === "warning") {
+    return "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300";
+  }
+
+  return "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
 }
 
 function resolveContainerClass(severity: Insight["severity"]): string {
@@ -29,7 +44,10 @@ export function NotificationItem({
   return (
     <li className={`rounded-xl border p-3 ${resolveContainerClass(insight.severity)}`}>
       <div className="flex items-start gap-3">
-        <span className="text-base leading-none" aria-hidden="true">
+        <span
+          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${resolveIconClass(insight.severity)}`}
+          aria-hidden="true"
+        >
           {resolveIcon(insight)}
         </span>
 
@@ -53,27 +71,27 @@ export function NotificationItem({
               type="button"
               onClick={() => onSnooze(1)}
               className="rounded-md px-1.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              aria-label="Snooze for 1 day"
+              aria-label="Adiar notificacao por 1 dia"
             >
-              1d
+              Adiar 1d
             </button>
 
             <button
               type="button"
               onClick={() => onSnooze(7)}
               className="rounded-md px-1.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              aria-label="Snooze for 7 days"
+              aria-label="Adiar notificacao por 7 dias"
             >
-              7d
+              Adiar 7d
             </button>
 
             <button
               type="button"
               onClick={onDismiss}
               className="rounded-md px-1.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              aria-label="Dismiss notification"
+              aria-label="Dispensar notificacao"
             >
-              Dismiss
+              Dispensar
             </button>
           </div>
         </div>

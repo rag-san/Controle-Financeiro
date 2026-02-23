@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { X } from "lucide-react";
 import type { AccountDTO } from "@/lib/types";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
@@ -31,6 +32,13 @@ const initialDraft: ConnectAccountDraft = {
   parentAccountId: ""
 };
 
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selectors =
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const elements = container.querySelectorAll<HTMLElement>(selectors);
+  return [...elements].filter((element) => !element.hasAttribute("aria-hidden"));
+}
+
 export function ConnectAccountModal({
   open,
   accounts,
@@ -42,10 +50,14 @@ export function ConnectAccountModal({
   const [draft, setDraft] = React.useState<ConnectAccountDraft>(initialDraft);
   const nameInputRef = React.useRef<HTMLInputElement | null>(null);
   const previousFocusRef = React.useRef<HTMLElement | null>(null);
+  const dialogRef = React.useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = React.useRef<HTMLButtonElement | null>(null);
   const parentAccounts = React.useMemo(
     () => accounts.filter((account) => account.type !== "credit"),
     [accounts]
   );
+  const canSubmit = draft.name.trim().length >= 2;
+  const descriptionId = "connect-account-modal-description";
 
   React.useEffect(() => {
     if (draft.type === "credit") {
@@ -69,9 +81,39 @@ export function ConnectAccountModal({
     }, 0);
 
     const handleEscape = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onClose();
+      if (!dialogRef.current) return;
+
+      if (event.key === "Escape") {
+        if (busy) return;
+        event.preventDefault();
+        onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const focusableElements = getFocusableElements(dialogRef.current);
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey) {
+        if (active === first || !dialogRef.current.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+
+      if (active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     window.addEventListener("keydown", handleEscape);
@@ -80,7 +122,7 @@ export function ConnectAccountModal({
       window.clearTimeout(timeoutId);
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [onClose, open]);
+  }, [busy, onClose, open]);
 
   React.useEffect(() => {
     if (open) return;
@@ -103,26 +145,48 @@ export function ConnectAccountModal({
     return null;
   }
 
+  const handleClose = (): void => {
+    if (busy) return;
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4" role="presentation">
       <button
         type="button"
         className="absolute inset-0 bg-black/40"
-        onClick={onClose}
+        onClick={handleClose}
         aria-label="Fechar modal de conta"
       />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="connect-account-modal-title"
+        aria-describedby={descriptionId}
         className="relative z-[101] flex h-[100dvh] w-full flex-col overflow-hidden border border-border bg-card shadow-xl sm:h-auto sm:max-w-lg sm:rounded-2xl"
       >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:rounded-t-2xl sm:px-6">
+          <h2 id="connect-account-modal-title" className="text-lg font-semibold text-foreground">
+            Conectar conta
+          </h2>
+          <Button
+            ref={closeButtonRef}
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleClose}
+            disabled={busy}
+            aria-label="Fechar modal de conta"
+            className="h-8 w-8 rounded-lg"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="space-y-1">
-            <h2 id="connect-account-modal-title" className="text-lg font-semibold text-foreground">
-              Conectar conta
-            </h2>
-            <p className="text-sm text-muted-foreground">
+            <p id={descriptionId} className="text-sm text-muted-foreground">
               Adicione uma conta manualmente enquanto a integração bancária automática não está ativa.
             </p>
             <p className="text-xs text-muted-foreground">Integracao automatica via Open Banking em evolucao.</p>
@@ -235,14 +299,17 @@ export function ConnectAccountModal({
             ) : null}
 
             <div className="sm:col-span-2 sticky bottom-0 mt-1 -mx-4 flex items-center justify-end gap-2 border-t border-border bg-card px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
-              <Button type="button" size="sm" variant="outline" onClick={onClose} disabled={busy}>
+              {!canSubmit ? (
+                <p className="mr-auto text-xs text-muted-foreground">Informe ao menos o nome da conta.</p>
+              ) : null}
+              <Button type="button" size="sm" variant="outline" onClick={handleClose} disabled={busy}>
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 size="sm"
                 isLoading={busy}
-                disabled={busy || draft.name.trim().length < 2}
+                disabled={busy || !canSubmit}
               >
                 Salvar conta
               </Button>

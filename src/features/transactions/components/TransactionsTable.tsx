@@ -110,8 +110,9 @@ export function TransactionsTable({
   onEdit,
   onClearFilters
 }: TransactionsTableProps): React.JSX.Element {
-  const allSelected = items.length > 0 && items.every((item) => selectedIds.includes(item.id));
-  const someSelected = !allSelected && items.some((item) => selectedIds.includes(item.id));
+  const selectedIdsSet = new Set(selectedIds);
+  const allSelected = items.length > 0 && items.every((item) => selectedIdsSet.has(item.id));
+  const someSelected = !allSelected && items.some((item) => selectedIdsSet.has(item.id));
 
   return (
     <section className="rounded-2xl border border-border/80 bg-card shadow-[0_4px_14px_rgba(15,23,42,0.04)]" aria-label="Tabela de transacoes">
@@ -121,85 +122,86 @@ export function TransactionsTable({
         </p>
       </div>
 
-      <div className="overflow-x-auto">
-        <Table className="min-w-[860px]">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-11 pr-2">
-                <Checkbox
-                  checked={allSelected}
-                  indeterminate={someSelected}
-                  onChange={(event) => onToggleSelectAll(Boolean(event.target.checked))}
-                  aria-label={allSelected ? "Desmarcar todas as transacoes filtradas" : "Selecionar todas as transacoes filtradas"}
-                />
-              </TableHead>
-              <TableHead>Descricao</TableHead>
-              <TableHead>Categoria</TableHead>
-              <TableHead>Conta</TableHead>
-              <TableHead>
+      <Table
+        className="min-w-[860px]"
+        containerClassName="max-h-[70vh] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700"
+      >
+        <TableHeader className="sticky top-0 z-10 bg-card/95 backdrop-blur">
+          <TableRow>
+            <TableHead className="w-11 pr-2">
+              <Checkbox
+                checked={allSelected}
+                indeterminate={someSelected}
+                onChange={(event) => onToggleSelectAll(Boolean(event.target.checked))}
+                aria-label={allSelected ? "Desmarcar todas as transacoes filtradas" : "Selecionar todas as transacoes filtradas"}
+              />
+            </TableHead>
+            <TableHead>Descricao</TableHead>
+            <TableHead>Categoria</TableHead>
+            <TableHead>Conta</TableHead>
+            <TableHead>
+              <SortButton
+                label="Data"
+                field="date"
+                sortField={sortField}
+                sortDirection={sortDirection}
+                onToggleSort={onToggleSort}
+              />
+            </TableHead>
+            <TableHead className="text-right">
+              <div className="flex justify-end">
                 <SortButton
-                  label="Data"
-                  field="date"
+                  label="Valor"
+                  field="amount"
                   sortField={sortField}
                   sortDirection={sortDirection}
                   onToggleSort={onToggleSort}
                 />
-              </TableHead>
-              <TableHead className="text-right">
-                <div className="flex justify-end">
-                  <SortButton
-                    label="Valor"
-                    field="amount"
-                    sortField={sortField}
-                    sortDirection={sortDirection}
-                    onToggleSort={onToggleSort}
-                  />
-                </div>
-              </TableHead>
-              <TableHead className="text-right">Acao</TableHead>
+              </div>
+            </TableHead>
+            <TableHead className="text-right">Acao</TableHead>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {loading ? <LoadingRows /> : null}
+
+          {!loading && items.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} className="py-12 text-center">
+                <p className="text-sm text-muted-foreground">Nenhuma transacao encontrada para os filtros atuais.</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-auto px-1 py-0 text-sm text-primary"
+                  onClick={onClearFilters}
+                >
+                  Limpar filtros
+                </Button>
+              </TableCell>
             </TableRow>
-          </TableHeader>
+          ) : null}
 
-          <TableBody>
-            {loading ? <LoadingRows /> : null}
-
-            {!loading && items.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center">
-                  <p className="text-sm text-muted-foreground">Nenhuma transacao encontrada para os filtros atuais.</p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="mt-2 h-auto px-1 py-0 text-sm text-primary"
-                    onClick={onClearFilters}
-                  >
-                    Limpar filtros
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ) : null}
-
-            {!loading
-              ? items.map((transaction) => (
-                  <TransactionRow
-                    key={transaction.id}
-                    transaction={transaction}
-                    categories={categories}
-                    checked={selectedIds.includes(transaction.id)}
-                    suggestion={suggestionsById.get(transaction.id)}
-                    applyingSuggestion={applyingSuggestionId === transaction.id}
-                    onToggleSelect={onToggleSelect}
-                    onCategoryChange={onCategoryChange}
-                    onApplySuggestion={onApplySuggestion}
-                    onDelete={onDelete}
-                    onEdit={onEdit}
-                  />
-                ))
-              : null}
-          </TableBody>
-        </Table>
-      </div>
+          {!loading
+            ? items.map((transaction) => (
+                <TransactionRow
+                  key={transaction.id}
+                  transaction={transaction}
+                  categories={categories}
+                  checked={selectedIdsSet.has(transaction.id)}
+                  suggestion={suggestionsById.get(transaction.id)}
+                  applyingSuggestion={applyingSuggestionId === transaction.id}
+                  onToggleSelect={onToggleSelect}
+                  onCategoryChange={onCategoryChange}
+                  onApplySuggestion={onApplySuggestion}
+                  onDelete={onDelete}
+                  onEdit={onEdit}
+                />
+              ))
+            : null}
+        </TableBody>
+      </Table>
     </section>
   );
 }
