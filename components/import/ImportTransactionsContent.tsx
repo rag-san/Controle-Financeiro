@@ -875,7 +875,7 @@ export const ImportTransactionsContent = forwardRef<
         {steps === "preview" && parseData ? (
           <>
             <div className="grid gap-3 md:grid-cols-2">
-              <FormField id="import-default-account" label="Conta padrao (fallback)" hint="Usada quando a linha importada nao indicar conta.">
+              <FormField id="import-default-account" label="Conta padrão (fallback)" hint="Usada quando a linha importada não indicar conta.">
                 {(fieldProps) => (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
@@ -892,7 +892,7 @@ export const ImportTransactionsContent = forwardRef<
                       </Button>
                     </div>
                     <Select {...fieldProps} value={defaultAccountId} onChange={(event) => setDefaultAccountId(event.target.value)}>
-                      <option value="">Sem conta padrao</option>
+                      <option value="">Sem conta padrão</option>
                       {mergedAccounts.map((account) => (
                         <option key={account.id} value={account.id}>
                           {account.name}
@@ -905,7 +905,7 @@ export const ImportTransactionsContent = forwardRef<
 
               <FeedbackMessage variant="info" className="space-y-1 p-4">
                 <p>Total detectado: {parseData.totalRows} linhas</p>
-                <p>Linhas validas: {validRowsCount}</p>
+                <p>Linhas válidas: {validRowsCount}</p>
                 <p>Linhas ignoradas: {ignoredRowsCount}</p>
                 <p>Linhas com erro: {errorRowsCount}</p>
                 <p>Tipo de origem: {parseData.sourceType.toUpperCase()}</p>
@@ -920,9 +920,9 @@ export const ImportTransactionsContent = forwardRef<
 
             {parseData.documentType === "credit_card_invoice" && defaultAccount?.type !== "credit" ? (
               <FeedbackMessage variant="warning" className="p-4">
-                Este arquivo foi detectado como fatura de cartao. Selecione uma conta do tipo cartao de credito para
-                manter os lancamentos separados da conta corrente. Se nao existir conta de cartao para a instituicao,
-                o sistema tentara criar automaticamente uma conta de cartao vinculada.
+                Este arquivo foi detectado como fatura de cartão. Selecione uma conta do tipo cartão de crédito para
+                manter os lançamentos separados da conta corrente. Se não existir conta de cartão para a instituição,
+                o sistema tentará criar automaticamente uma conta de cartão vinculada.
               </FeedbackMessage>
             ) : null}
 
@@ -936,10 +936,10 @@ export const ImportTransactionsContent = forwardRef<
                   />
                   <div>
                     <label htmlFor="convert-card-payment-transfer" className="font-medium">
-                      Converter pagamentos de fatura em transferencia para cartao
+                      Converter pagamentos de fatura em transferência para cartão
                     </label>
                     <p className="text-sm text-muted-foreground">
-                      Debito sai da conta corrente e entra na conta de cartao, sem virar despesa duplicada.
+                      Débito sai da conta corrente e entra na conta de cartão, sem virar despesa duplicada.
                     </p>
                   </div>
                 </div>
@@ -947,8 +947,8 @@ export const ImportTransactionsContent = forwardRef<
                 {convertCardPaymentsToTransfer ? (
                   <FormField
                     id="card-payment-target-account"
-                    label="Conta cartao destino (opcional)"
-                    hint="Se vazio, o sistema tenta inferir pelo vinculo de conta mae."
+                    label="Conta cartão destino (opcional)"
+                    hint="Se vazio, o sistema tenta inferir pelo vínculo de conta mãe."
                   >
                     {(fieldProps) => (
                       <Select
@@ -961,7 +961,7 @@ export const ImportTransactionsContent = forwardRef<
                           const parent = account.parentAccountId
                             ? nonCreditAccounts.find((item) => item.id === account.parentAccountId)
                             : null;
-                          const parentLabel = parent ? ` (Conta mae: ${parent.name})` : "";
+                          const parentLabel = parent ? ` (Conta mãe: ${parent.name})` : "";
                           return (
                             <option key={account.id} value={account.id}>
                               {account.name}
@@ -986,7 +986,7 @@ export const ImportTransactionsContent = forwardRef<
                   />
                   <div>
                     <label htmlFor="skip-card-payment-lines" className="font-medium">
-                      Ignorar linhas de pagamento na fatura do cartao
+                      Ignorar linhas de pagamento na fatura do cartão
                     </label>
                     <p className="text-sm text-muted-foreground">
                       Evita importar o credito de pagamento da fatura e duplicar com o extrato da conta corrente.
@@ -1000,8 +1000,8 @@ export const ImportTransactionsContent = forwardRef<
               <FeedbackMessage variant="warning" className="space-y-3 p-4" role="status">
                 <p className="font-medium">
                   {mergedAccounts.length === 0
-                    ? "Nenhuma conta encontrada. Crie uma conta rapida para continuar a importacao."
-                    : "Crie uma conta rapida sem sair do fluxo de importacao."}
+                    ? "Nenhuma conta encontrada. Crie uma conta rápida para continuar a importação."
+                    : "Crie uma conta rápida sem sair do fluxo de importação."}
                 </p>
                 <form
                   id="quick-account-form"
@@ -1037,7 +1037,7 @@ export const ImportTransactionsContent = forwardRef<
                       </Select>
                     )}
                   </FormField>
-                  <FormField id="quick-account-institution" label="Instituicao">
+                  <FormField id="quick-account-institution" label="Instituição">
                     {(fieldProps) => (
                       <Input
                         {...fieldProps}
@@ -1060,7 +1060,7 @@ export const ImportTransactionsContent = forwardRef<
                     )}
                   </FormField>
                   {quickAccount.type === "credit" ? (
-                    <FormField id="quick-account-parent" label="Conta mae (opcional)">
+                    <FormField id="quick-account-parent" label="Conta mãe (opcional)">
                       {(fieldProps) => (
                         <Select
                           {...fieldProps}
@@ -1069,7 +1069,7 @@ export const ImportTransactionsContent = forwardRef<
                             setQuickAccount((prev) => ({ ...prev, parentAccountId: event.target.value }))
                           }
                         >
-                          <option value="">Sem conta mae</option>
+                          <option value="">Sem conta mãe</option>
                           {nonCreditAccounts.map((account) => (
                             <option key={account.id} value={account.id}>
                               {account.name}
@@ -1145,7 +1145,7 @@ export const ImportTransactionsContent = forwardRef<
               Dica: voce pode ajustar mapeamento/conta destino e importar novamente o mesmo preview.
             </p>
             {typeof result.duplicates === "number" ? <p>Duplicadas: {result.duplicates}</p> : null}
-            {typeof result.invalidRows === "number" ? <p>Invalidas: {result.invalidRows}</p> : null}
+            {typeof result.invalidRows === "number" ? <p>Inválidas: {result.invalidRows}</p> : null}
             {typeof result.totalTransfersCreated === "number" && result.totalTransfersCreated > 0 ? (
               <p>Transferencias criadas: {result.totalTransfersCreated}</p>
             ) : null}
@@ -1155,7 +1155,7 @@ export const ImportTransactionsContent = forwardRef<
             {typeof result.totalCardPaymentsNotConverted === "number" &&
             result.totalCardPaymentsNotConverted > 0 ? (
               <p>
-                Pagamentos nao convertidos: {result.totalCardPaymentsNotConverted}. Selecione um cartao destino e
+                Pagamentos não convertidos: {result.totalCardPaymentsNotConverted}. Selecione um cartão destino e
                 importe novamente.
               </p>
             ) : null}

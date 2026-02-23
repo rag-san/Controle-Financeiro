@@ -2,6 +2,7 @@
 
 import {
   CartesianGrid,
+  Legend,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -12,7 +13,7 @@ import {
 import type { TooltipContentProps } from "recharts";
 import { Card } from "@/src/components/ui/Card";
 import type { ReportsTimeSeriesPoint } from "@/src/features/reports/types";
-import { formatBRL } from "@/src/utils/format";
+import { formatBRL, formatBRLCompact } from "@/src/utils/format";
 
 type IncomeVsExpensesChartCardProps = {
   data: ReportsTimeSeriesPoint[];
@@ -24,6 +25,12 @@ type ChartDatum = {
   expense: number;
   net: number;
 };
+
+function resolveXAxisInterval(pointsLength: number): number {
+  if (pointsLength <= 6) return 0;
+  if (pointsLength <= 12) return 1;
+  return Math.max(1, Math.ceil(pointsLength / 8) - 1);
+}
 
 function TrendTooltip({
   active,
@@ -69,6 +76,7 @@ export function IncomeVsExpensesChartCard({ data }: IncomeVsExpensesChartCardPro
     expense: point.expense,
     net: point.net
   }));
+  const xAxisInterval = resolveXAxisInterval(chartData.length);
 
   return (
     <Card className="p-4">
@@ -85,15 +93,24 @@ export function IncomeVsExpensesChartCard({ data }: IncomeVsExpensesChartCardPro
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 10, right: 12, left: 8, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.18)" />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+              <XAxis
+                dataKey="label"
+                interval={xAxisInterval}
+                tick={{ fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={10}
+              />
               <YAxis
-                tickFormatter={(value) => formatBRL(Number(value))}
+                tickFormatter={(value) => formatBRLCompact(Number(value))}
                 tick={{ fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
                 width={84}
               />
               <Tooltip content={<TrendTooltip />} />
+              <Legend verticalAlign="bottom" align="left" iconType="line" wrapperStyle={{ paddingTop: 10 }} />
               <Line type="monotone" dataKey="income" name="Receitas" stroke="#10b981" strokeWidth={2.2} dot={false} />
               <Line type="monotone" dataKey="expense" name="Despesas" stroke="#f43f5e" strokeWidth={2.2} dot={false} />
             </LineChart>

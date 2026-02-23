@@ -158,7 +158,7 @@ export function ImportTransactionsModal({
         type="button"
         className="absolute inset-0 bg-black/55"
         onClick={handleClose}
-        aria-label="Fechar importacao"
+        aria-label="Fechar importação"
       />
 
       <div
@@ -170,7 +170,7 @@ export function ImportTransactionsModal({
       >
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-6">
           <h2 id="import-transactions-modal-title" className="text-base font-semibold">
-            Importacao de arquivo
+            Importação de arquivo
           </h2>
           <Button
             ref={closeButtonRef}
@@ -178,7 +178,7 @@ export function ImportTransactionsModal({
             variant="outline"
             size="sm"
             onClick={handleClose}
-            aria-label="Fechar importacao"
+            aria-label="Fechar importação"
           >
             <X className="h-4 w-4" />
             Fechar
@@ -202,7 +202,7 @@ export function ImportTransactionsModal({
 
         <footer className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-border bg-card/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p className="text-sm text-muted-foreground">
-            Linhas validas: {footerState.validRows} | Erros: {footerState.errorRows} | Ignoradas:{" "}
+            Linhas válidas: {footerState.validRows} | Erros: {footerState.errorRows} | Ignoradas:{" "}
             {footerState.ignoredRows}
           </p>
           <div className="flex w-full gap-2 sm:w-auto">

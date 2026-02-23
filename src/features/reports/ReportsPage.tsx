@@ -210,7 +210,7 @@ export function ReportsPage(): React.JSX.Element {
             <EmptyState
               title="Sem dados para o período selecionado"
               description="Ajuste os filtros ou importe novas transações para gerar relatórios."
-              ctaLabel="Import transactions"
+              ctaLabel="Importar transações"
               ctaHref="/transactions"
             />
           ) : (

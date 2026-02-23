@@ -120,6 +120,7 @@ export function TransactionsTable({
         <p className="text-sm text-muted-foreground">
           Exibindo <span className="font-semibold text-foreground">{totalCount}</span> transacao(oes)
         </p>
+        <p className="text-xs text-muted-foreground sm:hidden">Deslize para os lados para ver todas as colunas.</p>
       </div>
 
       <Table

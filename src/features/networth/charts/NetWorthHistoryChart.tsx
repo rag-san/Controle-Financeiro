@@ -40,8 +40,12 @@ const rangeOptions = [
 function resolveXAxisInterval(range: NetWorthRangeKey, pointsLength: number): number {
   if (pointsLength <= 1) return 0;
 
-  if (range === "1D" || range === "1W") {
+  if (range === "1D") {
     return 0;
+  }
+
+  if (range === "1W") {
+    return pointsLength > 5 ? 1 : 0;
   }
 
   if (range === "1M") {

@@ -189,7 +189,7 @@ export function ConnectAccountModal({
             <p id={descriptionId} className="text-sm text-muted-foreground">
               Adicione uma conta manualmente enquanto a integração bancária automática não está ativa.
             </p>
-            <p className="text-xs text-muted-foreground">Integracao automatica via Open Banking em evolucao.</p>
+            <p className="text-xs text-muted-foreground">Integração automática via Open Banking em evolução.</p>
           </div>
 
           <form
@@ -257,7 +257,7 @@ export function ConnectAccountModal({
 
             <div className="sm:col-span-2">
               <label htmlFor="connect-account-institution" className="mb-1 block text-sm font-medium text-muted-foreground">
-                Instituicao (opcional)
+                Instituição (opcional)
               </label>
               <Input
                 id="connect-account-institution"
@@ -274,7 +274,7 @@ export function ConnectAccountModal({
                   htmlFor="connect-account-parent"
                   className="mb-1 block text-sm font-medium text-muted-foreground"
                 >
-                  Conta mae (opcional)
+                  Conta mãe (opcional)
                 </label>
                 <Select
                   id="connect-account-parent"
@@ -282,7 +282,7 @@ export function ConnectAccountModal({
                   onChange={(event) => setDraft((prev) => ({ ...prev, parentAccountId: event.target.value }))}
                   disabled={busy}
                 >
-                  <option value="">Sem conta mae</option>
+                  <option value="">Sem conta mãe</option>
                   {parentAccounts.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name}

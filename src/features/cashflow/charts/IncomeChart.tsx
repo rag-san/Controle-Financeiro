@@ -44,12 +44,19 @@ function formatTooltipMonth(label: string | number | undefined): string {
   return "";
 }
 
+function resolveXAxisInterval(pointsLength: number): number {
+  if (pointsLength <= 6) return 0;
+  if (pointsLength <= 12) return 1;
+  return Math.max(1, Math.ceil(pointsLength / 8) - 1);
+}
+
 export function IncomeChart({
   data,
   a11ySummary,
   loading = false
 }: IncomeChartProps): React.JSX.Element {
   const yDomainUpper = resolveUpperDomain(data);
+  const xAxisInterval = resolveXAxisInterval(data.length);
 
   if (loading) {
     return <Skeleton className="h-[220px] rounded-xl" />;
@@ -77,10 +84,12 @@ export function IncomeChart({
           <XAxis
             dataKey="month"
             tickFormatter={formatMonthLabel}
+            interval={xAxisInterval}
             tick={{ fontSize: 12 }}
             tickLine={false}
             axisLine={false}
             tickMargin={10}
+            minTickGap={12}
           />
           <YAxis
             tickFormatter={formatBRLCompact}

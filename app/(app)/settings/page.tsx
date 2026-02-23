@@ -13,7 +13,7 @@ export default async function SettingsPage(): Promise<React.JSX.Element> {
   const user = await usersRepo.findById(userId);
 
   return (
-    <PageShell title="Configuracoes" subtitle="Preferencias e dados da conta">
+    <PageShell title="Configurações" subtitle="Preferências e dados da conta">
       <div className="space-y-4">
         <Card>
           <CardHeader>
@@ -41,7 +41,7 @@ export default async function SettingsPage(): Promise<React.JSX.Element> {
             <CardTitle>Tema</CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Use o botao de sol/lua no topo para alternar entre modo claro e escuro.
+            Use o botão de sol/lua no topo para alternar entre modo claro e escuro.
           </CardContent>
         </Card>
       </div>

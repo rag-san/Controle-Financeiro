@@ -219,8 +219,8 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
   const timeSeries = buildIncomeExpenseSeries(prepared, input.period.current);
   const recurringDetected = detectRecurringMerchants(prepared, input.period.current, 5);
   const sankey = buildSankeyModel(currentPeriodTransactions, {
-    topCategories: 10,
-    topSubcategoriesPerCategory: 3
+    topCategories: 7,
+    topSubcategoriesPerCategory: 2
   });
   const hasCurrentData = finalizedCurrentTotals.income > 0 || finalizedCurrentTotals.expense > 0;
 

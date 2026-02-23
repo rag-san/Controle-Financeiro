@@ -32,12 +32,21 @@ type MarkerBubbleProps = {
   x?: number;
   y?: number;
   value?: string;
+  viewBox?: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  };
 };
 
-function MarkerBubble({ x = 0, y = 0, value = "" }: MarkerBubbleProps): React.JSX.Element {
+function MarkerBubble({ x = 0, y = 0, value = "", viewBox }: MarkerBubbleProps): React.JSX.Element {
   const label = value.length > 0 ? value : "";
   const width = Math.max(96, label.length * 7 + 18);
-  const left = x - width / 2;
+  const desiredLeft = x - width / 2;
+  const minLeft = (viewBox?.x ?? 0) + 4;
+  const maxLeft = (viewBox?.x ?? 0) + (viewBox?.width ?? width) - width - 4;
+  const left = clamp(minLeft, maxLeft, desiredLeft);
 
   return (
     <g>
@@ -57,6 +66,11 @@ function MarkerBubble({ x = 0, y = 0, value = "" }: MarkerBubbleProps): React.JS
       </text>
     </g>
   );
+}
+
+function clamp(min: number, max: number, value: number): number {
+  if (max < min) return min;
+  return Math.min(max, Math.max(min, value));
 }
 
 function getWeeklyTicks(data: SpendingPacePoint[]): number[] {
@@ -111,6 +125,8 @@ export function SpendingPaceChart({
             tickLine={false}
             axisLine={false}
             tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
+            tickMargin={8}
+            minTickGap={14}
           />
           <YAxis
             tickFormatter={formatBRLCompact}

@@ -48,7 +48,7 @@ export function RecurringMonthList({
 
       {groups.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center dark:border-slate-700">
-          <p className="text-sm text-slate-500 dark:text-slate-400">No recurring items yet</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum item recorrente por enquanto.</p>
           <Button type="button" size="sm" className="mt-3" onClick={onCreateNew}>
             Criar Novo
           </Button>

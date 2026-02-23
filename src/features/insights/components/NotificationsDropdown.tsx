@@ -31,13 +31,13 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
         id={id}
         ref={ref}
         role="dialog"
-        aria-label="Central de notificacoes"
+        aria-label="Central de notificações"
         aria-modal="false"
         tabIndex={-1}
-        className="absolute right-0 z-40 mt-2 w-[360px] max-w-[90vw] rounded-2xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-800 dark:bg-slate-950"
+        className="fixed inset-x-3 top-[4.5rem] z-40 max-h-[calc(100dvh-5.25rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-lg sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-[360px] sm:max-h-[420px] sm:max-w-[90vw] dark:border-slate-800 dark:bg-slate-950"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notificacoes</p>
+          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notificações</p>
           {dismissedCount > 0 && onClearDismissed ? (
             <button
               type="button"
@@ -57,7 +57,7 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
           </div>
         ) : insights.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-200 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            Voce esta em dia.
+            Você está em dia.
           </div>
         ) : (
           <ul className="max-h-80 space-y-2 overflow-auto pr-1">

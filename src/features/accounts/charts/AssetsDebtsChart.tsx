@@ -33,7 +33,7 @@ function resolveXAxisInterval(range: AccountsRangeKey, pointsLength: number): nu
   if (pointsLength <= 1) return 0;
 
   if (range === "1W") {
-    return 0;
+    return pointsLength > 5 ? 1 : 0;
   }
 
   if (range === "1M") {

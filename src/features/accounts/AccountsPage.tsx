@@ -306,7 +306,7 @@ export function AccountsPage(): React.JSX.Element {
           >
             {creditCards.length === 0 ? (
               <EmptyGroupRow
-                message="Nenhum cartao de credito cadastrado"
+                message="Nenhum cartão de crédito cadastrado"
                 ctaLabel="Conectar conta"
                 onAction={() => setConnectModalOpen(true)}
               />
@@ -323,7 +323,7 @@ export function AccountsPage(): React.JSX.Element {
 
                 const cardRows = group.cards.map((account) => {
                   const debt = Math.abs(Math.min(account.currentBalance ?? 0, 0));
-                  const institutionLabel = account.institution?.trim() || "Instituicao";
+                  const institutionLabel = account.institution?.trim() || "Instituição";
 
                   return (
                     <AccountRow
@@ -333,7 +333,7 @@ export function AccountsPage(): React.JSX.Element {
                       amount={debt}
                       amountSign="negative"
                       amountTone={debt > 0 ? "negative" : "muted"}
-                      metaRight={group.parent ? `Conta mae: ${group.parent.name}` : "Sem conta mae"}
+                      metaRight={group.parent ? `Conta mãe: ${group.parent.name}` : "Sem conta mãe"}
                       iconClassName="bg-rose-100 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300"
                     />
                   );
@@ -387,7 +387,7 @@ export function AccountsPage(): React.JSX.Element {
           >
             {connections.length === 0 ? (
               <EmptyGroupRow
-                message="Nenhuma instituicao conectada"
+                message="Nenhuma instituição conectada"
                 ctaLabel="Conectar conta"
                 onAction={() => setConnectModalOpen(true)}
               />

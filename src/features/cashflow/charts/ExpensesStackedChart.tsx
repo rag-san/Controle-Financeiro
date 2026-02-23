@@ -59,7 +59,7 @@ export function ExpensesStackedChart({
     return (
       <div className="flex h-[240px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/80 bg-muted/20 text-sm text-muted-foreground">
         <AlertCircle className="h-4 w-4" />
-        <p>No expenses in this period</p>
+        <p>Sem despesas neste período.</p>
       </div>
     );
   }

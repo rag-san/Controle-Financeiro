@@ -9,7 +9,7 @@ type RecurringSummaryCardProps = {
 
 export function RecurringSummaryCard({ totals }: RecurringSummaryCardProps): React.JSX.Element {
   return (
-    <Card className="mx-auto w-full max-w-5xl rounded-2xl border border-slate-200 bg-white px-6 py-7 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <Card className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-7 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="grid gap-6 md:grid-cols-[1fr_auto_1fr] md:items-center">
         <div className="text-center md:text-left">
           <p className="tabular-nums text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">

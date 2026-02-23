@@ -44,41 +44,49 @@ export function CategoriesTreeList({
           Sem gastos registrados para este mês.
         </div>
       ) : (
-        <div className="space-y-3">
-          <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-4 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            <span>Nome</span>
-            <span>Peso</span>
-            <span className="text-right">Valor</span>
+        <div className="space-y-2">
+          <p className="px-1 text-xs text-slate-500 sm:hidden dark:text-slate-400">
+            Deslize para os lados para visualizar todas as colunas.
+          </p>
+
+          <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700">
+            <div className="min-w-[560px] space-y-3">
+              <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-4 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <span>Nome</span>
+                <span>Peso</span>
+                <span className="text-right">Valor</span>
+              </div>
+
+              {groups.map((group) => {
+                const collapsed = collapsedByGroup[group.id] ?? false;
+
+                return (
+                  <section key={group.id} className="space-y-1">
+                    <CategoryGroupRow
+                      name={group.name}
+                      total={group.total}
+                      count={group.children.length}
+                      collapsed={collapsed}
+                      onToggle={() => toggleGroup(group.id)}
+                    />
+
+                    {!collapsed ? (
+                      <div className="space-y-0.5 border-l border-slate-200 pl-4 dark:border-slate-800">
+                        {group.children.map((item) => (
+                          <CategoryRow
+                            key={`${group.id}-${item.categoryId ?? item.name}`}
+                            item={item}
+                            monthQuery={monthQuery}
+                            relativePercentage={(item.value / maxCategoryValue) * 100}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
           </div>
-
-          {groups.map((group) => {
-            const collapsed = collapsedByGroup[group.id] ?? false;
-
-            return (
-              <section key={group.id} className="space-y-1">
-                <CategoryGroupRow
-                  name={group.name}
-                  total={group.total}
-                  count={group.children.length}
-                  collapsed={collapsed}
-                  onToggle={() => toggleGroup(group.id)}
-                />
-
-                {!collapsed ? (
-                  <div className="space-y-0.5 border-l border-slate-200 pl-4 dark:border-slate-800">
-                    {group.children.map((item) => (
-                      <CategoryRow
-                        key={`${group.id}-${item.categoryId ?? item.name}`}
-                        item={item}
-                        monthQuery={monthQuery}
-                        relativePercentage={(item.value / maxCategoryValue) * 100}
-                      />
-                    ))}
-                  </div>
-                ) : null}
-              </section>
-            );
-          })}
         </div>
       )}
     </Card>

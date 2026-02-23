@@ -117,8 +117,8 @@ function AllocationPanel({
           <>
             <AllocationBar items={items} onItemSelect={onSelectItem} />
 
-            <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
-              <table className="w-full border-collapse">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:border-slate-800 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700">
+              <table className="w-full min-w-[520px] border-collapse">
                 <thead className="bg-slate-50 dark:bg-slate-900/50">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">

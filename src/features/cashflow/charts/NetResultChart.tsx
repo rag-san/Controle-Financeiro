@@ -51,12 +51,19 @@ function formatTooltipMonth(label: string | number | undefined): string {
   return "";
 }
 
+function resolveXAxisInterval(pointsLength: number): number {
+  if (pointsLength <= 6) return 0;
+  if (pointsLength <= 12) return 1;
+  return Math.max(1, Math.ceil(pointsLength / 8) - 1);
+}
+
 export function NetResultChart({
   data,
   a11ySummary,
   loading = false
 }: NetResultChartProps): React.JSX.Element {
   const chartData = data;
+  const xAxisInterval = resolveXAxisInterval(chartData.length);
 
   const yDomain: [number, number] = (() => {
     const maxDomainValue = resolveDomainMax(chartData);
@@ -86,10 +93,12 @@ export function NetResultChart({
           <XAxis
             dataKey="month"
             tickFormatter={formatMonthLabel}
+            interval={xAxisInterval}
             tick={{ fontSize: 12 }}
             tickLine={false}
             axisLine={false}
             tickMargin={10}
+            minTickGap={12}
           />
           <YAxis
             tickFormatter={formatBRLCompact}

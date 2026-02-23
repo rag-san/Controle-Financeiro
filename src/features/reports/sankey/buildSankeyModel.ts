@@ -201,6 +201,10 @@ export function buildSankeyModel(
       continue;
     }
 
+    if (topSubcategoriesLimit <= 0) {
+      continue;
+    }
+
     const sortedSubs = [...subMap.entries()]
       .map(([label, valueCents]) => ({ label, valueCents }))
       .filter((item) => item.valueCents > 0)
@@ -210,13 +214,20 @@ export function buildSankeyModel(
       continue;
     }
 
-    const topSubs = sortedSubs.slice(0, topSubcategoriesLimit);
+    const minSubcategoryCents = Math.max(5_000, Math.round(entry.valueCents * 0.18));
+    const topSubs = sortedSubs
+      .slice(0, topSubcategoriesLimit)
+      .filter((item) => item.valueCents >= minSubcategoryCents);
     const othersSubTotal = sortedSubs.slice(topSubcategoriesLimit).reduce(
       (sum, item) => sum + item.valueCents,
       0
     );
-    if (othersSubTotal > 0) {
+    if (othersSubTotal >= minSubcategoryCents) {
       topSubs.push({ label: OTHER_SUBCATEGORIES_LABEL, valueCents: othersSubTotal });
+    }
+
+    if (topSubs.length === 0) {
+      continue;
     }
 
     const subColor = lightenHex(categoryColor, 0.32);
