@@ -173,7 +173,9 @@ export function classifyPdfText(text: string): {
   const hasMercadoPagoStatementHints =
     normalized.includes("EXTRATO DE CONTA") &&
     normalized.includes("DETALHE DOS MOVIMENTOS") &&
-    normalized.includes("ID DA OPERACAO");
+    (normalized.includes("ID DA OPERA") ||
+      normalized.includes("VALOR SALDO") ||
+      /\b\d{2}-\d{2}-\d{4}\b/.test(normalized));
 
   if (hasInter && normalized.includes("DESPESAS DA FATURA")) {
     return {
@@ -884,8 +886,7 @@ async function extractTextWithPdfParse(buffer: Buffer, options: PdfParseOptions)
   let imported: Record<string, unknown> | null = null;
 
   try {
-    const resolved = localRequire.resolve("pdf-parse");
-    imported = localRequire(resolved) as Record<string, unknown>;
+    imported = localRequire("pdf-parse") as Record<string, unknown>;
   } catch {
     imported = null;
   }

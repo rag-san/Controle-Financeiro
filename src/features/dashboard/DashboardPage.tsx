@@ -66,6 +66,10 @@ type DashboardPayload = {
   netWorthDelta?: number;
   netWorthSeries?: Array<{ date: string; value: number }>;
   spendingTrend: { day: number; current: number; previous: number }[];
+  spendingTrendDaily?: { day: number; current: number; previous: number }[];
+  spendingTrendMeta?: {
+    compareUntilDay?: number;
+  };
   topCategories: {
     categoryId: string;
     name: string;
@@ -227,6 +231,17 @@ function previousValueFromDelta(current: number, deltaPercent: number): number {
   return current / denominator;
 }
 
+function previousMonthKey(monthKey: string): string {
+  const parsed = parseMonthKey(monthKey);
+  const date = new Date(parsed.year, parsed.monthIndex, 1);
+  date.setMonth(date.getMonth() - 1);
+  return formatMonthKey(date.getFullYear(), date.getMonth());
+}
+
+function isZeroAmount(value: number): boolean {
+  return Math.abs(value) < 0.005;
+}
+
 function DashboardLoading(): React.JSX.Element {
   return (
     <div className="space-y-6">
@@ -272,7 +287,7 @@ async function fetchTransactionsForInsights(params: {
     }
 
     if (!response.ok || !data || !("items" in data)) {
-      throw new Error(extractApiError(data, "Nao foi possivel carregar dados para insights."));
+      throw new Error(extractApiError(data, "Não foi possível carregar dados para insights."));
     }
 
     aggregatedItems.push(...data.items);
@@ -325,11 +340,11 @@ export function DashboardPage(): React.JSX.Element {
       }
 
       if (!response.ok || !payload) {
-        throw new Error(extractApiError(payload, "Nao foi possivel carregar o dashboard."));
+        throw new Error(extractApiError(payload, "Não foi possível carregar o dashboard."));
       }
 
       if (!isDashboardPayload(payload)) {
-        throw new Error("Resposta invalida do dashboard.");
+        throw new Error("Resposta inválida do dashboard.");
       }
 
       setData(payload);
@@ -454,12 +469,21 @@ export function DashboardPage(): React.JSX.Element {
     };
   }, [currentMonthKey, dashboardMonth, showFilters]);
 
+  const isMonthFilterActive = dashboardMonth.length > 0;
+  const appliedMonthLabel = isMonthFilterActive ? formatMonthLabel(dashboardMonth) : "";
+  const fallbackTargetMonthKey = isMonthFilterActive ? dashboardMonth : currentMonthKey;
+
   const dashboardView = useMemo(() => {
     if (!data) return null;
 
-    const usingReferenceFallback = !data.isCurrentMonthReference;
+    const usingReferenceFallback = data.referenceMonth !== fallbackTargetMonthKey;
     const referenceMonthLabel = formatMonthLabel(data.referenceMonth);
-    const periodDescription = usingReferenceFallback ? `periodo de referencia (${referenceMonthLabel})` : "mes atual";
+    const selectedMonthLabel = formatMonthLabel(fallbackTargetMonthKey);
+    const periodDescription = isMonthFilterActive
+      ? `período selecionado (${selectedMonthLabel})`
+      : usingReferenceFallback
+        ? `período de referência (${referenceMonthLabel})`
+        : "mês atual";
 
     const currentPeriod = data.periodComparison?.current ?? {
       income: data.cards.income,
@@ -475,7 +499,6 @@ export function DashboardPage(): React.JSX.Element {
       excluded: 0
     };
 
-    const paceDelta = previousPeriod.expense - currentPeriod.expense;
     const resultProgress = clamp((currentPeriod.expense / Math.max(currentPeriod.income, 1)) * 100);
 
     const sortedSeries = [...(data.netWorthSeries ?? [])].sort((a, b) => (a.date > b.date ? 1 : -1));
@@ -489,12 +512,10 @@ export function DashboardPage(): React.JSX.Element {
         : (data.netWorthDelta ?? 0);
 
     return {
-      usingReferenceFallback,
       referenceMonthLabel,
       periodDescription,
       currentPeriod,
       previousPeriod,
-      paceDelta,
       resultProgress,
       netWorthCurrent,
       netWorthVariation,
@@ -504,7 +525,7 @@ export function DashboardPage(): React.JSX.Element {
         icon: item.icon ?? null
       }))
     };
-  }, [data, netWorthFilter]);
+  }, [data, fallbackTargetMonthKey, isMonthFilterActive, netWorthFilter]);
 
   const handleDismissInsight = useCallback((insightId: string): void => {
     setDismissedInsights((current) => {
@@ -542,13 +563,30 @@ export function DashboardPage(): React.JSX.Element {
     setShowFilters(false);
   }, []);
 
-  const appliedMonthLabel = dashboardMonth ? formatMonthLabel(dashboardMonth) : "";
-  const isMonthFilterActive = dashboardMonth.length > 0;
   const filterButtonLabel = isMonthFilterActive ? `Filtro: ${appliedMonthLabel}` : "Filtros";
-  const fallbackTargetMonthKey = isMonthFilterActive ? dashboardMonth : currentMonthKey;
   const fallbackTargetMonthLabel = formatMonthLabel(fallbackTargetMonthKey);
+  const previousFallbackTargetMonthLabel = formatMonthLabel(previousMonthKey(fallbackTargetMonthKey));
   const fallbackTransactionsHref = buildTransactionsMonthHref(fallbackTargetMonthKey);
-  const fallbackNoticeVariant = isMonthFilterActive ? "info" : "warning";
+  const isReferenceFallbackActive = data ? data.referenceMonth !== fallbackTargetMonthKey : false;
+  const hasNoTransactionsInSelectedMonth = Boolean(
+    dashboardView &&
+      isZeroAmount(dashboardView.currentPeriod.income) &&
+      isZeroAmount(dashboardView.currentPeriod.expense) &&
+      isZeroAmount(dashboardView.currentPeriod.result)
+  );
+  const showMonthNotice = isReferenceFallbackActive || hasNoTransactionsInSelectedMonth;
+  const fallbackNoticeVariant = isReferenceFallbackActive
+    ? isMonthFilterActive
+      ? "info"
+      : "warning"
+    : "info";
+  const noticeTitle = `Sem lançamentos em ${fallbackTargetMonthLabel}.`;
+  const noticeSubtitle = isReferenceFallbackActive
+    ? `Mostrando dados de ${dashboardView?.referenceMonthLabel ?? fallbackTargetMonthLabel}.`
+    : `Comparando com ${previousFallbackTargetMonthLabel}.`;
+  const isCurrentMonthScope = !isMonthFilterActive && data?.isCurrentMonthReference === true;
+  const spendingCurrentLabel = isCurrentMonthScope ? "Este mês" : "Período selecionado";
+  const spendingPreviousLabel = isCurrentMonthScope ? "Mês passado" : "Mês anterior";
 
   const actions = useMemo(
     () => (
@@ -582,7 +620,7 @@ export function DashboardPage(): React.JSX.Element {
           >
             <div className="space-y-0.5">
               <h3 className="text-[13px] font-semibold">Filtro do dashboard</h3>
-              <p className="text-[11px] text-muted-foreground">Selecione mes e ano sem abrir listas grandes.</p>
+              <p className="text-[11px] text-muted-foreground">Selecione mês e ano sem abrir listas grandes.</p>
             </div>
 
             <div className="mt-2.5 flex items-center justify-between rounded-xl border border-border/80 bg-muted/30 px-1.5 py-0.5">
@@ -597,7 +635,7 @@ export function DashboardPage(): React.JSX.Element {
               <span className="text-xs font-semibold tabular-nums">{pickerYear}</span>
               <button
                 type="button"
-                aria-label="Proximo ano"
+                aria-label="Próximo ano"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => setPickerYear((current) => current + 1)}
               >
@@ -651,7 +689,7 @@ export function DashboardPage(): React.JSX.Element {
                 size="sm"
                 onClick={() => applyMonthFilter(currentMonthParsed.year, currentMonthParsed.monthIndex)}
               >
-                Este mes
+                Este mês
               </Button>
             </div>
           </section>
@@ -685,32 +723,38 @@ export function DashboardPage(): React.JSX.Element {
   );
 
   return (
-    <PageShell title="Dashboard" subtitle="Aqui esta uma visao geral das suas financas" actions={actions}>
+    <PageShell title="Dashboard" subtitle="Aqui está uma visão geral das suas finanças" actions={actions}>
       <div className="space-y-4">
         {loading ? (
           <DashboardLoading />
         ) : !data || !dashboardView ? (
-          <FeedbackMessage variant="error">{error || "Nao foi possivel carregar os dados do dashboard."}</FeedbackMessage>
+          <FeedbackMessage variant="error">{error || "Não foi possível carregar os dados do dashboard."}</FeedbackMessage>
         ) : (
           <div className="space-y-6">
-            {dashboardView.usingReferenceFallback ? (
+            {showMonthNotice ? (
               <FeedbackMessage
                 variant={fallbackNoticeVariant}
                 className={[
                   "!rounded-lg !px-3 !py-2",
-                  isMonthFilterActive
-                    ? "!bg-muted/55 !text-muted-foreground"
-                    : "!bg-amber-50/45 !text-amber-800 dark:!bg-amber-950/25 dark:!text-amber-200"
+                  isReferenceFallbackActive
+                    ? isMonthFilterActive
+                      ? "!bg-muted/55 !text-muted-foreground"
+                      : "!bg-amber-50/45 !text-amber-800 dark:!bg-amber-950/25 dark:!text-amber-200"
+                    : "!bg-muted/55 !text-muted-foreground"
                 ].join(" ")}
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5 shrink-0 opacity-90" aria-hidden="true">
-                      {isMonthFilterActive ? <Info className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                      {isReferenceFallbackActive && !isMonthFilterActive ? (
+                        <AlertTriangle className="h-4 w-4" />
+                      ) : (
+                        <Info className="h-4 w-4" />
+                      )}
                     </span>
                     <div>
-                      <p className="text-sm font-medium leading-5">Sem lancamentos em {fallbackTargetMonthLabel}.</p>
-                      <p className="text-xs opacity-85">Mostrando dados de {dashboardView.referenceMonthLabel}.</p>
+                      <p className="text-sm font-medium leading-5">{noticeTitle}</p>
+                      <p className="text-xs opacity-85">{noticeSubtitle}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -718,7 +762,7 @@ export function DashboardPage(): React.JSX.Element {
                       href={fallbackTransactionsHref}
                       className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      Ver transacoes do mes
+                      Ver transações do mês
                     </Link>
                     {isMonthFilterActive ? (
                       <button
@@ -740,14 +784,11 @@ export function DashboardPage(): React.JSX.Element {
             <section className="grid gap-6 xl:grid-cols-12">
               <div className="xl:col-span-7">
                 <SpendingPaceCard
-                  paceDelta={dashboardView.paceDelta}
-                  variationPercent={data.cards.spendPaceDelta}
-                  previousExpense={dashboardView.previousPeriod.expense}
-                  chartData={data.spendingTrend}
-                  currentLabel={dashboardView.usingReferenceFallback ? "Periodo de referencia" : "Este mes"}
-                  previousLabel={
-                    dashboardView.usingReferenceFallback ? "Mes anterior ao periodo" : "Mes passado"
-                  }
+                  chartAccumulatedData={data.spendingTrend}
+                  chartDailyData={data.spendingTrendDaily}
+                  compareUntilDay={data.spendingTrendMeta?.compareUntilDay}
+                  currentLabel={spendingCurrentLabel}
+                  previousLabel={spendingPreviousLabel}
                   periodDescription={dashboardView.periodDescription}
                 />
               </div>

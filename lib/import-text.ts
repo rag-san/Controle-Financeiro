@@ -139,6 +139,9 @@ export function fixCommonMojibake(value: string): string {
     .replace(/Descri(?:[�?]{1,}|Ã§Ã£)o/gi, "Descricao")
     .replace(/Lan(?:[�?]{1,}|Ã§)amento/gi, "Lancamento")
     .replace(/Hist(?:[�?]{1,}|Ã³)rico/gi, "Historico")
+    .replace(/Opera(?:[�?]{1,}|Ã§Ã£)o/gi, "Operacao")
+    .replace(/Transf(?:[�?]{1,}|Ãª)rencia/gi, "Transferencia")
+    .replace(/Cart(?:[�?]{1,}|Ã£)o/gi, "Cartao")
     .replace(/[�]+/g, " ");
 
   return output;

@@ -5,15 +5,14 @@ import {
   Legend,
   Line,
   LineChart,
-  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis
 } from "recharts";
-import { DefaultChartTooltip } from "@/src/components/charts/DefaultChartTooltip";
-import { formatBRLCompact } from "@/src/utils/format";
+import type { TooltipContentProps, TooltipPayloadEntry } from "recharts";
+import { formatBRL } from "@/src/utils/format";
 
 export type SpendingPacePoint = {
   day: number;
@@ -25,152 +24,159 @@ type SpendingPaceChartProps = {
   data: SpendingPacePoint[];
   currentLabel: string;
   previousLabel: string;
-  markerLabel?: string;
+  compareUntilDay?: number;
 };
 
-type MarkerBubbleProps = {
-  x?: number;
-  y?: number;
-  value?: string;
-  viewBox?: {
-    x?: number;
-    y?: number;
-    width?: number;
-    height?: number;
-  };
+type SpendingPaceTooltipProps = Partial<TooltipContentProps<number, string>> & {
+  currentLabel: string;
+  previousLabel: string;
 };
 
-function MarkerBubble({ x = 0, y = 0, value = "", viewBox }: MarkerBubbleProps): React.JSX.Element {
-  const label = value.length > 0 ? value : "";
-  const width = Math.max(96, label.length * 7 + 18);
-  const desiredLeft = x - width / 2;
-  const minLeft = (viewBox?.x ?? 0) + 4;
-  const maxLeft = (viewBox?.x ?? 0) + (viewBox?.width ?? width) - width - 4;
-  const left = clamp(minLeft, maxLeft, desiredLeft);
+const axisCurrencyFormatter = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2
+});
+
+function formatCurrencyTick(value: number): string {
+  if (!Number.isFinite(value)) {
+    return axisCurrencyFormatter.format(0);
+  }
+
+  const normalized = Math.abs(value) < 0.005 ? 0 : value;
+  return axisCurrencyFormatter.format(normalized);
+}
+
+function payloadValue(payload: TooltipPayloadEntry<number, string>[] | undefined, key: "current" | "previous"): number {
+  if (!payload || payload.length === 0) return 0;
+  const match = payload.find((entry) => entry.dataKey === key);
+  return typeof match?.value === "number" && Number.isFinite(match.value) ? match.value : 0;
+}
+
+function SpendingPaceTooltip({
+  active,
+  payload,
+  label,
+  currentLabel,
+  previousLabel
+}: SpendingPaceTooltipProps): React.JSX.Element | null {
+  const typedPayload = payload as TooltipPayloadEntry<number, string>[] | undefined;
+  if (!active || !typedPayload || typedPayload.length === 0) return null;
+
+  const current = payloadValue(typedPayload, "current");
+  const previous = payloadValue(typedPayload, "previous");
+  const difference = current - previous;
+  const differencePrefix = difference > 0 ? "+" : difference < 0 ? "-" : "";
 
   return (
-    <g>
-      <rect
-        x={left}
-        y={y - 36}
-        width={width}
-        height={24}
-        rx={8}
-        ry={8}
-        fill="#f59e0b"
-        stroke="#d97706"
-        strokeWidth={1}
-      />
-      <text x={x} y={y - 20} textAnchor="middle" fill="#ffffff" fontSize={12} fontWeight={600}>
-        {label}
-      </text>
-    </g>
+    <div className="min-w-[196px] rounded-xl border border-slate-700/80 bg-slate-950/95 px-3 py-2 text-xs text-slate-100 shadow-xl backdrop-blur-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Dia {label ?? "--"}</p>
+      <div className="mt-2 space-y-1.5">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-300">Atual</span>
+          <span className="font-semibold text-cyan-300">{formatBRL(current)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-300">Anterior</span>
+          <span className="font-semibold text-slate-200">{formatBRL(previous)}</span>
+        </div>
+        <div className="mt-1 h-px bg-slate-800" />
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-300">Diferença</span>
+          <span className="font-semibold text-emerald-300">{`${differencePrefix}${formatBRL(Math.abs(difference))}`}</span>
+        </div>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
+        <span>{currentLabel}</span>
+        <span>{previousLabel}</span>
+      </div>
+    </div>
   );
-}
-
-function clamp(min: number, max: number, value: number): number {
-  if (max < min) return min;
-  return Math.min(max, Math.max(min, value));
-}
-
-function getWeeklyTicks(data: SpendingPacePoint[]): number[] {
-  if (data.length === 0) return [];
-
-  const firstDay = data[0].day;
-  const lastDay = data[data.length - 1].day;
-  const ticks = [firstDay];
-
-  for (let day = firstDay + 7; day < lastDay; day += 7) {
-    ticks.push(day);
-  }
-
-  if (ticks[ticks.length - 1] !== lastDay) {
-    ticks.push(lastDay);
-  }
-
-  return ticks;
-}
-
-function getMarkerPoint(data: SpendingPacePoint[]): SpendingPacePoint | null {
-  if (data.length === 0) return null;
-
-  for (let index = data.length - 1; index >= 0; index -= 1) {
-    const point = data[index];
-    if (point.current > 0 || point.previous > 0) {
-      return point;
-    }
-  }
-
-  return data[data.length - 1] ?? null;
 }
 
 export function SpendingPaceChart({
   data,
   currentLabel,
   previousLabel,
-  markerLabel
+  compareUntilDay
 }: SpendingPaceChartProps): React.JSX.Element {
-  const markerPoint = getMarkerPoint(data);
-  const dayTicks = getWeeklyTicks(data);
+  const lastDay = compareUntilDay ?? data[data.length - 1]?.day ?? 1;
 
   return (
     <div className="h-[280px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 24, right: 10, left: 10, bottom: 10 }}>
-          <CartesianGrid vertical={false} strokeDasharray="4 4" strokeOpacity={0.18} />
+        <LineChart data={data} margin={{ top: 8, right: 12, left: 6, bottom: 10 }}>
+          <CartesianGrid vertical={false} strokeDasharray="3 6" strokeOpacity={0.2} />
           <XAxis
             dataKey="day"
-            ticks={dayTicks}
-            interval={0}
+            tickFormatter={(value) => String(value)}
             tickLine={false}
             axisLine={false}
+            interval="preserveStartEnd"
+            tickMargin={9}
+            minTickGap={18}
             tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
-            tickMargin={8}
-            minTickGap={14}
           />
           <YAxis
-            tickFormatter={formatBRLCompact}
+            domain={["auto", "auto"]}
+            tickFormatter={(value) => formatCurrencyTick(Number(value))}
             tickLine={false}
             axisLine={false}
-            width={82}
             tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
+            width={88}
           />
-          <Tooltip content={<DefaultChartTooltip titleFormatter={(value) => `Dia ${value ?? ""}`.trim()} />} />
-          <Legend verticalAlign="bottom" align="left" iconType="line" wrapperStyle={{ paddingTop: 14 }} />
+          <Tooltip
+            cursor={{
+              stroke: "hsl(var(--muted-foreground))",
+              strokeDasharray: "3 6",
+              strokeOpacity: 0.28,
+              strokeWidth: 1
+            }}
+            content={<SpendingPaceTooltip currentLabel={currentLabel} previousLabel={previousLabel} />}
+          />
+          <Legend
+            verticalAlign="bottom"
+            align="center"
+            iconType="plainline"
+            wrapperStyle={{ paddingTop: 12, fontSize: "12px" }}
+          />
           <Line
-            type="monotone"
+            type="linear"
             dataKey="previous"
             name={previousLabel}
-            stroke="#94a3b8"
-            strokeWidth={2.1}
+            stroke="hsl(var(--muted-foreground))"
+            strokeWidth={1.6}
             strokeDasharray="6 6"
-            strokeOpacity={0.95}
+            strokeOpacity={0.55}
             dot={false}
-            activeDot={{ r: 3 }}
+            activeDot={{
+              r: 3.5,
+              strokeWidth: 2,
+              stroke: "hsl(var(--background))",
+              fill: "hsl(var(--muted-foreground))"
+            }}
           />
           <Line
-            type="monotone"
+            type="linear"
             dataKey="current"
             name={currentLabel}
-            stroke="#f59e0b"
-            strokeWidth={2.6}
+            stroke="hsl(var(--primary))"
+            strokeWidth={2.2}
             dot={false}
-            activeDot={{ r: 4 }}
+            activeDot={{
+              r: 4,
+              strokeWidth: 2,
+              stroke: "hsl(var(--background))",
+              fill: "hsl(var(--primary))"
+            }}
           />
-          {markerPoint ? (
-            <>
-              <ReferenceLine x={markerPoint.day} stroke="#86efac" strokeDasharray="3 3" strokeOpacity={0.6} />
-              <ReferenceDot
-                x={markerPoint.day}
-                y={markerPoint.current}
-                r={6}
-                fill="#22c55e"
-                stroke="#ffffff"
-                strokeWidth={2}
-                label={<MarkerBubble value={markerLabel} />}
-              />
-            </>
-          ) : null}
+          <ReferenceLine
+            x={lastDay}
+            stroke="hsl(var(--muted-foreground))"
+            strokeDasharray="3 6"
+            strokeOpacity={0.34}
+          />
         </LineChart>
       </ResponsiveContainer>
     </div>
