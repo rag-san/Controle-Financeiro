@@ -113,6 +113,12 @@ Arquivo de referencia: `.env.example`
 - Arquivos SQLite locais (`data/*.db`, `*.db-wal`, `*.db-shm`) seguem no `.gitignore`
 - O `.env` tambem esta no `.gitignore`
 
+### Deploy no Vercel
+
+- Em Vercel, SQLite nao e suportado para este projeto.
+- Configure obrigatoriamente `DATABASE_URL` (ou `POSTGRES_URL`) apontando para PostgreSQL.
+- Se estiver usando Vercel Postgres, copie `POSTGRES_URL` para `DATABASE_URL` para manter compatibilidade com ambiente local.
+
 ### Migrar dados do SQLite para PostgreSQL
 
 1. Configure `DATABASE_URL` no `.env`.

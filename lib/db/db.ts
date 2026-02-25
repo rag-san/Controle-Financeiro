@@ -42,9 +42,25 @@ type TxContext = {
 
 const txStorage = new AsyncLocalStorage<TxContext>();
 
-const POSTGRES_URL = process.env.DATABASE_URL?.trim() || process.env.FINANCE_DATABASE_URL?.trim() || "";
+function resolvePostgresUrl(): string {
+  return (
+    process.env.DATABASE_URL?.trim() ||
+    process.env.POSTGRES_URL?.trim() ||
+    process.env.POSTGRES_PRISMA_URL?.trim() ||
+    process.env.FINANCE_DATABASE_URL?.trim() ||
+    ""
+  );
+}
+
+const POSTGRES_URL = resolvePostgresUrl();
+const IS_VERCEL = process.env.VERCEL === "1";
 
 function resolveDialect(): FinanceDbDialect {
+  if (IS_VERCEL && !POSTGRES_URL) {
+    throw new Error(
+      "PostgreSQL obrigatorio no Vercel. Configure DATABASE_URL (ou POSTGRES_URL) nas variaveis de ambiente."
+    );
+  }
   return POSTGRES_URL ? "postgres" : "sqlite";
 }
 
