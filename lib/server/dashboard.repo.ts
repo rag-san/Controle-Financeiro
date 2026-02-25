@@ -1,4 +1,4 @@
-import { endOfMonth, format, isSameMonth, startOfMonth, subMonths } from "date-fns";
+﻿import { endOfMonth, format, isSameMonth, startOfMonth, subMonths } from "date-fns";
 import { absAmountCents, accumulateOfficialFlowCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { buildSpendingTrendSeries } from "@/lib/server/dashboard-spending-trend";
