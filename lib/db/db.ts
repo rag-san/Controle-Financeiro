@@ -61,12 +61,7 @@ const IS_VERCEL =
   Boolean(process.env.VERCEL_REGION);
 
 function resolveDialect(): FinanceDbDialect {
-  if (IS_VERCEL && !POSTGRES_URL) {
-    throw new Error(
-      "PostgreSQL obrigatorio no Vercel. Configure DATABASE_URL (ou POSTGRES_URL) nas variaveis de ambiente."
-    );
-  }
-  return POSTGRES_URL ? "postgres" : "sqlite";
+  return "postgres";
 }
 
 function resolveSqlitePath(): string {
@@ -102,6 +97,12 @@ function normalizeSqlForPostgres(sql: string): string {
 }
 
 function createSqliteDatabase(): Database.Database {
+  if (IS_VERCEL) {
+    throw new Error(
+      "PostgreSQL obrigatorio no Vercel. Configure DATABASE_URL (ou POSTGRES_URL) nas variaveis de ambiente."
+    );
+  }
+
   if (!fs.existsSync(SQLITE_DB_DIR)) {
     fs.mkdirSync(SQLITE_DB_DIR, { recursive: true });
   }

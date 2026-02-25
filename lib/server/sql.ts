@@ -1,7 +1,4 @@
 import { db } from "@/lib/db";
-import { initDbOnce } from "@/lib/db";
-
-void initDbOnce();
 
 export function toCents(value: number): number {
   if (!Number.isFinite(value)) return 0;

@@ -82,7 +82,6 @@ Arquivo de referencia: `.env.example`
 - `NEXTAUTH_URL`: URL base da aplicacao (ex.: `http://localhost:3000`)
 - `DATABASE_URL`: string de conexao PostgreSQL (principal)
 - `POSTGRES_URL` / `POSTGRES_URL_NON_POOLING`: aliases aceitos automaticamente (Vercel Postgres)
-- `FINANCE_DB_PATH`: fallback SQLite (usado apenas sem `DATABASE_URL`)
 - `PG_POOL_MAX`: limite do pool de conexoes PostgreSQL (padrao: `1` no Vercel, `10` fora)
 - `PG_IDLE_TIMEOUT_MS` e `PG_CONNECTION_TIMEOUT_MS`: timeouts do pool PostgreSQL
 - `API_PROFILING`: ativa profiling de rotas (`0` ou `1`)
@@ -113,13 +112,11 @@ Arquivo de referencia: `.env.example`
 
 - Banco principal: PostgreSQL (`DATABASE_URL`)
 - Schema/migracoes executam na inicializacao da API
-- Fallback SQLite continua disponivel para compatibilidade local/testes (`FINANCE_DB_PATH`)
-- Arquivos SQLite locais (`data/*.db`, `*.db-wal`, `*.db-shm`) seguem no `.gitignore`
 - O `.env` tambem esta no `.gitignore`
 
 ### Deploy no Vercel
 
-- Em Vercel, SQLite nao e suportado para este projeto.
+- Este projeto opera somente com PostgreSQL.
 - Configure obrigatoriamente `DATABASE_URL` (ou `POSTGRES_URL`) apontando para PostgreSQL.
 - Se estiver usando Vercel Postgres, copie `POSTGRES_URL` para `DATABASE_URL` para manter compatibilidade com ambiente local.
 - Em ambientes serverless, mantenha `PG_POOL_MAX` baixo (ex.: `1` a `3`) para evitar excesso de conexoes.
