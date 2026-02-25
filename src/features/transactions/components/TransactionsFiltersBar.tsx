@@ -1,5 +1,7 @@
-import { CalendarDays, Funnel, Search } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronUp, Funnel, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { AccountDTO, CategoryDTO } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 import { Select } from "@/src/components/ui/Select";
@@ -32,7 +34,8 @@ function FilterSelect({
   value,
   onChange,
   children,
-  disabled
+  disabled,
+  className
 }: {
   id: string;
   label: string;
@@ -40,9 +43,10 @@ function FilterSelect({
   onChange: (value: string) => void;
   children: React.ReactNode;
   disabled?: boolean;
+  className?: string;
 }): React.JSX.Element {
   return (
-    <div className="w-[168px] shrink-0 sm:min-w-[180px] sm:w-auto">
+    <div className={cn("w-full sm:min-w-[180px] sm:w-auto", className)}>
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
@@ -69,15 +73,54 @@ export function TransactionsFiltersBar({
   onChange,
   onClear
 }: TransactionsFiltersBarProps): React.JSX.Element {
+  const [mobileAdvancedOpen, setMobileAdvancedOpen] = useState(false);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (filters.period !== "30d") count += 1;
+    if (filters.accountId) count += 1;
+    if (filters.type) count += 1;
+    if (filters.categoryId) count += 1;
+    if (filters.period === "custom" && filters.from) count += 1;
+    if (filters.period === "custom" && filters.to) count += 1;
+    return count;
+  }, [filters.accountId, filters.categoryId, filters.from, filters.period, filters.to, filters.type]);
+
+  useEffect(() => {
+    if (filters.period === "custom") {
+      setMobileAdvancedOpen(true);
+    }
+  }, [filters.period]);
+
   return (
     <section
-      className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:p-4"
       aria-label="Filtros de transacoes"
       aria-busy={busy}
     >
-      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
-        <Funnel className="h-4 w-4" />
-        <span>Filtros</span>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+          <Funnel className="h-4 w-4" />
+          <span>Filtros</span>
+          {activeFiltersCount > 0 ? (
+            <span className="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600 dark:border-slate-700 dark:text-slate-300">
+              {activeFiltersCount} ativo(s)
+            </span>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="sm:hidden"
+          aria-expanded={mobileAdvancedOpen}
+          aria-controls="tx-advanced-filters"
+          onClick={() => setMobileAdvancedOpen((previous) => !previous)}
+          disabled={busy}
+        >
+          {mobileAdvancedOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          {mobileAdvancedOpen ? "Ocultar" : "Mais filtros"}
+        </Button>
       </div>
 
       <div className="space-y-2">
@@ -96,8 +139,11 @@ export function TransactionsFiltersBar({
           />
         </div>
 
-        <div className="overflow-x-auto pb-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
-          <div className="flex min-w-max items-center gap-2 pr-1 sm:min-w-0 sm:flex-wrap">
+        <div
+          id="tx-advanced-filters"
+          className={cn("space-y-2", !mobileAdvancedOpen ? "hidden sm:block" : "block")}
+        >
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <FilterSelect
               id="tx-filter-period"
               label="Periodo"
@@ -158,7 +204,7 @@ export function TransactionsFiltersBar({
             </FilterSelect>
 
             {filters.period === "custom" ? (
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-2">
                 <div className="relative">
                   <label htmlFor="tx-filter-from" className="sr-only">
                     Data inicial

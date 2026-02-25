@@ -898,7 +898,7 @@ export const ImportTransactionsContent = forwardRef<
         {steps === "preview" && parseData ? (
           <>
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-              <div className="rounded-2xl border border-border/80 bg-card p-4 sm:p-5">
+              <div className="rounded-2xl border border-border/80 bg-card p-3 sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
                     <h3 className="text-sm font-semibold tracking-wide">Configuracao da importacao</h3>
@@ -947,9 +947,9 @@ export const ImportTransactionsContent = forwardRef<
                 </FormField>
               </div>
 
-              <div className="rounded-2xl border border-border/80 bg-muted/20 p-4 sm:p-5">
+              <div className="rounded-2xl border border-border/80 bg-muted/20 p-3 sm:p-5">
                 <h3 className="text-sm font-semibold tracking-wide">Resumo do arquivo</h3>
-                <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="rounded-xl border border-border bg-card p-3">
                     <p className="text-xs uppercase tracking-wide text-muted-foreground">Total detectado</p>
                     <p className="mt-1 text-lg font-semibold">{parseData.totalRows}</p>
@@ -970,23 +970,23 @@ export const ImportTransactionsContent = forwardRef<
                 <dl className="mt-4 divide-y divide-border/70 rounded-xl border border-border/70 bg-card text-sm">
                   <div className="flex items-center justify-between gap-3 px-3 py-2">
                     <dt className="text-muted-foreground">Origem</dt>
-                    <dd className="font-medium">{parseData.sourceType.toUpperCase()}</dd>
+                    <dd className="max-w-[60%] text-right font-medium break-words">{parseData.sourceType.toUpperCase()}</dd>
                   </div>
                   {parseData.documentType ? (
                     <div className="flex items-center justify-between gap-3 px-3 py-2">
                       <dt className="text-muted-foreground">Documento</dt>
-                      <dd className="font-medium">{parseData.documentType}</dd>
+                      <dd className="max-w-[60%] text-right font-medium break-words">{parseData.documentType}</dd>
                     </div>
                   ) : null}
                   {parseData.issuerProfile ? (
                     <div className="flex items-center justify-between gap-3 px-3 py-2">
                       <dt className="text-muted-foreground">Perfil detectado</dt>
-                      <dd className="font-medium">{parseData.issuerProfile}</dd>
+                      <dd className="max-w-[60%] text-right font-medium break-words">{parseData.issuerProfile}</dd>
                     </div>
                   ) : null}
                   <div className="flex items-center justify-between gap-3 px-3 py-2">
                     <dt className="text-muted-foreground">Contas disponiveis</dt>
-                    <dd className="font-medium">{mergedAccounts.length}</dd>
+                    <dd className="max-w-[60%] text-right font-medium break-words">{mergedAccounts.length}</dd>
                   </div>
                   {topReasonEntries.length > 0 ? (
                     <div className="px-3 py-2">

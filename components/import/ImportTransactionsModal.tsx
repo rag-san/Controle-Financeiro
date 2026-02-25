@@ -177,11 +177,12 @@ export function ImportTransactionsModal({
             type="button"
             variant="outline"
             size="sm"
+            className="gap-1.5"
             onClick={handleClose}
             aria-label="Fechar importação"
           >
             <X className="h-4 w-4" />
-            Fechar
+            <span className="hidden sm:inline">Fechar</span>
           </Button>
         </header>
 
@@ -201,7 +202,7 @@ export function ImportTransactionsModal({
         </div>
 
         <footer className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-border bg-card/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground sm:text-sm">
             Linhas válidas: {footerState.validRows} | Erros: {footerState.errorRows} | Ignoradas:{" "}
             {footerState.ignoredRows}
           </p>

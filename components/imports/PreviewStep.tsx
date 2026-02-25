@@ -121,11 +121,26 @@ export function PreviewStep({
             </p>
           </div>
           <div className="flex flex-col gap-2 lg:items-end">
+            <div className="w-full lg:hidden">
+              <label htmlFor="preview-filter-mobile" className="sr-only">
+                Filtrar linhas do preview
+              </label>
+              <Select
+                id="preview-filter-mobile"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value as PreviewFilter)}
+              >
+                <option value="all">Todas ({rowsByStatus.all})</option>
+                <option value="error">Somente erros ({rowsByStatus.error})</option>
+                <option value="ignored">Somente ignoradas ({rowsByStatus.ignored})</option>
+              </Select>
+            </div>
             <SegmentedControl
               ariaLabel="Filtrar linhas do preview"
               options={previewFilterOptions}
               value={filter}
               onChange={(nextValue) => setFilter(nextValue)}
+              className="hidden lg:inline-flex"
             />
             <div className="w-full lg:w-72">
               <Input
@@ -145,29 +160,14 @@ export function PreviewStep({
           Nenhuma linha encontrada para o filtro atual.
         </div>
       ) : (
-        <div
-          className={cn(
-            "max-h-80 overflow-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700",
-            maxHeightClassName
-          )}
-        >
-          <table className="min-w-[1080px] w-full text-sm">
-            <caption className="sr-only">Tabela de linhas detectadas para importacao.</caption>
-            <thead className="sticky top-0 z-10 border-b border-border bg-muted/95 backdrop-blur">
-              <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="p-3">Linha</th>
-                <th className="p-3">Data</th>
-                <th className="p-3">Tipo detectado</th>
-                <th className="p-3">Destino detectado</th>
-                <th className="p-3">Conta</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Motivo</th>
-                <th className="p-3">Categoria</th>
-                <th className="p-3">Salvar regra</th>
-                <th className="p-3 text-right">Valor</th>
-              </tr>
-            </thead>
-            <tbody>
+        <>
+          <div
+            className={cn(
+              "max-h-80 overflow-auto md:hidden [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700",
+              maxHeightClassName
+            )}
+          >
+            <div className="divide-y divide-border/70">
               {filteredRows.map((row, index) => {
                 const detectedDestination = row.counterparty?.trim()
                   ? row.counterparty
@@ -176,57 +176,66 @@ export function PreviewStep({
                     : "-";
                 const reasonText = row.reason ?? row.reasonCode ?? "-";
                 const rowKey = `${row.line ?? index}-${row.description ?? "linha"}-${index}`;
+                const commitIndex = typeof row.commitIndex === "number" ? row.commitIndex : null;
+                const canCategorize = row.status === "ok" && commitIndex !== null;
+                const selectedCategoryId =
+                  commitIndex !== null ? manualCategoryByCommitIndex[commitIndex] ?? "" : "";
+                const canSaveRule =
+                  commitIndex !== null &&
+                  canCategorize &&
+                  Boolean(selectedCategoryId) &&
+                  Boolean(row.merchantKey) &&
+                  row.merchantKey !== "transacao";
 
                 return (
-                  <tr
+                  <article
                     key={rowKey}
                     className={cn(
-                      "border-b border-border/60 align-top transition-colors odd:bg-background even:bg-muted/10 hover:bg-muted/25",
-                      row.status === "error" &&
-                        "bg-rose-50/70 hover:bg-rose-100/70 dark:bg-rose-950/20 dark:hover:bg-rose-950/30",
-                      row.status === "ignored" &&
-                        "bg-amber-50/70 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/30"
+                      "space-y-3 p-3",
+                      row.status === "error" && "bg-rose-50/70 dark:bg-rose-950/20",
+                      row.status === "ignored" && "bg-amber-50/70 dark:bg-amber-950/20"
                     )}
                   >
-                    <td className="p-3">{row.line ?? index + 1}</td>
-                    <td className="p-3">{row.date ? new Date(row.date).toLocaleDateString("pt-BR") : "-"}</td>
-                    <td className="max-w-[170px] p-3" title={row.transactionKind?.trim() ? row.transactionKind : "-"}>
-                      <span className="block truncate">{row.transactionKind?.trim() ? row.transactionKind : "-"}</span>
-                    </td>
-                    <td className="max-w-[260px] p-3" title={detectedDestination}>
-                      <div className="space-y-1">
-                        <div className="truncate">{detectedDestination}</div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="text-xs text-muted-foreground">
+                          Linha {row.line ?? index + 1} •{" "}
+                          {row.date ? new Date(row.date).toLocaleDateString("pt-BR") : "-"}
+                        </p>
+                        <p className="truncate text-sm font-semibold text-foreground">{detectedDestination}</p>
                         {row.merchantKey ? (
-                          <div className="truncate text-xs text-muted-foreground" title={row.merchantKey}>
-                            {row.merchantKey}
-                          </div>
+                          <p className="truncate text-xs text-muted-foreground">{row.merchantKey}</p>
                         ) : null}
                       </div>
-                    </td>
-                    <td className="max-w-[170px] p-3" title={row.accountHint ?? "-"}>
-                      <span className="block truncate">{row.accountHint ?? "-"}</span>
-                    </td>
-                    <td className="p-3">
-                      <span
-                        className={`inline-flex items-center rounded-full border border-current/10 px-2 py-0.5 text-xs font-semibold ${rowStatusClassName(row.status)}`}
-                      >
-                        {rowStatusLabel(row.status)}
-                      </span>
-                    </td>
-                    <td
-                      className={cn(
-                        "max-w-[250px] p-3 text-xs",
-                        row.status === "ok" ? "text-muted-foreground" : "text-foreground"
-                      )}
-                      title={reasonText}
-                    >
-                      <span className="block truncate">{reasonText}</span>
-                    </td>
-                    <td className="p-3">
-                      {row.status === "ok" && typeof row.commitIndex === "number" ? (
+                      <div className="shrink-0 text-right">
+                        <span
+                          className={`inline-flex items-center rounded-full border border-current/10 px-2 py-0.5 text-xs font-semibold ${rowStatusClassName(row.status)}`}
+                        >
+                          {rowStatusLabel(row.status)}
+                        </span>
+                        <p className="mt-1 text-sm font-semibold text-foreground">
+                          {typeof row.amount === "number" ? formatMoney(row.amount) : "-"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 text-xs">
+                      <p className="text-muted-foreground">
+                        Tipo detectado: <span className="text-foreground">{row.transactionKind?.trim() || "-"}</span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        Conta: <span className="text-foreground">{row.accountHint ?? "-"}</span>
+                      </p>
+                      <p className={row.status === "ok" ? "text-muted-foreground" : "text-foreground"}>
+                        Motivo: <span>{reasonText}</span>
+                      </p>
+                    </div>
+
+                    {canCategorize ? (
+                      <div className="space-y-2">
                         <Select
-                          value={manualCategoryByCommitIndex[row.commitIndex] ?? ""}
-                          onChange={(event) => onCategoryChange?.(row.commitIndex ?? -1, event.target.value)}
+                          value={selectedCategoryId}
+                          onChange={(event) => onCategoryChange?.(commitIndex ?? -1, event.target.value)}
                         >
                           <option value="">Sem categoria</option>
                           {categories.map((category) => (
@@ -235,38 +244,149 @@ export function PreviewStep({
                             </option>
                           ))}
                         </Select>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {row.status === "ok" &&
-                      typeof row.commitIndex === "number" &&
-                      Boolean(manualCategoryByCommitIndex[row.commitIndex]) &&
-                      row.merchantKey &&
-                      row.merchantKey !== "transacao" ? (
-                        <label className="inline-flex items-center gap-2 text-xs">
-                          <Checkbox
-                            checked={Boolean(saveRuleByCommitIndex[row.commitIndex])}
-                            onChange={(event) =>
-                              onSaveRuleChange?.(row.commitIndex ?? -1, Boolean(event.target.checked))
-                            }
-                          />
-                          Salvar
-                        </label>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-right font-semibold">
-                      {typeof row.amount === "number" ? formatMoney(row.amount) : "-"}
-                    </td>
-                  </tr>
+
+                        {canSaveRule ? (
+                          <label className="inline-flex items-center gap-2 text-xs">
+                            <Checkbox
+                              checked={Boolean(saveRuleByCommitIndex[commitIndex])}
+                              onChange={(event) =>
+                                onSaveRuleChange?.(commitIndex ?? -1, Boolean(event.target.checked))
+                              }
+                            />
+                            Salvar regra automatica
+                          </label>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </article>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+
+          <div
+            className={cn(
+              "hidden max-h-80 overflow-auto md:block [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700",
+              maxHeightClassName
+            )}
+          >
+            <table className="w-full min-w-[1080px] text-sm">
+              <caption className="sr-only">Tabela de linhas detectadas para importacao.</caption>
+              <thead className="sticky top-0 z-10 border-b border-border bg-muted/95 backdrop-blur">
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="p-3">Linha</th>
+                  <th className="p-3">Data</th>
+                  <th className="p-3">Tipo detectado</th>
+                  <th className="p-3">Destino detectado</th>
+                  <th className="p-3">Conta</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Motivo</th>
+                  <th className="p-3">Categoria</th>
+                  <th className="p-3">Salvar regra</th>
+                  <th className="p-3 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row, index) => {
+                  const detectedDestination = row.counterparty?.trim()
+                    ? row.counterparty
+                    : row.description?.trim()
+                      ? row.description
+                      : "-";
+                  const reasonText = row.reason ?? row.reasonCode ?? "-";
+                  const rowKey = `${row.line ?? index}-${row.description ?? "linha"}-${index}`;
+
+                  return (
+                    <tr
+                      key={rowKey}
+                      className={cn(
+                        "border-b border-border/60 align-top transition-colors odd:bg-background even:bg-muted/10 hover:bg-muted/25",
+                        row.status === "error" &&
+                          "bg-rose-50/70 hover:bg-rose-100/70 dark:bg-rose-950/20 dark:hover:bg-rose-950/30",
+                        row.status === "ignored" &&
+                          "bg-amber-50/70 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/30"
+                      )}
+                    >
+                      <td className="p-3">{row.line ?? index + 1}</td>
+                      <td className="p-3">{row.date ? new Date(row.date).toLocaleDateString("pt-BR") : "-"}</td>
+                      <td className="max-w-[170px] p-3" title={row.transactionKind?.trim() ? row.transactionKind : "-"}>
+                        <span className="block truncate">{row.transactionKind?.trim() ? row.transactionKind : "-"}</span>
+                      </td>
+                      <td className="max-w-[260px] p-3" title={detectedDestination}>
+                        <div className="space-y-1">
+                          <div className="truncate">{detectedDestination}</div>
+                          {row.merchantKey ? (
+                            <div className="truncate text-xs text-muted-foreground" title={row.merchantKey}>
+                              {row.merchantKey}
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="max-w-[170px] p-3" title={row.accountHint ?? "-"}>
+                        <span className="block truncate">{row.accountHint ?? "-"}</span>
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={`inline-flex items-center rounded-full border border-current/10 px-2 py-0.5 text-xs font-semibold ${rowStatusClassName(row.status)}`}
+                        >
+                          {rowStatusLabel(row.status)}
+                        </span>
+                      </td>
+                      <td
+                        className={cn(
+                          "max-w-[250px] p-3 text-xs",
+                          row.status === "ok" ? "text-muted-foreground" : "text-foreground"
+                        )}
+                        title={reasonText}
+                      >
+                        <span className="block truncate">{reasonText}</span>
+                      </td>
+                      <td className="p-3">
+                        {row.status === "ok" && typeof row.commitIndex === "number" ? (
+                          <Select
+                            value={manualCategoryByCommitIndex[row.commitIndex] ?? ""}
+                            onChange={(event) => onCategoryChange?.(row.commitIndex ?? -1, event.target.value)}
+                          >
+                            <option value="">Sem categoria</option>
+                            {categories.map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.name}
+                              </option>
+                            ))}
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        {row.status === "ok" &&
+                        typeof row.commitIndex === "number" &&
+                        Boolean(manualCategoryByCommitIndex[row.commitIndex]) &&
+                        row.merchantKey &&
+                        row.merchantKey !== "transacao" ? (
+                          <label className="inline-flex items-center gap-2 text-xs">
+                            <Checkbox
+                              checked={Boolean(saveRuleByCommitIndex[row.commitIndex])}
+                              onChange={(event) =>
+                                onSaveRuleChange?.(row.commitIndex ?? -1, Boolean(event.target.checked))
+                              }
+                            />
+                            Salvar
+                          </label>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">-</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-right font-semibold">
+                        {typeof row.amount === "number" ? formatMoney(row.amount) : "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
