@@ -332,9 +332,14 @@ async function runMigrations(): Promise<void> {
   await ensureColumn("import_events", "internal_transfer_auto_matched", "INTEGER");
 
   if (db.dialect === "postgres") {
+    await ensurePostgresTransactionTypeEnum();
+    await ensurePostgresTransactionDirectionEnum();
+  }
+
+  if (db.dialect === "postgres") {
     await db.exec(`
       UPDATE transactions
-      SET direction = CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
+      SET direction = (CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END)::transaction_direction
       WHERE direction IS NULL
          OR LOWER(direction::text) <> CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
          OR BTRIM(direction::text) = ''
@@ -424,9 +429,6 @@ async function runMigrations(): Promise<void> {
         AND (t.transfer_from_account_id IS NULL OR t.transfer_to_account_id IS NULL);
     `);
   }
-
-  await ensurePostgresTransactionTypeEnum();
-  await ensurePostgresTransactionDirectionEnum();
 
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_accounts_user_parent ON accounts(user_id, parent_account_id);
