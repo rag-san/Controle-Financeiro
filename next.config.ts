@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
       "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       "./node_modules/@napi-rs/canvas/index.js",
       "./node_modules/@napi-rs/canvas/js-binding.js",
+      "./node_modules/@napi-rs/canvas/geometry.js",
+      "./node_modules/@napi-rs/canvas/load-image.js",
       "./node_modules/@napi-rs/canvas/package.json",
       "./node_modules/@napi-rs/canvas-win32-x64-msvc/**/*",
       "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
