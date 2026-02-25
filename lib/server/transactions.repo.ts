@@ -58,6 +58,10 @@ function toDbBoolean(value: boolean): number | boolean {
   return db.dialect === "postgres" ? value : value ? 1 : 0;
 }
 
+const TX_TYPE_PARAM_SQL = db.dialect === "postgres" ? "?::transaction_type" : "?";
+const TX_DIRECTION_PARAM_SQL = db.dialect === "postgres" ? "?::transaction_direction" : "?";
+const TX_TRANSFER_LITERAL_SQL = db.dialect === "postgres" ? "'transfer'::transaction_type" : "'transfer'";
+
 type TransactionJoinedRow = TransactionRow & {
   account_name?: string | null;
   account_type?: "checking" | "credit" | "cash" | "investment" | null;
@@ -155,7 +159,7 @@ function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[]
     params.push(filter.categoryId);
   }
   if (filter.type) {
-    clauses.push("t.type = ?");
+    clauses.push(db.dialect === "postgres" ? "t.type = ?::transaction_type" : "t.type = ?");
     params.push(filter.type);
   }
   if (filter.normalizedQuery) {
@@ -280,7 +284,7 @@ export const transactionsRepo = {
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
          amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.userId,
@@ -339,7 +343,7 @@ export const transactionsRepo = {
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
          amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const run = db.transaction(async () => {
@@ -478,7 +482,7 @@ export const transactionsRepo = {
           `INSERT INTO transactions (
              id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
              amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', 'transfer', ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
+           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', ${TX_TRANSFER_LITERAL_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
         );
 
         await insert.run(
@@ -616,7 +620,7 @@ export const transactionsRepo = {
     await db.prepare(
       `UPDATE transactions
        SET account_id = ?, category_id = ?, posted_at = ?, description = ?, normalized_description = ?,
-           amount_cents = ?, type = ?, direction = ?, is_internal_transfer = ?, status = ?, transfer_from_account_id = ?, transfer_to_account_id = ?, updated_at = ?
+           amount_cents = ?, type = ${TX_TYPE_PARAM_SQL}, direction = ${TX_DIRECTION_PARAM_SQL}, is_internal_transfer = ?, status = ?, transfer_from_account_id = ?, transfer_to_account_id = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
     ).run(
       input.accountId ?? existing.accountId,
