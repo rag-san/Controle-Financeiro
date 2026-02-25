@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+﻿import { createRequire } from "node:module";
 import { parseFlexibleDate } from "@/lib/normalize";
 import { parseMoneyInput } from "@/lib/money";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
@@ -152,7 +152,7 @@ function parsePortugueseMonthToken(monthToken: string): number | null {
 function parsePortugueseWordDate(day: number, monthToken: string, year: number): Date {
   const month = parsePortugueseMonthToken(monthToken);
   if (!month) {
-    throw new Error(`Mes invalido no PDF: ${monthToken}`);
+    throw new Error(`Mês inválido no PDF: ${monthToken}`);
   }
 
   const dayText = String(day).padStart(2, "0");
@@ -751,7 +751,7 @@ function mapPdfError(error: unknown): PdfImportError {
 
   return new PdfImportError(
     "parser_unavailable",
-    "Nao foi possivel processar este PDF automaticamente.",
+    "Não foi possível processar este PDF automaticamente.",
     message
   );
 }
@@ -927,7 +927,7 @@ async function extractTextWithPdfParse(buffer: Buffer, options: PdfParseOptions)
     return fixCommonMojibake(text);
   }
 
-  throw new PdfImportError("parser_unavailable", "Modulo pdf-parse indisponivel neste ambiente.");
+  throw new PdfImportError("parser_unavailable", "Módulo pdf-parse indisponível neste ambiente.");
 }
 
 export async function parsePdfImport(
@@ -968,7 +968,7 @@ export async function parsePdfImport(
   } else {
     throw new PdfImportError(
       "unsupported_issuer_profile",
-      "PDF reconhecido, mas o emissor/layout ainda nao possui parser dedicado. Tente CSV/OFX.",
+      "PDF reconhecido, mas o emissor/layout ainda não possui parser dedicado. Tente CSV/OFX.",
       `issuer_profile=${classification.issuerProfile}`,
       {
         issuerProfile: classification.issuerProfile,
@@ -981,7 +981,7 @@ export async function parsePdfImport(
   if (parsedTransactions.length === 0) {
     throw new PdfImportError(
       "no_transactions_found",
-      "Nao foi possivel extrair transacoes desse PDF automaticamente. Tente CSV/OFX ou outro modelo de PDF."
+      "Não foi possível extrair transações desse PDF automaticamente. Tente CSV/OFX ou outro modelo de PDF."
     );
   }
 
@@ -1013,3 +1013,4 @@ export async function parsePdfImport(
     metadata
   };
 }
+

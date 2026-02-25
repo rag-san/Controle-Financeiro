@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import type { CategoryDTO } from "@/lib/types";
@@ -72,7 +72,7 @@ export function BulkCategoryModal({
           Definir categoria
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Aplicar categoria para {selectedCount} transacao(oes) selecionada(s).
+          Aplicar categoria para {selectedCount} transação(ões) selecionada(s).
         </p>
 
         <div className="mt-4">
@@ -119,3 +119,4 @@ export function BulkCategoryModal({
     </div>
   );
 }
+

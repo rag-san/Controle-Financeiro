@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import { format } from "date-fns";
@@ -60,8 +60,8 @@ export function TransactionRow({
           onChange={(event) => onToggleSelect(transaction.id, Boolean(event.target.checked))}
           aria-label={
             checked
-              ? `Desmarcar transacao ${transaction.description}`
-              : `Selecionar transacao ${transaction.description}`
+              ? `Desmarcar transação ${transaction.description}`
+              : `Selecionar transação ${transaction.description}`
           }
         />
       </TableCell>
@@ -141,13 +141,13 @@ export function TransactionRow({
         <div className="flex justify-end">
           <Menu
             trigger={<MoreHorizontal className="h-4 w-4" />}
-            triggerAriaLabel={`Acoes da transacao ${transaction.description}`}
+            triggerAriaLabel={`Ações da transação ${transaction.description}`}
             items={[
               ...(!isTransfer
                 ? [
                     {
                       key: "edit",
-                      label: "Editar transacao",
+                      label: "Editar transação",
                       icon: <Pencil className="h-4 w-4" />,
                       onSelect: () => onEdit?.(transaction.id)
                     },
@@ -173,3 +173,4 @@ export function TransactionRow({
     </TableRow>
   );
 }
+

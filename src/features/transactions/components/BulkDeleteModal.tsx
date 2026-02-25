@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import * as React from "react";
 import { Button } from "@/src/components/ui/Button";
@@ -71,7 +71,7 @@ export function BulkDeleteModal({
           Confirmar exclusao
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Esta acao removera {selectedCount} transacao(oes). Digite <span className="font-semibold">DELETE</span> para continuar.
+          Esta ação removerá {selectedCount} transação(ões). Digite <span className="font-semibold">DELETE</span> para continuar.
         </p>
 
         <form
@@ -116,3 +116,4 @@ export function BulkDeleteModal({
     </div>
   );
 }
+

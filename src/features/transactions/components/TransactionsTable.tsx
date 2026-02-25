@@ -1,4 +1,4 @@
-import { ArrowDownUp, Plus, Upload } from "lucide-react";
+﻿import { ArrowDownUp, Plus, Upload } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
@@ -47,7 +47,7 @@ function SortButton({
   onToggleSort: (field: SortField) => void;
 }): React.JSX.Element {
   const active = sortField === field;
-  const directionLabel = active ? (sortDirection === "asc" ? "crescente" : "decrescente") : "nao ordenado";
+  const directionLabel = active ? (sortDirection === "asc" ? "crescente" : "decrescente") : "não ordenado";
 
   return (
     <button
@@ -124,13 +124,13 @@ export function TransactionsTable({
   return (
     <section
       className="rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
-      aria-label="Tabela de transacoes"
+      aria-label="Tabela de transações"
     >
       <div className="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-sm text-muted-foreground">
           Exibindo{" "}
           <span className="font-semibold text-foreground">{visibleCount}</span> de{" "}
-          <span className="font-semibold text-foreground">{totalCount}</span> transacao(oes)
+          <span className="font-semibold text-foreground">{totalCount}</span> transação(ões)
         </p>
         <p className="text-xs text-muted-foreground sm:hidden">Deslize para os lados para ver todas as colunas.</p>
       </div>
@@ -146,10 +146,10 @@ export function TransactionsTable({
                 checked={allSelected}
                 indeterminate={someSelected}
                 onChange={(event) => onToggleSelectAll(Boolean(event.target.checked))}
-                aria-label={allSelected ? "Desmarcar todas as transacoes filtradas" : "Selecionar todas as transacoes filtradas"}
+                aria-label={allSelected ? "Desmarcar todas as transações filtradas" : "Selecionar todas as transações filtradas"}
               />
             </TableHead>
-            <TableHead className={headerClassName}>Descricao</TableHead>
+            <TableHead className={headerClassName}>Descrição</TableHead>
             <TableHead className={headerClassName}>Categoria</TableHead>
             <TableHead className={headerClassName}>Conta</TableHead>
             <TableHead className={headerClassName}>
@@ -182,13 +182,13 @@ export function TransactionsTable({
           {!loading && items.length === 0 ? (
             <TableRow>
               <TableCell colSpan={7} className="py-12 text-center">
-                <p className="text-sm text-muted-foreground">Nenhuma transacao encontrada para os filtros atuais.</p>
-                <p className="mt-1 text-xs text-muted-foreground">Crie uma nova transacao ou importe um extrato.</p>
+                <p className="text-sm text-muted-foreground">Nenhuma transação encontrada para os filtros atuais.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Crie uma nova transação ou importe um extrato.</p>
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                   {onCreateTransaction ? (
                     <Button type="button" size="sm" onClick={onCreateTransaction}>
                       <Plus className="h-4 w-4" />
-                      Nova transacao
+                      Nova transação
                     </Button>
                   ) : null}
                   {onImportStatement ? (
@@ -227,3 +227,4 @@ export function TransactionsTable({
     </section>
   );
 }
+

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
 import { analyzeCsvRows, parseCsvBuffer, suggestCsvMapping, type CsvMapping, type CsvRowDiagnostic } from "@/lib/csv";
@@ -274,11 +274,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const file = formData.get("file");
 
       if (!(file instanceof File)) {
-        return parseError(400, "file_missing", "Arquivo nao enviado.");
+        return parseError(400, "file_missing", "Arquivo não enviado.");
       }
 
       if (!Number.isFinite(file.size) || file.size <= 0) {
-        return parseError(400, "file_empty", "Arquivo invalido ou vazio.");
+        return parseError(400, "file_empty", "Arquivo inválido ou vazio.");
       }
 
       if (file.size > MAX_IMPORT_FILE_BYTES) {
@@ -391,7 +391,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return parseError(
               422,
               "source_parser_unavailable",
-              "Nao foi possivel ler este PDF automaticamente. Suporte atual: Inter (extrato/fatura), Mercado Pago (extrato/fatura) e Nubank (fatura). Se o erro persistir, use CSV/OFX ou envie este layout para suporte.",
+              "Não foi possível ler este PDF automaticamente. Suporte atual: Inter (extrato/fatura), Mercado Pago (extrato/fatura) e Nubank (fatura). Se o erro persistir, use CSV/OFX ou envie este layout para suporte.",
               {
                 sourceType,
                 technicalReason,
@@ -404,7 +404,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           try {
             const parsed = parseOfxBuffer(buffer);
             if (parsed.transactions.length === 0) {
-              throw new Error("Nenhuma transacao OFX encontrada");
+              throw new Error("Nenhuma transação OFX encontrada");
             }
 
             const preview = okRowsToPreviewRows(parsed.transactions);
@@ -436,7 +436,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return parseError(
               422,
               "source_parser_unavailable",
-              "Nao foi possivel ler este OFX automaticamente. Verifique o arquivo e tente novamente.",
+              "Não foi possível ler este OFX automaticamente. Verifique o arquivo e tente novamente.",
               {
                 sourceType,
                 technicalReason
@@ -460,20 +460,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             try {
               const mappingResult = mappingSchema.safeParse(JSON.parse(String(rawMapping)));
               if (!mappingResult.success) {
-                return parseError(400, "invalid_mapping", "Mapping CSV invalido.", {
+                return parseError(400, "invalid_mapping", "Mapping CSV inválido.", {
                   issues: mappingResult.error.flatten()
                 });
               }
               parsedMapping = mappingResult.data;
             } catch {
-              return parseError(400, "invalid_mapping_json", "Mapping CSV invalido.");
+              return parseError(400, "invalid_mapping_json", "Mapping CSV inválido.");
             }
           }
 
           if (parsedMapping) {
             const missingColumns = validateMappingColumns(parsedMapping as CsvMapping, csv.columns);
             if (missingColumns.length > 0) {
-              return parseError(400, "invalid_mapping_columns", "Mapping CSV invalido: colunas ausentes no arquivo.", {
+              return parseError(400, "invalid_mapping_columns", "Mapping CSV inválido: colunas ausentes no arquivo.", {
                 missingColumns
               });
             }
@@ -507,7 +507,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               mappingDiagnostics: {
                 mappable: false,
                 missingRequired: suggestedConfidence.missingRequired,
-                message: "Nao foi possivel mapear automaticamente as colunas obrigatorias."
+                message: "Não foi possível mapear automaticamente as colunas obrigatórias."
               },
               totalRows: csv.rows.length,
               validRows: 0,
@@ -559,3 +559,4 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   });
 }
+

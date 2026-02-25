@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Badge } from "@/src/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
 import { CategoryPill } from "@/src/components/ui/CategoryPill";
@@ -54,7 +54,7 @@ export function TopCategoriesCard({
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle>Principais categorias</CardTitle>
-          <p className="text-sm text-muted-foreground">Comparativo {periodDescription} vs mes anterior.</p>
+          <p className="text-sm text-muted-foreground">Comparativo {periodDescription} vs mês anterior.</p>
         </div>
         <Link
           href={hrefVerMais}
@@ -67,7 +67,7 @@ export function TopCategoriesCard({
       <CardContent>
         {categorias.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300/80 p-6 text-sm text-muted-foreground dark:border-slate-800" role="status">
-            Sem categorias com gastos no periodo selecionado.
+            Sem categorias com gastos no período selecionado.
           </div>
         ) : (
           <div className="space-y-3">
@@ -115,3 +115,4 @@ export function TopCategoriesCard({
     </Card>
   );
 }
+

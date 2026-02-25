@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Select } from "@/components/ui/select";
 import type { AccountDTO, CategoryDTO } from "@/lib/types";
@@ -45,7 +45,7 @@ export function TransactionForm({
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 id="tx-form-title" className="text-base font-semibold">
-          Nova transacao
+          Nova transação
         </h2>
         <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={busy}>
           Fechar
@@ -64,13 +64,13 @@ export function TransactionForm({
           {(fieldProps) => <Input {...fieldProps} type="date" value={values.date} onChange={(event) => onChange({ date: event.target.value })} />}
         </FormField>
 
-        <FormField id="tx-description" label="Descricao" required>
+        <FormField id="tx-description" label="Descrição" required>
           {(fieldProps) => (
             <Input
               {...fieldProps}
               value={values.description}
               onChange={(event) => onChange({ description: event.target.value })}
-              placeholder="Descricao da transacao"
+              placeholder="Descrição da transação"
             />
           )}
         </FormField>
@@ -122,4 +122,5 @@ export function TransactionForm({
     </section>
   );
 }
+
 

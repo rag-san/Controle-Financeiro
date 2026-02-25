@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
@@ -184,7 +184,7 @@ function formatShortDate(value: string): string {
 }
 
 const PDF_PARSE_UNAVAILABLE_MESSAGE =
-  "Nao foi possivel ler este PDF automaticamente. Suporte atual: Inter (extrato/fatura), Mercado Pago (extrato/fatura) e Nubank (fatura). Se persistir, use CSV/OFX ou envie o layout para suporte.";
+  "Não foi possível ler este PDF automaticamente. Suporte atual: Inter (extrato/fatura), Mercado Pago (extrato/fatura) e Nubank (fatura). Se persistir, use CSV/OFX ou envie o layout para suporte.";
 const PDF_PASSWORD_REQUIRED_MESSAGE = "Este PDF parece protegido por senha. Informe a senha e tente novamente.";
 
 function getFileExtension(filename: string): string {
@@ -473,7 +473,7 @@ export const ImportTransactionsContent = forwardRef<
 
     if (!isParseSupportedFile(inputFile)) {
       setParseData(null);
-      const message = "Tipo de arquivo nao suportado. Use arquivos CSV, OFX ou PDF.";
+      const message = "Tipo de arquivo não suportado. Use arquivos CSV, OFX ou PDF.";
       setError(message);
       showParseErrorToastOnce(message, "file_not_supported");
       return;
@@ -517,7 +517,7 @@ export const ImportTransactionsContent = forwardRef<
       }
 
       if (!data) {
-        throw new Error("Nao foi possivel interpretar a resposta de importacao.");
+        throw new Error("Não foi possível interpretar a resposta de importação.");
       }
 
       if (!response.ok) {
@@ -577,7 +577,7 @@ export const ImportTransactionsContent = forwardRef<
 
     if (!isSupported) {
       const message =
-        "Tipo de arquivo nao suportado. Use arquivos CSV, OFX ou PDF.";
+        "Tipo de arquivo não suportado. Use arquivos CSV, OFX ou PDF.";
       setError(message);
       showParseErrorToastOnce(message, `${extension || "unknown"}_not_supported`);
     }
@@ -617,7 +617,7 @@ export const ImportTransactionsContent = forwardRef<
       }
 
       if (!response.ok || !data || !("id" in data)) {
-        throw new Error(extractApiError(data, "Nao foi possivel criar conta."));
+        throw new Error(extractApiError(data, "Não foi possível criar conta."));
       }
 
       setCreatedAccounts((prev) => {
@@ -630,7 +630,7 @@ export const ImportTransactionsContent = forwardRef<
       setDefaultAccountId(data.id);
       setQuickAccount((prev) => ({ ...prev, name: "", institution: "", parentAccountId: "" }));
       setShowQuickAccountForm(false);
-      toast({ variant: "success", title: "Conta criada", description: `${data.name} pronta para uso na importacao.` });
+      toast({ variant: "success", title: "Conta criada", description: `${data.name} pronta para uso na importação.` });
 
       if (onAccountsRefresh) {
         await onAccountsRefresh();
@@ -692,7 +692,7 @@ export const ImportTransactionsContent = forwardRef<
         });
 
         if (!response.ok) {
-          throw new Error("Nao foi possivel salvar uma ou mais regras de estabelecimento.");
+          throw new Error("Não foi possível salvar uma ou mais regras de estabelecimento.");
         }
       }
     },
@@ -703,9 +703,9 @@ export const ImportTransactionsContent = forwardRef<
     if (!file || !parseData) return;
 
     if (!defaultAccountId && !commitRows.some((row) => row.accountId || row.accountHint)) {
-      const message = "Selecione uma conta padrao para concluir a importacao.";
+      const message = "Selecione uma conta padrão para concluir a importação.";
       setError(message);
-      toast({ variant: "error", title: "Conta obrigatoria", description: message });
+      toast({ variant: "error", title: "Conta obrigatória", description: message });
       return;
     }
 
@@ -745,7 +745,7 @@ export const ImportTransactionsContent = forwardRef<
       }
 
       if (!data) {
-        throw new Error("Nao foi possivel interpretar a resposta final da importacao.");
+        throw new Error("Não foi possível interpretar a resposta final da importação.");
       }
 
       if (!response.ok || data.error) {
@@ -779,13 +779,13 @@ export const ImportTransactionsContent = forwardRef<
       });
       toast({
         variant: "success",
-        title: "Importacao concluida",
-        description: `${data.totalImported} transacao(oes) importada(s).`
+        title: "Importação concluída",
+        description: `${data.totalImported} transação(ões) importada(s).`
       });
       if (saveRuleWarning) {
         toast({
           variant: "info",
-          title: "Importacao concluida com aviso",
+          title: "Importação concluída com aviso",
           description: saveRuleWarning
         });
       }
@@ -793,7 +793,7 @@ export const ImportTransactionsContent = forwardRef<
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro inesperado";
       setError(message);
-      toast({ variant: "error", title: "Falha na importacao", description: message });
+      toast({ variant: "error", title: "Falha na importação", description: message });
     } finally {
       setLoading(false);
     }
@@ -847,7 +847,7 @@ export const ImportTransactionsContent = forwardRef<
             {isPdfUpload ? (
               <>
                 <p className="text-sm">
-                  PDF sera processado automaticamente. Se estiver protegido, informe a senha antes de analisar.
+                  PDF será processado automaticamente. Se estiver protegido, informe a senha antes de analisar.
                 </p>
                 <FormField
                   id="import-pdf-password"
@@ -866,7 +866,7 @@ export const ImportTransactionsContent = forwardRef<
                 </FormField>
                 {needsPdfPassword ? (
                   <p className="text-sm text-amber-700 dark:text-amber-300">
-                    Senha obrigatoria ou invalida. Informe a senha correta e clique em analisar novamente.
+                    Senha obrigatória ou inválida. Informe a senha correta e clique em analisar novamente.
                   </p>
                 ) : null}
               </>
@@ -910,7 +910,7 @@ export const ImportTransactionsContent = forwardRef<
               <div className="rounded-2xl border border-border/80 bg-card p-3 sm:p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold tracking-wide">Configuracao da importacao</h3>
+                    <h3 className="text-sm font-semibold tracking-wide">Configuração da importação</h3>
                     <p className="text-sm text-muted-foreground">
                       Defina uma conta fallback para linhas sem conta identificada no arquivo.
                     </p>
@@ -936,7 +936,7 @@ export const ImportTransactionsContent = forwardRef<
                 <FormField
                   id="import-default-account"
                   label="Conta padrao (fallback)"
-                  hint="Usada quando a linha importada nao indicar conta."
+                  hint="Usada quando a linha importada não indicar conta."
                   className="mt-4"
                 >
                   {(fieldProps) => (
@@ -1011,10 +1011,10 @@ export const ImportTransactionsContent = forwardRef<
 
             {parseData.documentType === "credit_card_invoice" && defaultAccount?.type !== "credit" ? (
               <FeedbackMessage variant="warning" className="space-y-2 p-4">
-                <p className="font-semibold">Fatura de cartao detectada</p>
+                <p className="font-semibold">Fatura de cartão detectada</p>
                 <p>
-                  Selecione uma conta do tipo cartao de credito para manter os lancamentos separados da conta
-                  corrente. Se nao existir conta de cartao para a instituicao, o sistema tentara criar uma conta
+                  Selecione uma conta do tipo cartão de crédito para manter os lançamentos separados da conta
+                  corrente. Se não existir conta de cartão para a instituição, o sistema tentará criar uma conta
                   vinculada automaticamente.
                 </p>
               </FeedbackMessage>
@@ -1030,10 +1030,10 @@ export const ImportTransactionsContent = forwardRef<
                   />
                   <div>
                     <label htmlFor="convert-card-payment-transfer" className="font-medium">
-                      Converter pagamentos de fatura em transferencia para cartao
+                      Converter pagamentos de fatura em transferência para cartão
                     </label>
                     <p className="text-sm text-muted-foreground">
-                      O debito sai da conta corrente e entra na conta de cartao sem gerar despesa duplicada.
+                      O débito sai da conta corrente e entra na conta de cartão sem gerar despesa duplicada.
                     </p>
                   </div>
                 </div>
@@ -1041,7 +1041,7 @@ export const ImportTransactionsContent = forwardRef<
                 {convertCardPaymentsToTransfer ? (
                   <FormField
                     id="card-payment-target-account"
-                    label="Conta cartao destino (opcional)"
+                    label="Conta cartão destino (opcional)"
                     hint="Se vazio, o sistema tenta inferir automaticamente pelo vinculo da conta mãe."
                     className="sm:max-w-xl"
                   >
@@ -1081,7 +1081,7 @@ export const ImportTransactionsContent = forwardRef<
                   />
                   <div>
                     <label htmlFor="skip-card-payment-lines" className="font-medium">
-                      Ignorar linhas de pagamento na fatura do cartao
+                      Ignorar linhas de pagamento na fatura do cartão
                     </label>
                     <p className="text-sm text-muted-foreground">
                       Evita importar o credito de pagamento da fatura e duplicar com o extrato da conta corrente.
@@ -1095,11 +1095,11 @@ export const ImportTransactionsContent = forwardRef<
               <section className="space-y-4 rounded-2xl border border-border/80 bg-card p-4 sm:p-5" role="status">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold tracking-wide">Conta rapida para importacao</h3>
+                    <h3 className="text-sm font-semibold tracking-wide">Conta rápida para importação</h3>
                     <p className="text-sm text-muted-foreground">
                       {mergedAccounts.length === 0
-                        ? "Nenhuma conta encontrada. Crie uma conta para continuar a importacao."
-                        : "Crie uma nova conta sem sair do fluxo de importacao."}
+                        ? "Nenhuma conta encontrada. Crie uma conta para continuar a importação."
+                        : "Crie uma nova conta sem sair do fluxo de importação."}
                     </p>
                   </div>
                   {mergedAccounts.length > 0 ? (
@@ -1141,13 +1141,13 @@ export const ImportTransactionsContent = forwardRef<
                         }
                       >
                         <option value="checking">Conta corrente</option>
-                        <option value="credit">Cartao de credito</option>
+                        <option value="credit">Cartão de crédito</option>
                         <option value="cash">Dinheiro</option>
                         <option value="investment">Investimento</option>
                       </Select>
                     )}
                   </FormField>
-                  <FormField id="quick-account-institution" label="Instituicao" className="xl:col-span-3">
+                  <FormField id="quick-account-institution" label="Instituição" className="xl:col-span-3">
                     {(fieldProps) => (
                       <Input
                         {...fieldProps}
@@ -1173,7 +1173,7 @@ export const ImportTransactionsContent = forwardRef<
                     <FormField
                       id="quick-account-parent"
                       label="Conta mae (opcional)"
-                      hint="Vincule a conta de cartao a uma conta corrente para conciliacao automatica."
+                      hint="Vincule a conta de cartão a uma conta corrente para conciliação automática."
                       className="md:col-span-2 xl:col-span-6"
                     >
                       {(fieldProps) => (
@@ -1254,7 +1254,7 @@ export const ImportTransactionsContent = forwardRef<
         {result ? (
           <FeedbackMessage variant="success" className="space-y-1 p-4">
             <p>
-              Importacao concluida: {result.totalImported} novas transacoes e {result.totalSkipped} ignoradas.
+              Importação concluída: {result.totalImported} novas transações e {result.totalSkipped} ignoradas.
             </p>
             <p className="text-muted-foreground">
               Dica: voce pode ajustar mapeamento/conta destino e importar novamente o mesmo preview.
@@ -1302,7 +1302,7 @@ export const ImportTransactionsContent = forwardRef<
               </p>
             ) : null}
             {typeof result.deterministicCategorizedCount === "number" && result.deterministicCategorizedCount > 0 ? (
-              <p>Categorizacao deterministica aplicada em {result.deterministicCategorizedCount} transacoes.</p>
+              <p>Categorização determinística aplicada em {result.deterministicCategorizedCount} transações.</p>
             ) : null}
             {result.importedRange ? (
               <p>
@@ -1328,4 +1328,5 @@ export const ImportTransactionsContent = forwardRef<
 });
 
 ImportTransactionsContent.displayName = "ImportTransactionsContent";
+
 

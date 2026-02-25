@@ -1,4 +1,4 @@
-import { Download, Tag, Trash2, X } from "lucide-react";
+﻿import { Download, Tag, Trash2, X } from "lucide-react";
 import { Button } from "@/src/components/ui/Button";
 
 type BulkActionsBarProps = {
@@ -38,7 +38,7 @@ export function BulkActionsBar({
     <section
       className="flex flex-col gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between"
       aria-live="polite"
-      aria-label="Acoes em lote"
+      aria-label="Ações em lote"
     >
       <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
         {selectedCount} selecionada(s)
@@ -116,3 +116,4 @@ export function BulkActionsBar({
     </section>
   );
 }
+

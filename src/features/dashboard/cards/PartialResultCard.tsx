@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Info } from "lucide-react";
 import { Badge } from "@/src/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
@@ -57,7 +57,7 @@ export function PartialResultCard({
           <p className="text-4xl font-semibold tracking-tight text-foreground">{formatBRL(resultadoAtual)}</p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge value={formatSignedPercent(porcentagemVariacao)} variant={resolveBadgeVariant(porcentagemVariacao)} />
-            <span>vs {formatBRL(resultadoMesAnterior)} mes anterior</span>
+            <span>vs {formatBRL(resultadoMesAnterior)} mês anterior</span>
           </div>
         </div>
 
@@ -81,3 +81,4 @@ export function PartialResultCard({
     </Card>
   );
 }
+

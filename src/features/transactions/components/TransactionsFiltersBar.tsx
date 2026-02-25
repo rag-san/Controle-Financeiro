@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronDown, ChevronUp, Funnel, Search } from "lucide-react";
+﻿import { CalendarDays, ChevronDown, ChevronUp, Funnel, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { AccountDTO, CategoryDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -95,7 +95,7 @@ export function TransactionsFiltersBar({
   return (
     <section
       className="rounded-2xl border border-slate-200/70 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:p-4"
-      aria-label="Filtros de transacoes"
+      aria-label="Filtros de transações"
       aria-busy={busy}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -138,7 +138,7 @@ export function TransactionsFiltersBar({
       <div className="space-y-2">
         <div className="relative min-w-0">
           <label htmlFor="tx-filter-search" className="sr-only">
-            Buscar transacoes
+            Buscar transações
           </label>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -166,9 +166,9 @@ export function TransactionsFiltersBar({
               <option value="7d">Ultimos 7 dias</option>
               <option value="30d">Ultimos 30 dias</option>
               <option value="90d">Ultimos 90 dias</option>
-              <option value="this-month">Este mes</option>
+              <option value="this-month">Este mês</option>
               <option value="last-month">Mes passado</option>
-              <option value="all">Todo periodo</option>
+              <option value="all">Todo período</option>
               <option value="custom">Personalizado</option>
             </FilterSelect>
 
@@ -189,12 +189,12 @@ export function TransactionsFiltersBar({
 
             <FilterSelect
               id="tx-filter-type"
-              label="Tipo de transacao"
+              label="Tipo de transação"
               value={filters.type}
               onChange={(value) => onChange({ type: value as TransactionsFiltersState["type"] })}
               disabled={busy}
             >
-              <option value="">Todas as transacoes</option>
+              <option value="">Todas as transações</option>
               <option value="income">Receitas</option>
               <option value="expense">Despesas</option>
               <option value="transfer">Transferencias</option>
@@ -253,3 +253,4 @@ export function TransactionsFiltersBar({
     </section>
   );
 }
+

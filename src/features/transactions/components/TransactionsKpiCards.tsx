@@ -43,7 +43,7 @@ export function TransactionsKpiCards({
   return (
     <section
       className="grid gap-3 md:grid-cols-3"
-      aria-label="Resumo financeiro do periodo selecionado"
+      aria-label="Resumo financeiro do período selecionado"
       role="status"
       aria-live="polite"
     >

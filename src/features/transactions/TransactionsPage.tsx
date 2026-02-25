@@ -234,12 +234,12 @@ function formatPeriodDateLabel(value: string): string {
 }
 
 function resolveTransactionsPeriodLabel(filters: Pick<TransactionsFiltersState, "period" | "from" | "to">): string {
-  if (filters.period === "7d") return "Ultimos 7 dias";
-  if (filters.period === "30d") return "Ultimos 30 dias";
-  if (filters.period === "90d") return "Ultimos 90 dias";
-  if (filters.period === "this-month") return "Este mes";
-  if (filters.period === "last-month") return "Mes passado";
-  if (filters.period === "all") return "Todo periodo";
+  if (filters.period === "7d") return "Últimos 7 dias";
+  if (filters.period === "30d") return "Últimos 30 dias";
+  if (filters.period === "90d") return "Últimos 90 dias";
+  if (filters.period === "this-month") return "Este mês";
+  if (filters.period === "last-month") return "Mês passado";
+  if (filters.period === "all") return "Todo período";
 
   if (filters.period === "custom") {
     const fromLabel = filters.from ? formatPeriodDateLabel(filters.from) : "";
@@ -247,10 +247,10 @@ function resolveTransactionsPeriodLabel(filters: Pick<TransactionsFiltersState, 
 
     if (fromLabel && toLabel) return `${fromLabel} a ${toLabel}`;
     if (fromLabel) return `A partir de ${fromLabel}`;
-    if (toLabel) return `Ate ${toLabel}`;
+    if (toLabel) return `Até ${toLabel}`;
   }
 
-  return "Periodo atual";
+  return "Período atual";
 }
 
 function isUncategorizedTransaction(transaction: TransactionDTO): boolean {
@@ -464,7 +464,7 @@ export function TransactionsPage(): React.JSX.Element {
         }
 
         if (!response.ok || !data || !("items" in data)) {
-          throw new Error(extractApiError(data, "Nao foi possivel carregar transacoes."));
+          throw new Error(extractApiError(data, "Não foi possível carregar transações."));
         }
 
         setTransactions(data.items);
@@ -485,7 +485,7 @@ export function TransactionsPage(): React.JSX.Element {
         }
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          const message = error instanceof Error ? error.message : "Falha ao carregar transacoes.";
+          const message = error instanceof Error ? error.message : "Falha ao carregar transações.";
           setActionError(message);
         }
       } finally {
@@ -618,9 +618,9 @@ export function TransactionsPage(): React.JSX.Element {
   const handleCreate = async (): Promise<void> => {
     const trimmedDescription = newTx.description.trim();
     if (!trimmedDescription || !newTx.amount.trim() || !newTx.accountId) {
-      const message = "Preencha descricao, valor e conta para criar uma transacao.";
+      const message = "Preencha descrição, valor e conta para criar uma transação.";
       setCreateError(message);
-      toast({ variant: "error", title: "Campos obrigatorios", description: message });
+      toast({ variant: "error", title: "Campos obrigatórios", description: message });
       return;
     }
 
@@ -645,17 +645,17 @@ export function TransactionsPage(): React.JSX.Element {
       }
 
       if (!response.ok || !data || !("id" in data)) {
-        throw new Error(extractApiError(data, "Falha ao criar transacao."));
+        throw new Error(extractApiError(data, "Falha ao criar transação."));
       }
 
       setNewTx((previous) => ({ ...previous, description: "", amount: "", categoryId: "" }));
       setShowCreate(false);
       await loadTransactions();
-      toast({ variant: "success", title: "Transacao criada", description: "A lista foi atualizada." });
+      toast({ variant: "success", title: "Transação criada", description: "A lista foi atualizada." });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao criar transacao.";
+      const message = error instanceof Error ? error.message : "Falha ao criar transação.";
       setCreateError(message);
-      toast({ variant: "error", title: "Erro ao criar transacao", description: message });
+      toast({ variant: "error", title: "Erro ao criar transação", description: message });
     } finally {
       setCreating(false);
     }
@@ -737,15 +737,15 @@ export function TransactionsPage(): React.JSX.Element {
       }
 
       if (!response.ok || !data?.success) {
-        throw new Error(extractApiError(data, "Falha ao excluir transacao."));
+        throw new Error(extractApiError(data, "Falha ao excluir transação."));
       }
 
       await loadTransactions();
-      toast({ variant: "success", title: "Transacao excluida", description: "Lancamento removido com sucesso." });
+      toast({ variant: "success", title: "Transação excluída", description: "Lançamento removido com sucesso." });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir transacao.";
+      const message = error instanceof Error ? error.message : "Falha ao excluir transação.";
       setActionError(message);
-      toast({ variant: "error", title: "Erro ao excluir transacao", description: message });
+      toast({ variant: "error", title: "Erro ao excluir transação", description: message });
     }
   };
 
@@ -778,7 +778,7 @@ export function TransactionsPage(): React.JSX.Element {
       }
 
       if (!response.ok || !data || !("success" in data)) {
-        throw new Error(extractApiError(data, "Falha ao excluir transacoes selecionadas."));
+        throw new Error(extractApiError(data, "Falha ao excluir transações selecionadas."));
       }
 
       clearSelection();
@@ -786,13 +786,13 @@ export function TransactionsPage(): React.JSX.Element {
       await loadTransactions();
       toast({
         variant: "success",
-        title: "Exclusao concluida",
-        description: `${data.deletedCount} transacao(oes) removida(s).`
+        title: "Exclusão concluída",
+        description: `${data.deletedCount} transação(ões) removida(s).`
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir transacoes selecionadas.";
+      const message = error instanceof Error ? error.message : "Falha ao excluir transações selecionadas.";
       setActionError(message);
-      toast({ variant: "error", title: "Erro na exclusao em massa", description: message });
+      toast({ variant: "error", title: "Erro na exclusão em massa", description: message });
     } finally {
       setBulkDeleting(false);
     }
@@ -833,17 +833,17 @@ export function TransactionsPage(): React.JSX.Element {
         toast({
           variant: "success",
           title: "Categoria aplicada",
-          description: `${result.successCount} transacao(oes) atualizada(s) para ${categoryLabel}.`
+          description: `${result.successCount} transação(ões) atualizada(s) para ${categoryLabel}.`
         });
       } else {
         toast({
           variant: "error",
-          title: "Atualizacao parcial",
+          title: "Atualização parcial",
           description: `${result.successCount} atualizada(s) e ${result.failureCount} com falha.`
         });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao categorizar transacoes selecionadas.";
+      const message = error instanceof Error ? error.message : "Falha ao categorizar transações selecionadas.";
       setActionError(message);
       toast({ variant: "error", title: "Erro ao categorizar em lote", description: message });
     } finally {
@@ -863,14 +863,14 @@ export function TransactionsPage(): React.JSX.Element {
         toast({
           variant: "info",
           title: "Nada para exportar",
-          description: "Nenhuma transacao selecionada no conjunto atual."
+          description: "Nenhuma transação selecionada no conjunto atual."
         });
         return;
       }
 
       const csvRows = [
         [
-          "Descricao",
+          "Descrição",
           "Categoria",
           "Conta",
           "Data",
@@ -908,11 +908,11 @@ export function TransactionsPage(): React.JSX.Element {
 
       toast({
         variant: "success",
-        title: "Exportacao concluida",
-        description: `${rows.length} transacao(oes) exportada(s).`
+        title: "Exportação concluída",
+        description: `${rows.length} transação(ões) exportada(s).`
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao exportar transacoes selecionadas.";
+      const message = error instanceof Error ? error.message : "Falha ao exportar transações selecionadas.";
       setActionError(message);
       toast({ variant: "error", title: "Erro ao exportar", description: message });
     } finally {
@@ -978,7 +978,7 @@ export function TransactionsPage(): React.JSX.Element {
         toast({
           variant: "success",
           title: "Sugestões aplicadas",
-          description: `${result.successCount} transacao(oes) categorizada(s) automaticamente.`
+          description: `${result.successCount} transação(ões) categorizada(s) automaticamente.`
         });
       } else {
         toast({
@@ -1052,7 +1052,7 @@ export function TransactionsPage(): React.JSX.Element {
   );
 
   return (
-    <PageShell title="Transações" subtitle="Lancamentos, filtros e categorizacao manual" actions={actions}>
+    <PageShell title="Transações" subtitle="Lançamentos, filtros e categorização manual" actions={actions}>
       <ImportTransactionsModal
         open={isImportOpen}
         accounts={accounts}
@@ -1150,8 +1150,8 @@ export function TransactionsPage(): React.JSX.Element {
           onEdit={() => {
             toast({
               variant: "info",
-              title: "Edicao em breve",
-              description: "A edicao completa da transacao sera disponibilizada nas proximas iteracoes."
+              title: "Edição em breve",
+              description: "A edição completa da transação será disponibilizada nas próximas iterações."
             });
           }}
           onClearFilters={clearAllFilters}
@@ -1190,7 +1190,7 @@ export function TransactionsPage(): React.JSX.Element {
               <span className="font-semibold text-foreground">{pagination.totalCount}</span> resultado(s)
             </p>
             <p className="text-xs text-muted-foreground">
-              Pagina {pagination.page} de {pagination.totalPages}
+              Página {pagination.page} de {pagination.totalPages}
             </p>
           </div>
           <div className="flex w-full gap-2 sm:w-auto">
@@ -1210,7 +1210,7 @@ export function TransactionsPage(): React.JSX.Element {
               disabled={!pagination.hasNextPage || loading}
               onClick={() => setPage((previous) => previous + 1)}
             >
-              Proxima
+              Próxima
             </Button>
           </div>
         </div>

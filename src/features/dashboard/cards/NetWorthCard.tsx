@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Clock3 } from "lucide-react";
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { DefaultChartTooltip } from "@/src/components/charts/DefaultChartTooltip";
@@ -68,7 +68,7 @@ export function NetWorthCard({
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle>Patrimonio</CardTitle>
-          <p className="text-sm text-muted-foreground">Evolucao por faixa selecionada ({periodDescription}).</p>
+          <p className="text-sm text-muted-foreground">Evolução por faixa selecionada ({periodDescription}).</p>
         </div>
         <Link
           href={hrefVerTodas}
@@ -139,3 +139,4 @@ export function NetWorthCard({
     </Card>
   );
 }
+
