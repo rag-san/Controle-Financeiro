@@ -36,6 +36,30 @@ test("classifyPdfText detects Mercado Pago invoice", () => {
   assert.equal(result.issuerProfile, "mercado_pago_invoice");
 });
 
+test("classifyPdfText detects Mercado Pago statement", () => {
+  const result = classifyPdfText(`
+    EXTRATO DE CONTA
+    DETALHE DOS MOVIMENTOS
+    Data Descrição ID da operação Valor Saldo
+    Mercado Pago Instituição de Pagamento
+  `);
+
+  assert.equal(result.documentType, "bank_statement");
+  assert.equal(result.issuerProfile, "mercado_pago_statement");
+});
+
+test("classifyPdfText detects Nubank invoice", () => {
+  const result = classifyPdfText(`
+    Nubank
+    Fatura
+    Data de vencimento
+    Período vigente
+  `);
+
+  assert.equal(result.documentType, "credit_card_invoice");
+  assert.equal(result.issuerProfile, "nubank_invoice");
+});
+
 test("classifyPdfText returns unknown issuer for generic invoice", () => {
   const result = classifyPdfText(`
     Fatura

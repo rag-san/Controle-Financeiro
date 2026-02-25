@@ -1,4 +1,4 @@
-import { ArrowDownUp } from "lucide-react";
+import { ArrowDownUp, Plus, Upload } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
@@ -20,6 +20,7 @@ type TransactionsTableProps = {
   sortField: SortField;
   sortDirection: SortDirection;
   totalCount: number;
+  visibleCount: number;
   onToggleSort: (field: SortField) => void;
   onToggleSelectAll: (checked: boolean) => void;
   onToggleSelect: (id: string, checked: boolean) => void;
@@ -28,6 +29,8 @@ type TransactionsTableProps = {
   onDelete: (id: string) => void;
   onEdit?: (id: string) => void;
   onClearFilters: () => void;
+  onCreateTransaction?: () => void;
+  onImportStatement?: () => void;
 };
 
 function SortButton({
@@ -101,6 +104,7 @@ export function TransactionsTable({
   sortField,
   sortDirection,
   totalCount,
+  visibleCount,
   onToggleSort,
   onToggleSelectAll,
   onToggleSelect,
@@ -108,11 +112,14 @@ export function TransactionsTable({
   onApplySuggestion,
   onDelete,
   onEdit,
-  onClearFilters
+  onClearFilters,
+  onCreateTransaction,
+  onImportStatement
 }: TransactionsTableProps): React.JSX.Element {
   const selectedIdsSet = new Set(selectedIds);
   const allSelected = items.length > 0 && items.every((item) => selectedIdsSet.has(item.id));
   const someSelected = !allSelected && items.some((item) => selectedIdsSet.has(item.id));
+  const headerClassName = "normal-case tracking-normal text-[13px] font-semibold";
 
   return (
     <section
@@ -121,7 +128,9 @@ export function TransactionsTable({
     >
       <div className="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-sm text-muted-foreground">
-          Exibindo <span className="font-semibold text-foreground">{totalCount}</span> transacao(oes)
+          Exibindo{" "}
+          <span className="font-semibold text-foreground">{visibleCount}</span> de{" "}
+          <span className="font-semibold text-foreground">{totalCount}</span> transacao(oes)
         </p>
         <p className="text-xs text-muted-foreground sm:hidden">Deslize para os lados para ver todas as colunas.</p>
       </div>
@@ -132,7 +141,7 @@ export function TransactionsTable({
       >
         <TableHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-slate-950/95">
           <TableRow>
-            <TableHead className="w-11 pr-2">
+            <TableHead className={`w-11 pr-2 ${headerClassName}`}>
               <Checkbox
                 checked={allSelected}
                 indeterminate={someSelected}
@@ -140,10 +149,10 @@ export function TransactionsTable({
                 aria-label={allSelected ? "Desmarcar todas as transacoes filtradas" : "Selecionar todas as transacoes filtradas"}
               />
             </TableHead>
-            <TableHead>Descricao</TableHead>
-            <TableHead>Categoria</TableHead>
-            <TableHead>Conta</TableHead>
-            <TableHead>
+            <TableHead className={headerClassName}>Descricao</TableHead>
+            <TableHead className={headerClassName}>Categoria</TableHead>
+            <TableHead className={headerClassName}>Conta</TableHead>
+            <TableHead className={headerClassName}>
               <SortButton
                 label="Data"
                 field="date"
@@ -152,7 +161,7 @@ export function TransactionsTable({
                 onToggleSort={onToggleSort}
               />
             </TableHead>
-            <TableHead className="text-right">
+            <TableHead className={`w-[140px] text-right ${headerClassName}`}>
               <div className="flex justify-end">
                 <SortButton
                   label="Valor"
@@ -163,7 +172,7 @@ export function TransactionsTable({
                 />
               </div>
             </TableHead>
-            <TableHead className="text-right">Acao</TableHead>
+            <TableHead className={`w-[96px] text-right ${headerClassName}`}>Acao</TableHead>
           </TableRow>
         </TableHeader>
 
@@ -174,15 +183,24 @@ export function TransactionsTable({
             <TableRow>
               <TableCell colSpan={7} className="py-12 text-center">
                 <p className="text-sm text-muted-foreground">Nenhuma transacao encontrada para os filtros atuais.</p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 h-auto px-1 py-0 text-sm text-primary"
-                  onClick={onClearFilters}
-                >
-                  Limpar filtros
-                </Button>
+                <p className="mt-1 text-xs text-muted-foreground">Crie uma nova transacao ou importe um extrato.</p>
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                  {onCreateTransaction ? (
+                    <Button type="button" size="sm" onClick={onCreateTransaction}>
+                      <Plus className="h-4 w-4" />
+                      Nova transacao
+                    </Button>
+                  ) : null}
+                  {onImportStatement ? (
+                    <Button type="button" size="sm" variant="outline" onClick={onImportStatement}>
+                      <Upload className="h-4 w-4" />
+                      Importar extrato
+                    </Button>
+                  ) : null}
+                  <Button type="button" variant="ghost" size="sm" onClick={onClearFilters}>
+                    Limpar filtros
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ) : null}

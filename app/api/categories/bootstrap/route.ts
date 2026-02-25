@@ -11,30 +11,42 @@ import { restoreDefaultCategoriesForUser } from "@/lib/server/default-categories
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   return withRouteProfiling(request, "/api/categories/bootstrap.GET", async () => {
-  const auth = await requireUser(request);
-  if (auth instanceof NextResponse) return auth;
+    const auth = await requireUser(request);
+    if (auth instanceof NextResponse) return auth;
 
-  const cacheKey = `bootstrap:${auth.userId}:categories`;
-  const cached = getCache(cacheKey);
-  if (cached) {
-    return NextResponse.json(cached, { headers: privateCacheHeaders });
-  }
+    const cacheKey = `bootstrap:${auth.userId}:categories`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, { headers: privateCacheHeaders });
+    }
 
-  const [categories, rules, accounts] = await Promise.all([
-    categoriesRepo.listByUser(auth.userId, true),
-    categoryRulesRepo.listByUser(auth.userId, true),
-    accountsRepo.listByUser(auth.userId)
-  ]);
+    let [categories, rules, accounts] = await Promise.all([
+      categoriesRepo.listByUser(auth.userId, true),
+      categoryRulesRepo.listByUser(auth.userId, true),
+      accountsRepo.listByUser(auth.userId)
+    ]);
 
-  const payload = {
-    categories,
-    rules,
-    accounts
-  };
+    // Self-healing: garante categorias/regras padrão quando o usuário ficou zerado.
+    if (categories.length === 0) {
+      await restoreDefaultCategoriesForUser(auth.userId);
+      invalidateFinanceCaches(auth.userId);
 
-  setCache(cacheKey, payload, 20_000);
+      [categories, rules, accounts] = await Promise.all([
+        categoriesRepo.listByUser(auth.userId, true),
+        categoryRulesRepo.listByUser(auth.userId, true),
+        accountsRepo.listByUser(auth.userId)
+      ]);
+    }
 
-  return NextResponse.json(payload, { headers: privateCacheHeaders });
+    const payload = {
+      categories,
+      rules,
+      accounts
+    };
+
+    setCache(cacheKey, payload, 20_000);
+
+    return NextResponse.json(payload, { headers: privateCacheHeaders });
   });
 }
 

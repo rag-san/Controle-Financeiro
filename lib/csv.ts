@@ -165,16 +165,23 @@ function sanitizeCell(value: string): string {
 const headerAliasKeywords = [
   "DATA",
   "DATE",
+  "RELEASE_DATE",
+  "POSTING_DATE",
   "LANC",
   "POSTED",
   "DESCR",
   "HIST",
+  "TRANSACTION",
+  "REFERENCE",
   "MEMO",
   "DETAIL",
   "VALOR",
   "AMOUNT",
+  "NET_AMOUNT",
   "DEBIT",
   "CREDIT",
+  "PARTIAL_BALANCE",
+  "FINAL_BALANCE",
   "CONTA",
   "ACCOUNT",
   "TIPO"
@@ -200,13 +207,60 @@ function findHeaderIndex(matrix: string[][]): number {
   let bestIndex = 0;
   let bestScore = Number.NEGATIVE_INFINITY;
 
+  const headerIntentScore = (row: string[]): number => {
+    const normalizedCells = row.map((cell) => normalizeDescription(cell));
+    const hasDateField = normalizedCells.some(
+      (cell) => cell.includes("DATE") || cell.includes("DATA") || cell.includes("LANC")
+    );
+    const hasAmountField = normalizedCells.some(
+      (cell) =>
+        cell.includes("VALOR") ||
+        cell.includes("AMOUNT") ||
+        cell.includes("DEBIT") ||
+        cell.includes("CREDIT")
+    );
+    const hasDescriptionField = normalizedCells.some(
+      (cell) =>
+        cell.includes("DESCR") ||
+        cell.includes("HIST") ||
+        cell.includes("TRANSACTION") ||
+        cell.includes("BENEF")
+    );
+    const mostlyBalanceSummary =
+      normalizedCells.length > 0 &&
+      normalizedCells.every(
+        (cell) =>
+          cell.includes("BALANCE") ||
+          cell.includes("SALDO") ||
+          cell.includes("DEBIT") ||
+          cell.includes("CREDIT")
+      );
+
+    let score = 0;
+    if (hasDateField) score += 4;
+    if (hasAmountField) score += 3;
+    if (hasDescriptionField) score += 3;
+    if (mostlyBalanceSummary && !hasDateField) score -= 4;
+    return score;
+  };
+
   inspected.forEach((row, index) => {
     const nonEmpty = row.filter((cell) => sanitizeCell(cell).length > 0).length;
     if (nonEmpty < 2) return;
 
     const headerHits = row.filter((cell) => looksLikeHeaderCell(cell)).length;
     const hasDataSignature = looksLikeDataRow(row);
-    const score = nonEmpty + headerHits * 3 - (hasDataSignature ? 2 : 0);
+    const nextNonEmptyRow = inspected
+      .slice(index + 1)
+      .find((candidate) => candidate.some((cell) => sanitizeCell(cell).length > 0));
+    const nextRowLooksLikeData = nextNonEmptyRow ? looksLikeDataRow(nextNonEmptyRow) : false;
+
+    const score =
+      nonEmpty +
+      headerHits * 2.5 +
+      headerIntentScore(row) +
+      (nextRowLooksLikeData ? 6 : 0) -
+      (hasDataSignature ? 2 : 0);
 
     if (score > bestScore) {
       bestScore = score;
@@ -307,7 +361,15 @@ export function suggestCsvMapping(columns: string[]): Partial<CsvMapping> {
   const amount = pickColumn(columns, ["valor", "amount", "vlr", "valor lancado", "valor final"], ["saldo"]);
   const debit = pickColumn(columns, ["debito", "débito", "saida", "saída", "valor debito", "valor débito"], ["saldo"]);
   const credit = pickColumn(columns, ["credito", "crédito", "entrada", "valor credito", "valor crédito"], ["saldo"]);
-  const history = pickColumn(columns, ["historico", "histórico", "history", "tipo lancamento", "tipo transacao"], [
+  const history = pickColumn(columns, [
+    "historico",
+    "histórico",
+    "history",
+    "tipo lancamento",
+    "tipo transacao",
+    "transaction type",
+    "transaction_type"
+  ], [
     "descri"
   ]);
   const description =
@@ -323,7 +385,9 @@ export function suggestCsvMapping(columns: string[]): Partial<CsvMapping> {
       "memo",
       "name",
       "details",
-      "narrative"
+      "narrative",
+      "transaction type",
+      "transaction_type"
     ]) ??
     columns.find((column) => {
       const normalized = normalizeDescription(column);
@@ -402,14 +466,28 @@ function resolveBalanceAfter(raw: Record<string, string>, mapping: CsvMapping): 
 
 function findExternalId(raw: Record<string, string>): string | undefined {
   const indexed = new Map(Object.entries(raw).map(([key, value]) => [normalizeDescription(key), value]));
+  const aliases = [
+    "FITID",
+    "REFERENCE_ID",
+    "REFERENCE ID",
+    "ID DA OPERACAO",
+    "ID OPERACAO",
+    "TRANSACTION ID",
+    "TRANSACTION_ID",
+    "ID",
+    "CODIGO",
+    "CODIGO TRANSACAO",
+    "DOCUMENTO"
+  ];
 
-  return (
-    indexed.get("FITID") ??
-    indexed.get("ID") ??
-    indexed.get("CODIGO") ??
-    indexed.get("CODIGO TRANSACAO") ??
-    indexed.get("DOCUMENTO")
-  );
+  for (const alias of aliases) {
+    const value = indexed.get(alias);
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
 }
 
 function incrementReason(reasons: Record<string, number>, reason: CsvRowReason): void {
@@ -599,8 +677,4 @@ export function analyzeCsvRows(rows: Record<string, string>[], mapping: CsvMappi
       reasons
     }
   };
-}
-
-export function mapCsvRows(rows: Record<string, string>[], mapping: CsvMapping): ParsedImportRow[] {
-  return analyzeCsvRows(rows, mapping).rows;
 }

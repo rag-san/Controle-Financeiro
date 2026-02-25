@@ -6,6 +6,7 @@ import { getCache, setCache } from "@/lib/cache";
 import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
 import { categoriesRepo } from "@/lib/server/categories.repo";
+import { restoreDefaultCategoriesForUser } from "@/lib/server/default-categories.service";
 
 const createCategorySchema = z.object({
   name: z.string().min(2).max(80),
@@ -16,20 +17,26 @@ const createCategorySchema = z.object({
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   return withRouteProfiling(request, "/api/categories.GET", async () => {
-  const auth = await requireUser(request);
-  if (auth instanceof NextResponse) return auth;
+    const auth = await requireUser(request);
+    if (auth instanceof NextResponse) return auth;
 
-  const cacheKey = `categories:${auth.userId}:list`;
-  const cached = getCache(cacheKey);
-  if (cached) {
-    return NextResponse.json(cached, { headers: privateCacheHeaders });
-  }
+    const cacheKey = `categories:${auth.userId}:list`;
+    const cached = getCache(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, { headers: privateCacheHeaders });
+    }
 
-  const categories = await categoriesRepo.listByUser(auth.userId, true);
+    let categories = await categoriesRepo.listByUser(auth.userId, true);
 
-  setCache(cacheKey, categories, 20_000);
+    if (categories.length === 0) {
+      await restoreDefaultCategoriesForUser(auth.userId);
+      invalidateFinanceCaches(auth.userId);
+      categories = await categoriesRepo.listByUser(auth.userId, true);
+    }
 
-  return NextResponse.json(categories, { headers: privateCacheHeaders });
+    setCache(cacheKey, categories, 20_000);
+
+    return NextResponse.json(categories, { headers: privateCacheHeaders });
   });
 }
 

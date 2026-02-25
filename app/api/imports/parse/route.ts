@@ -391,7 +391,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return parseError(
               422,
               "source_parser_unavailable",
-              "Nao foi possivel ler este PDF automaticamente. Suporte atual: Banco Inter e Mercado Pago.",
+              "Nao foi possivel ler este PDF automaticamente. Suporte atual: Inter (extrato/fatura), Mercado Pago (extrato/fatura) e Nubank (fatura). Se o erro persistir, use CSV/OFX ou envie este layout para suporte.",
               {
                 sourceType,
                 technicalReason,

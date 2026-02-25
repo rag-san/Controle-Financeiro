@@ -109,10 +109,31 @@ function buildPdfFixtures() {
     "08/02 ESTORNO APP R$ 10,00"
   ]);
 
+  const mercadoPagoStatement = buildSimplePdfBuffer([
+    "MERCADO PAGO",
+    "EXTRATO DE CONTA",
+    "DETALHE DOS MOVIMENTOS",
+    "Data Descrição ID da operação Valor Saldo",
+    "07-01-2026 Transferência Pix recebida FULANO 141018819732 R$ 1.894,00 R$ 1.903,13",
+    "08-01-2026 Pagamento Cartão de crédito 141130666804 R$ -321,74 R$ 1.081,39"
+  ]);
+
+  const nubankInvoice = buildSimplePdfBuffer([
+    "NUBANK",
+    "FATURA",
+    "Data de vencimento: 16 FEV 2026",
+    "TRANSAÇÕES DE 16 JAN A 16 FEV",
+    "16 JAN Pagamento em 16 JAN -R$ 1.459,22",
+    "16 JAN Parcelamento de Compra \"Loja QA\" - Parcela 2/6",
+    "R$ 218,03"
+  ]);
+
   return {
     interStatement,
     interInvoice,
-    mercadoPagoInvoice
+    mercadoPagoInvoice,
+    mercadoPagoStatement,
+    nubankInvoice
   };
 }
 
@@ -1284,6 +1305,44 @@ test("critical backend flow via API", async () => {
   assert.equal(parsedGeneratedMercadoPagoInvoice.payload?.issuerProfile, "mercado_pago_invoice");
   assert.ok(Array.isArray(parsedGeneratedMercadoPagoInvoice.payload?.rows));
   assert.ok(parsedGeneratedMercadoPagoInvoice.payload?.rows?.length >= 1);
+
+  const generatedMercadoPagoStatementFormData = new FormData();
+  generatedMercadoPagoStatementFormData.set(
+    "file",
+    new Blob([generatedPdfFixtures.mercadoPagoStatement], { type: "application/pdf" }),
+    "fixture-mercado-pago-statement.pdf"
+  );
+
+  const parsedGeneratedMercadoPagoStatement = await apiRequest("/api/imports/parse", {
+    method: "POST",
+    cookies: authCookies,
+    formData: generatedMercadoPagoStatementFormData
+  });
+  assert.equal(parsedGeneratedMercadoPagoStatement.status, 200);
+  assert.equal(parsedGeneratedMercadoPagoStatement.payload?.sourceType, "pdf");
+  assert.equal(parsedGeneratedMercadoPagoStatement.payload?.documentType, "bank_statement");
+  assert.equal(parsedGeneratedMercadoPagoStatement.payload?.issuerProfile, "mercado_pago_statement");
+  assert.ok(Array.isArray(parsedGeneratedMercadoPagoStatement.payload?.rows));
+  assert.ok(parsedGeneratedMercadoPagoStatement.payload?.rows?.length >= 2);
+
+  const generatedNubankInvoiceFormData = new FormData();
+  generatedNubankInvoiceFormData.set(
+    "file",
+    new Blob([generatedPdfFixtures.nubankInvoice], { type: "application/pdf" }),
+    "fixture-nubank-invoice.pdf"
+  );
+
+  const parsedGeneratedNubankInvoice = await apiRequest("/api/imports/parse", {
+    method: "POST",
+    cookies: authCookies,
+    formData: generatedNubankInvoiceFormData
+  });
+  assert.equal(parsedGeneratedNubankInvoice.status, 200);
+  assert.equal(parsedGeneratedNubankInvoice.payload?.sourceType, "pdf");
+  assert.equal(parsedGeneratedNubankInvoice.payload?.documentType, "credit_card_invoice");
+  assert.equal(parsedGeneratedNubankInvoice.payload?.issuerProfile, "nubank_invoice");
+  assert.ok(Array.isArray(parsedGeneratedNubankInvoice.payload?.rows));
+  assert.ok(parsedGeneratedNubankInvoice.payload?.rows?.length >= 2);
 
   const importCommitPayload = {
     sourceType: "csv",

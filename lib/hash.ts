@@ -19,6 +19,13 @@ export function createImportedHash(input: {
   accountId: string;
   externalId?: string | null;
 }): string {
+  const normalizedExternalId = input.externalId?.trim().toUpperCase() ?? "";
+
+  if (normalizedExternalId) {
+    const payload = ["ext-v1", input.userId, input.accountId, normalizedExternalId].join("|");
+    return crypto.createHash("sha256").update(payload).digest("hex");
+  }
+
   const normalizedDateIso = toNormalizedUtcDateIso(input.date);
   const absoluteAmount = Math.abs(input.amount);
   const payload = [
