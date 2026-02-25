@@ -1,3 +1,5 @@
+import { stripInstallmentMarker } from "@/lib/installments";
+
 export type ImportTextEncoding = "utf8" | "latin1" | "cp1252";
 
 type NormalizeImportTextOptions = {
@@ -77,6 +79,9 @@ const MERCHANT_NOISE_TOKENS = new Set([
   "IOF",
   "MORA",
   "MULTA",
+  "PARCELA",
+  "PARCELADO",
+  "PARC",
   "NO",
   "EM",
   "NOESTABELECIMENTO",
@@ -201,7 +206,7 @@ function isMerchantNoiseToken(token: string): boolean {
 }
 
 export function buildMerchantKey(value: string): string {
-  const normalized = normalizeImportTextForMatch(value);
+  const normalized = normalizeImportTextForMatch(stripInstallmentMarker(value));
   if (!normalized) return "transacao";
 
   const tokens = normalized

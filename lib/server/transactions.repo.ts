@@ -4,6 +4,8 @@ import { categoriesRepo } from "@/lib/server/categories.repo";
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import { dbTransaction, escapeLike, fromCents, nowIso, toCents } from "@/lib/server/sql";
 
+type TransactionDirection = "in" | "out";
+
 type TransactionRow = {
   id: string;
   user_id: string;
@@ -16,6 +18,8 @@ type TransactionRow = {
   amount_cents: number;
   currency: string;
   type: "income" | "expense" | "transfer";
+  direction: TransactionDirection;
+  is_internal_transfer: number | boolean;
   status: "posted" | "pending";
   account: string | null;
   bank: string | null;
@@ -23,10 +27,36 @@ type TransactionRow = {
   imported_hash: string | null;
   transfer_group_id: string | null;
   transfer_peer_tx_id: string | null;
+  transfer_from_account_id: string | null;
+  transfer_to_account_id: string | null;
   raw_json: string | null;
   created_at: string;
   updated_at: string;
 };
+
+function directionFromAmount(amount: number): TransactionDirection {
+  return amount >= 0 ? "in" : "out";
+}
+
+function normalizeDirection(direction: string | null | undefined, amountCents: number): TransactionDirection {
+  if (direction === "in" || direction === "out") {
+    return direction;
+  }
+  return amountCents >= 0 ? "in" : "out";
+}
+
+function normalizeInternalTransferFlag(
+  value: number | boolean | null | undefined,
+  type: "income" | "expense" | "transfer"
+): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  return type === "transfer";
+}
+
+function toDbBoolean(value: boolean): number | boolean {
+  return db.dialect === "postgres" ? value : value ? 1 : 0;
+}
 
 type TransactionJoinedRow = TransactionRow & {
   account_name?: string | null;
@@ -53,6 +83,8 @@ function mapBase(row: TransactionRow) {
     amount: fromCents(row.amount_cents),
     currency: row.currency,
     type: row.type,
+    direction: normalizeDirection(row.direction, row.amount_cents),
+    isInternalTransfer: normalizeInternalTransferFlag(row.is_internal_transfer, row.type),
     status: row.status,
     account: row.account,
     bank: row.bank,
@@ -60,6 +92,8 @@ function mapBase(row: TransactionRow) {
     importedHash: row.imported_hash,
     transferGroupId: row.transfer_group_id,
     transferPeerTxId: row.transfer_peer_tx_id,
+    transferFromAccountId: row.transfer_from_account_id,
+    transferToAccountId: row.transfer_to_account_id,
     raw: row.raw_json ? JSON.parse(row.raw_json) : null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at)
@@ -153,8 +187,8 @@ export const transactionsRepo = {
       .prepare(
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
-            t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.status,
-            t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.raw_json, t.created_at, t.updated_at,
+            t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.direction, t.is_internal_transfer, t.status,
+            t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.transfer_from_account_id, t.transfer_to_account_id, t.raw_json, t.created_at, t.updated_at,
             a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency, a.parent_account_id AS account_parent_account_id,
             c.name AS category_name, c.color AS category_color, c.icon AS category_icon, c.parent_id AS category_parent_id
          FROM transactions t
@@ -200,8 +234,8 @@ export const transactionsRepo = {
       .prepare(
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
-            t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.status,
-            t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.raw_json, t.created_at, t.updated_at,
+            t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.direction, t.is_internal_transfer, t.status,
+            t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.transfer_from_account_id, t.transfer_to_account_id, t.raw_json, t.created_at, t.updated_at,
             a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency, a.parent_account_id AS account_parent_account_id,
             c.name AS category_name, c.color AS category_color, c.icon AS category_icon, c.parent_id AS category_parent_id
          FROM transactions t
@@ -228,17 +262,25 @@ export const transactionsRepo = {
     importedHash?: string | null;
     transferGroupId?: string | null;
     transferPeerTxId?: string | null;
+    transferFromAccountId?: string | null;
+    transferToAccountId?: string | null;
+    direction?: TransactionDirection;
+    isInternalTransfer?: boolean;
     raw?: Record<string, unknown> | null;
   }) {
     const id = createId();
     const now = nowIso();
     const categoryId = input.type === "transfer" ? null : (input.categoryId ?? null);
+    const transferFromAccountId = input.type === "transfer" ? (input.transferFromAccountId ?? null) : null;
+    const transferToAccountId = input.type === "transfer" ? (input.transferToAccountId ?? null) : null;
+    const direction = input.direction ?? directionFromAmount(input.amount);
+    const isInternalTransfer = input.type === "transfer" ? (input.isInternalTransfer ?? true) : false;
 
     await db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, status, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.userId,
@@ -250,10 +292,14 @@ export const transactionsRepo = {
       input.normalizedDescription,
       toCents(input.amount),
       input.type,
+      direction,
+      toDbBoolean(isInternalTransfer),
       input.status,
       input.importedHash ?? null,
       input.transferGroupId ?? null,
       input.transferPeerTxId ?? null,
+      transferFromAccountId,
+      transferToAccountId,
       input.raw ? JSON.stringify(input.raw) : null,
       now,
       now
@@ -277,6 +323,10 @@ export const transactionsRepo = {
       importedHash?: string | null;
       transferGroupId?: string | null;
       transferPeerTxId?: string | null;
+      transferFromAccountId?: string | null;
+      transferToAccountId?: string | null;
+      direction?: TransactionDirection;
+      isInternalTransfer?: boolean;
       raw?: Record<string, unknown> | null;
     }>
   ): Promise<{ count: number }> {
@@ -288,14 +338,18 @@ export const transactionsRepo = {
     const insert = db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, status, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const run = db.transaction(async () => {
       let count = 0;
       for (const row of rows) {
         const categoryId = row.type === "transfer" ? null : (row.categoryId ?? null);
+        const transferFromAccountId = row.type === "transfer" ? (row.transferFromAccountId ?? null) : null;
+        const transferToAccountId = row.type === "transfer" ? (row.transferToAccountId ?? null) : null;
+        const direction = row.direction ?? directionFromAmount(row.amount);
+        const isInternalTransfer = row.type === "transfer" ? (row.isInternalTransfer ?? true) : false;
         await insert.run(
           createId(),
           row.userId,
@@ -307,10 +361,14 @@ export const transactionsRepo = {
           row.normalizedDescription,
           toCents(row.amount),
           row.type,
+          direction,
+          toDbBoolean(isInternalTransfer),
           row.status,
           row.importedHash ?? null,
           row.transferGroupId ?? null,
           row.transferPeerTxId ?? null,
+          transferFromAccountId,
+          transferToAccountId,
           row.raw ? JSON.stringify(row.raw) : null,
           now,
           now
@@ -332,6 +390,7 @@ export const transactionsRepo = {
     normalizedDescription: string;
     amount: number;
     status: "posted" | "pending";
+    isInternalTransfer?: boolean;
     importBatchId?: string | null;
     importedHashBase?: string | null;
     raw?: Record<string, unknown> | null;
@@ -413,12 +472,13 @@ export const transactionsRepo = {
         const outTxId = createId();
         const inTxId = createId();
         const now = nowIso();
+        const isInternalTransfer = input.isInternalTransfer ?? true;
 
         const insert = db.prepare(
           `INSERT INTO transactions (
              id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-             amount_cents, currency, type, status, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
-           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', 'transfer', ?, ?, ?, NULL, ?, ?, ?)`
+             amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', 'transfer', ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
         );
 
         await insert.run(
@@ -430,9 +490,13 @@ export const transactionsRepo = {
           input.description,
           input.normalizedDescription,
           toCents(-absoluteAmount),
+          "out",
+          toDbBoolean(isInternalTransfer),
           input.status,
           outImportedHash,
           transferGroupId,
+          input.fromAccountId,
+          input.toAccountId,
           input.raw
             ? JSON.stringify({
                 ...input.raw,
@@ -452,9 +516,13 @@ export const transactionsRepo = {
           input.description,
           input.normalizedDescription,
           toCents(absoluteAmount),
+          "in",
+          toDbBoolean(isInternalTransfer),
           input.status,
           inImportedHash,
           transferGroupId,
+          input.fromAccountId,
+          input.toAccountId,
           input.raw
             ? JSON.stringify({
                 ...input.raw,
@@ -506,6 +574,10 @@ export const transactionsRepo = {
     amount?: number;
     type?: "income" | "expense" | "transfer";
     status?: "posted" | "pending";
+    transferFromAccountId?: string | null;
+    transferToAccountId?: string | null;
+    direction?: TransactionDirection;
+    isInternalTransfer?: boolean;
   }) {
     const existing = await this.findByIdForUser(input.id, input.userId);
     if (!existing) return null;
@@ -521,11 +593,30 @@ export const transactionsRepo = {
         : input.categoryId !== undefined
           ? input.categoryId
           : existing.categoryId;
+    const nextTransferFromAccountId =
+      nextType === "transfer"
+        ? input.transferFromAccountId !== undefined
+          ? input.transferFromAccountId
+          : existing.transferFromAccountId
+        : null;
+    const nextTransferToAccountId =
+      nextType === "transfer"
+        ? input.transferToAccountId !== undefined
+          ? input.transferToAccountId
+          : existing.transferToAccountId
+        : null;
+    const nextDirection = input.direction ?? directionFromAmount(nextAmount);
+    const nextIsInternalTransfer =
+      nextType === "transfer"
+        ? input.isInternalTransfer !== undefined
+          ? input.isInternalTransfer
+          : existing.isInternalTransfer
+        : false;
 
     await db.prepare(
       `UPDATE transactions
        SET account_id = ?, category_id = ?, posted_at = ?, description = ?, normalized_description = ?,
-           amount_cents = ?, type = ?, status = ?, updated_at = ?
+           amount_cents = ?, type = ?, direction = ?, is_internal_transfer = ?, status = ?, transfer_from_account_id = ?, transfer_to_account_id = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
     ).run(
       input.accountId ?? existing.accountId,
@@ -535,7 +626,11 @@ export const transactionsRepo = {
       nextNormalizedDescription,
       toCents(nextAmount),
       nextType,
+      nextDirection,
+      toDbBoolean(nextIsInternalTransfer),
       input.status ?? existing.status,
+      nextTransferFromAccountId,
+      nextTransferToAccountId,
       nowIso(),
       input.id,
       input.userId
@@ -737,7 +832,7 @@ export const transactionsRepo = {
     const rows = (await db
       .prepare(
         `SELECT id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-                amount_cents, currency, type, status, account, bank, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, raw_json, created_at, updated_at
+                amount_cents, currency, type, direction, is_internal_transfer, status, account, bank, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
          FROM transactions
          WHERE user_id = ? AND posted_at >= ? AND posted_at <= ?
          ORDER BY posted_at ASC`

@@ -1,20 +1,24 @@
 "use client";
 
 import {
+  endOfMonth,
   format,
   parseISO,
   startOfDay,
   startOfMonth,
   startOfYear,
-  subDays,
   subMonths,
+  subDays,
   subYears
 } from "date-fns";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Info, SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
+import { Button } from "@/src/components/ui/Button";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
 import { NetWorthCard, type NetWorthFilter } from "@/src/features/dashboard/cards/NetWorthCard";
 import { PartialResultCard } from "@/src/features/dashboard/cards/PartialResultCard";
@@ -90,6 +94,48 @@ type TransactionResponse = {
 
 const DISMISSED_STORAGE_KEY = "dismissed_insights";
 const SNOOZED_STORAGE_KEY = "snoozed_insights";
+
+const MONTH_GRID: Array<{ monthIndex: number; label: string }> = [
+  { monthIndex: 0, label: "Jan" },
+  { monthIndex: 1, label: "Fev" },
+  { monthIndex: 2, label: "Mar" },
+  { monthIndex: 3, label: "Abr" },
+  { monthIndex: 4, label: "Mai" },
+  { monthIndex: 5, label: "Jun" },
+  { monthIndex: 6, label: "Jul" },
+  { monthIndex: 7, label: "Ago" },
+  { monthIndex: 8, label: "Set" },
+  { monthIndex: 9, label: "Out" },
+  { monthIndex: 10, label: "Nov" },
+  { monthIndex: 11, label: "Dez" }
+];
+
+function parseMonthKey(value: string): { year: number; monthIndex: number } {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) {
+      return { year, monthIndex: month - 1 };
+    }
+  }
+
+  const fallback = new Date();
+  return { year: fallback.getFullYear(), monthIndex: fallback.getMonth() };
+}
+
+function formatMonthKey(year: number, monthIndex: number): string {
+  const normalizedMonth = String(monthIndex + 1).padStart(2, "0");
+  return `${year}-${normalizedMonth}`;
+}
+
+function buildTransactionsMonthHref(monthKey: string): string {
+  const parsed = parseMonthKey(monthKey);
+  const monthDate = new Date(parsed.year, parsed.monthIndex, 1);
+  const from = format(startOfMonth(monthDate), "yyyy-MM-dd");
+  const to = format(endOfMonth(monthDate), "yyyy-MM-dd");
+  return `/transactions?period=custom&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+}
 
 function formatDateToInput(date: Date): string {
   return format(date, "yyyy-MM-dd");
@@ -242,47 +288,62 @@ async function fetchTransactionsForInsights(params: {
 }
 
 export function DashboardPage(): React.JSX.Element {
+  const now = useMemo(() => new Date(), []);
+  const currentMonthKey = useMemo(() => format(now, "yyyy-MM"), [now]);
+  const currentMonthParsed = useMemo(() => parseMonthKey(currentMonthKey), [currentMonthKey]);
   const [data, setData] = useState<DashboardPayload | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [insights, setInsights] = useState<Insight[]>([]);
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [netWorthFilter, setNetWorthFilter] = useState<NetWorthFilter>("1W");
+  const [showFilters, setShowFilters] = useState(false);
+  const [dashboardMonth, setDashboardMonth] = useState("");
+  const [pickerYear, setPickerYear] = useState(currentMonthParsed.year);
+  const [pickerMonthIndex, setPickerMonthIndex] = useState(currentMonthParsed.monthIndex);
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(new Set<string>());
   const [snoozedInsights, setSnoozedInsights] = useState<Record<string, number>>({});
+  const filtersPopoverId = `dashboard-filters-${useId().replace(/:/g, "")}`;
+  const filtersRootRef = useRef<HTMLDivElement | null>(null);
+  const filtersMonthButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const loadDashboard = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const query = new URLSearchParams({ view: "dashboard" });
+      if (dashboardMonth) {
+        query.set("month", dashboardMonth);
+      }
+
+      const response = await fetch(`/api/metrics/official?${query.toString()}`);
+      const { data: payload, errorMessage } = await parseApiResponse<DashboardPayload | { error?: unknown }>(response);
+
+      if (errorMessage) {
+        throw new Error(errorMessage);
+      }
+
+      if (!response.ok || !payload) {
+        throw new Error(extractApiError(payload, "Nao foi possivel carregar o dashboard."));
+      }
+
+      if (!isDashboardPayload(payload)) {
+        throw new Error("Resposta invalida do dashboard.");
+      }
+
+      setData(payload);
+    } catch (loadError) {
+      setData(null);
+      setError(loadError instanceof Error ? loadError.message : "Erro ao carregar dashboard.");
+    } finally {
+      setLoading(false);
+    }
+  }, [dashboardMonth]);
 
   useEffect(() => {
-    const load = async (): Promise<void> => {
-      setLoading(true);
-      setError("");
-
-      try {
-        const response = await fetch("/api/metrics/official?view=dashboard");
-        const { data: payload, errorMessage } = await parseApiResponse<DashboardPayload | { error?: unknown }>(response);
-
-        if (errorMessage) {
-          throw new Error(errorMessage);
-        }
-
-        if (!response.ok || !payload) {
-          throw new Error(extractApiError(payload, "Nao foi possivel carregar o dashboard."));
-        }
-
-        if (!isDashboardPayload(payload)) {
-          throw new Error("Resposta invalida do dashboard.");
-        }
-
-        setData(payload);
-      } catch (loadError) {
-        setData(null);
-        setError(loadError instanceof Error ? loadError.message : "Erro ao carregar dashboard.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
-  }, []);
+    void loadDashboard();
+  }, [loadDashboard]);
 
   useEffect(() => {
     const dismissed = loadDismissed(DISMISSED_STORAGE_KEY);
@@ -356,6 +417,42 @@ export function DashboardPage(): React.JSX.Element {
 
     return () => window.clearInterval(intervalId);
   }, []);
+
+  useEffect(() => {
+    if (!showFilters) return;
+
+    const activeMonth = dashboardMonth || currentMonthKey;
+    const parsed = parseMonthKey(activeMonth);
+    setPickerYear(parsed.year);
+    setPickerMonthIndex(parsed.monthIndex);
+
+    const focusTimer = window.setTimeout(() => {
+      filtersMonthButtonRef.current?.focus();
+    }, 0);
+
+    const handlePointerDown = (event: MouseEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (!filtersRootRef.current?.contains(target)) {
+        setShowFilters(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setShowFilters(false);
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [currentMonthKey, dashboardMonth, showFilters]);
 
   const dashboardView = useMemo(() => {
     if (!data) return null;
@@ -438,92 +535,260 @@ export function DashboardPage(): React.JSX.Element {
     return filterActiveInsights(insights, dismissedInsights, prunedSnoozed);
   }, [dismissedInsights, insights, snoozedInsights]);
 
+  const applyMonthFilter = useCallback((year: number, monthIndex: number): void => {
+    setDashboardMonth(formatMonthKey(year, monthIndex));
+    setPickerYear(year);
+    setPickerMonthIndex(monthIndex);
+    setShowFilters(false);
+  }, []);
+
+  const appliedMonthLabel = dashboardMonth ? formatMonthLabel(dashboardMonth) : "";
+  const isMonthFilterActive = dashboardMonth.length > 0;
+  const filterButtonLabel = isMonthFilterActive ? `Filtro: ${appliedMonthLabel}` : "Filtros";
+  const fallbackTargetMonthKey = isMonthFilterActive ? dashboardMonth : currentMonthKey;
+  const fallbackTargetMonthLabel = formatMonthLabel(fallbackTargetMonthKey);
+  const fallbackTransactionsHref = buildTransactionsMonthHref(fallbackTargetMonthKey);
+  const fallbackNoticeVariant = isMonthFilterActive ? "info" : "warning";
+
   const actions = useMemo(
     () => (
-      <NotificationsBell
-        insights={activeNotifications}
-        isLoading={insightsLoading}
-        dismissedCount={dismissedInsights.size}
-        onDismissInsight={handleDismissInsight}
-        onSnoozeInsight={handleSnoozeInsight}
-        onClearDismissed={handleClearDismissed}
-      />
+      <>
+        <div className="relative order-first" ref={filtersRootRef}>
+          <Button
+            type="button"
+            variant={showFilters ? "primary" : "outline"}
+            size="sm"
+            aria-haspopup="dialog"
+            aria-expanded={showFilters}
+            aria-controls={showFilters ? filtersPopoverId : undefined}
+            onClick={() => setShowFilters((previous) => !previous)}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            {filterButtonLabel}
+          </Button>
+
+          <section
+            id={filtersPopoverId}
+            role="dialog"
+            aria-label="Filtro do dashboard"
+            aria-hidden={!showFilters}
+            className={[
+              "absolute right-0 top-full z-40 mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card p-2.5 shadow-xl",
+              "origin-top-right transition-all duration-150 ease-out",
+              showFilters
+                ? "visible translate-y-0 scale-100 opacity-100 pointer-events-auto"
+                : "invisible -translate-y-1 scale-95 opacity-0 pointer-events-none"
+            ].join(" ")}
+          >
+            <div className="space-y-0.5">
+              <h3 className="text-[13px] font-semibold">Filtro do dashboard</h3>
+              <p className="text-[11px] text-muted-foreground">Selecione mes e ano sem abrir listas grandes.</p>
+            </div>
+
+            <div className="mt-2.5 flex items-center justify-between rounded-xl border border-border/80 bg-muted/30 px-1.5 py-0.5">
+              <button
+                type="button"
+                aria-label="Ano anterior"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setPickerYear((current) => current - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-xs font-semibold tabular-nums">{pickerYear}</span>
+              <button
+                type="button"
+                aria-label="Proximo ano"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => setPickerYear((current) => current + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-2.5 grid grid-cols-4 gap-1">
+              {MONTH_GRID.map((month) => {
+                const isSelected = month.monthIndex === pickerMonthIndex;
+                const isCurrentMonth =
+                  pickerYear === currentMonthParsed.year && month.monthIndex === currentMonthParsed.monthIndex;
+
+                return (
+                  <button
+                    key={month.monthIndex}
+                    ref={month.monthIndex === pickerMonthIndex ? filtersMonthButtonRef : undefined}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => applyMonthFilter(pickerYear, month.monthIndex)}
+                    className={[
+                      "h-7 rounded-lg border text-[11px] font-medium transition",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      isSelected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-foreground hover:bg-muted",
+                      isCurrentMonth && !isSelected ? "border-primary/40" : ""
+                    ].join(" ")}
+                  >
+                    {month.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDashboardMonth("");
+                  setShowFilters(false);
+                }}
+              >
+                Sem filtro
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => applyMonthFilter(currentMonthParsed.year, currentMonthParsed.monthIndex)}
+              >
+                Este mes
+              </Button>
+            </div>
+          </section>
+        </div>
+        <NotificationsBell
+          insights={activeNotifications}
+          isLoading={insightsLoading}
+          dismissedCount={dismissedInsights.size}
+          onDismissInsight={handleDismissInsight}
+          onSnoozeInsight={handleSnoozeInsight}
+          onClearDismissed={handleClearDismissed}
+        />
+      </>
     ),
     [
       activeNotifications,
+      applyMonthFilter,
+      currentMonthParsed.monthIndex,
+      currentMonthParsed.year,
       dismissedInsights.size,
+      filterButtonLabel,
+      filtersPopoverId,
       handleClearDismissed,
       handleDismissInsight,
       handleSnoozeInsight,
-      insightsLoading
+      insightsLoading,
+      pickerMonthIndex,
+      pickerYear,
+      showFilters,
     ]
   );
 
   return (
     <PageShell title="Dashboard" subtitle="Aqui esta uma visao geral das suas financas" actions={actions}>
-      {loading ? (
-        <DashboardLoading />
-      ) : !data || !dashboardView ? (
-        <FeedbackMessage variant="error">{error || "Nao foi possivel carregar os dados do dashboard."}</FeedbackMessage>
-      ) : (
-        <div className="space-y-6">
-          {dashboardView.usingReferenceFallback ? (
-            <FeedbackMessage variant="warning">
-              Sem lancamentos no mes atual. Exibindo periodo de referencia em {dashboardView.referenceMonthLabel}.
-            </FeedbackMessage>
-          ) : null}
+      <div className="space-y-4">
+        {loading ? (
+          <DashboardLoading />
+        ) : !data || !dashboardView ? (
+          <FeedbackMessage variant="error">{error || "Nao foi possivel carregar os dados do dashboard."}</FeedbackMessage>
+        ) : (
+          <div className="space-y-6">
+            {dashboardView.usingReferenceFallback ? (
+              <FeedbackMessage
+                variant={fallbackNoticeVariant}
+                className={[
+                  "!rounded-lg !px-3 !py-2",
+                  isMonthFilterActive
+                    ? "!bg-slate-50/70 !text-slate-700 dark:!bg-slate-900/35 dark:!text-slate-200"
+                    : "!bg-amber-50/45 !text-amber-800 dark:!bg-amber-950/25 dark:!text-amber-200"
+                ].join(" ")}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex items-start gap-2">
+                    <span className="mt-0.5 shrink-0 opacity-90" aria-hidden="true">
+                      {isMonthFilterActive ? <Info className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium leading-5">Sem lancamentos em {fallbackTargetMonthLabel}.</p>
+                      <p className="text-xs opacity-85">Mostrando dados de {dashboardView.referenceMonthLabel}.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Link
+                      href={fallbackTransactionsHref}
+                      className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+                    >
+                      Ver transacoes do mes
+                    </Link>
+                    {isMonthFilterActive ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+                        onClick={() => {
+                          setDashboardMonth("");
+                          setShowFilters(false);
+                        }}
+                      >
+                        Limpar filtro
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </FeedbackMessage>
+            ) : null}
 
-          <section className="grid gap-6 xl:grid-cols-12">
-            <div className="xl:col-span-7">
-              <SpendingPaceCard
-                paceDelta={dashboardView.paceDelta}
-                variationPercent={data.cards.spendPaceDelta}
-                previousExpense={dashboardView.previousPeriod.expense}
-                chartData={data.spendingTrend}
-                currentLabel={dashboardView.usingReferenceFallback ? "Periodo de referencia" : "Este mes"}
-                previousLabel={
-                  dashboardView.usingReferenceFallback ? "Mes anterior ao periodo" : "Mes passado"
-                }
-                periodDescription={dashboardView.periodDescription}
-              />
-            </div>
+            <section className="grid gap-6 xl:grid-cols-12">
+              <div className="xl:col-span-7">
+                <SpendingPaceCard
+                  paceDelta={dashboardView.paceDelta}
+                  variationPercent={data.cards.spendPaceDelta}
+                  previousExpense={dashboardView.previousPeriod.expense}
+                  chartData={data.spendingTrend}
+                  currentLabel={dashboardView.usingReferenceFallback ? "Periodo de referencia" : "Este mes"}
+                  previousLabel={
+                    dashboardView.usingReferenceFallback ? "Mes anterior ao periodo" : "Mes passado"
+                  }
+                  periodDescription={dashboardView.periodDescription}
+                />
+              </div>
 
-            <div className="xl:col-span-5">
-              <NetWorthCard
-                valorTotal={dashboardView.netWorthCurrent}
-                variacao={dashboardView.netWorthVariation}
-                isDataAvailable={dashboardView.netWorthSeries.length >= 2}
-                activeFilter={netWorthFilter}
-                onFilterChange={setNetWorthFilter}
-                periodDescription={dashboardView.periodDescription}
-                series={dashboardView.netWorthSeries}
-              />
-            </div>
-          </section>
+              <div className="xl:col-span-5">
+                <NetWorthCard
+                  valorTotal={dashboardView.netWorthCurrent}
+                  variacao={dashboardView.netWorthVariation}
+                  isDataAvailable={dashboardView.netWorthSeries.length >= 2}
+                  activeFilter={netWorthFilter}
+                  onFilterChange={setNetWorthFilter}
+                  periodDescription={dashboardView.periodDescription}
+                  series={dashboardView.netWorthSeries}
+                />
+              </div>
+            </section>
 
-          <section className="grid gap-6 xl:grid-cols-12">
-            <div className="xl:col-span-5">
-              <PartialResultCard
-                resultadoAtual={dashboardView.currentPeriod.result}
-                porcentagemVariacao={data.cards.resultDelta}
-                resultadoMesAnterior={dashboardView.previousPeriod.result}
-                porcentagemProgresso={dashboardView.resultProgress}
-                receita={dashboardView.currentPeriod.income}
-                gasto={dashboardView.currentPeriod.expense}
-                excluido={dashboardView.currentPeriod.excluded}
-                periodDescription={dashboardView.periodDescription}
-              />
-            </div>
+            <section className="grid gap-6 xl:grid-cols-12">
+              <div className="xl:col-span-5">
+                <PartialResultCard
+                  resultadoAtual={dashboardView.currentPeriod.result}
+                  porcentagemVariacao={data.cards.resultDelta}
+                  resultadoMesAnterior={dashboardView.previousPeriod.result}
+                  porcentagemProgresso={dashboardView.resultProgress}
+                  receita={dashboardView.currentPeriod.income}
+                  gasto={dashboardView.currentPeriod.expense}
+                  excluido={dashboardView.currentPeriod.excluded}
+                  periodDescription={dashboardView.periodDescription}
+                />
+              </div>
 
-            <div className="xl:col-span-7">
-              <TopCategoriesCard
-                categorias={dashboardView.topCategories}
-                periodDescription={dashboardView.periodDescription}
-              />
-            </div>
-          </section>
-        </div>
-      )}
+              <div className="xl:col-span-7">
+                <TopCategoriesCard
+                  categorias={dashboardView.topCategories}
+                  periodDescription={dashboardView.periodDescription}
+                />
+              </div>
+            </section>
+          </div>
+        )}
+      </div>
     </PageShell>
   );
 }

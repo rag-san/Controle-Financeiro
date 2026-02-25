@@ -60,7 +60,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }): React.JSX.
         <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
           <WalletCards className="h-4 w-4" />
         </div>
-        <span className="text-lg font-semibold tracking-wide text-slate-900 dark:text-slate-100">VISOR</span>
+        <span className="text-lg font-semibold tracking-wide text-slate-900 dark:text-slate-100">Financial Control</span>
       </div>
 
       <nav className="flex-1 space-y-1 p-3" aria-label="Navegação principal">
@@ -95,10 +95,6 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }): React.JSX.
             );
           })}
         </nav>
-
-        <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-500 dark:bg-slate-800/70 dark:text-slate-400">
-          Plano gratuito
-        </div>
 
         <button
           type="button"

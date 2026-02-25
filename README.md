@@ -1,4 +1,4 @@
-# Controle Financeiro v1.0.0
+# Financial Control v1.1.0
 
 Aplicacao full-stack de controle financeiro pessoal com Next.js + PostgreSQL.
 
@@ -93,12 +93,16 @@ Arquivo de referencia: `.env.example`
 
 - `npm run dev`: desenvolvimento (Turbopack)
 - `npm run dev:webpack`: desenvolvimento com webpack
+- `npm run reset:data`: limpa dados operacionais (transacoes/importacoes/relatorios), preserva usuarios/contas/categorias/regras e garante categorias padrao por usuario
+- `npm run reset:data:full`: limpeza total de dados (inclui usuarios, contas, categorias e regras)
 - `npm run typecheck`: TypeScript sem emitir arquivos
 - `npm run lint`: ESLint (Next)
 - `npm run verify`: typecheck + lint
 - `npm run test`: testes unitarios + integracao
+- `npm run test:e2e:import`: teste E2E do fluxo de importacao (UI + refresh sem F5)
 - `npm run seed`: seed deterministico para dados de backend
 - `npm run validate`: validacao de fluxo backend
+- `npm run benchmark:import`: benchmark de importacao (1k/3k/5k linhas)
 - `npm run build`: build de producao
 - `npm run build:full`: verify + build
 - `npm run start`: inicia app em modo producao
@@ -151,6 +155,7 @@ Documentacao de testes:
 - Metricas oficiais (fonte unificada): `/api/metrics/official`
 - Auditoria/export de reconciliacao: `/api/metrics/audit`
 - Observabilidade de importacao: `/api/metrics/import-observability`
+- `import-observability` agora retorna `alerts` e `thresholds` para monitoramento ativo de erro/duplicidade/parser.
 - Categorias: `/api/categories`, `/api/categories/:id`, `/api/categories/rules`
 - Contas: `/api/accounts`, `/api/accounts/:id`
 - Relatorios: `/api/reports`

@@ -19,6 +19,76 @@ async function ensureColumn(table: string, column: string, ddlFragment: string):
   await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddlFragment}`);
 }
 
+async function ensurePostgresTransactionTypeEnum(): Promise<void> {
+  if (db.dialect !== "postgres") {
+    return;
+  }
+
+  await db.exec(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transaction_type') THEN
+        CREATE TYPE transaction_type AS ENUM ('income', 'expense', 'transfer');
+      END IF;
+    END
+    $$;
+  `);
+
+  await db.exec(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'transactions'
+          AND column_name = 'type'
+          AND (data_type <> 'USER-DEFINED' OR udt_name <> 'transaction_type')
+      ) THEN
+        ALTER TABLE transactions
+          ALTER COLUMN type TYPE transaction_type
+          USING LOWER(type)::transaction_type;
+      END IF;
+    END
+    $$;
+  `);
+}
+
+async function ensurePostgresTransactionDirectionEnum(): Promise<void> {
+  if (db.dialect !== "postgres") {
+    return;
+  }
+
+  await db.exec(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transaction_direction') THEN
+        CREATE TYPE transaction_direction AS ENUM ('in', 'out');
+      END IF;
+    END
+    $$;
+  `);
+
+  await db.exec(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'transactions'
+          AND column_name = 'direction'
+          AND (data_type <> 'USER-DEFINED' OR udt_name <> 'transaction_direction')
+      ) THEN
+        ALTER TABLE transactions
+          ALTER COLUMN direction TYPE transaction_direction
+          USING COALESCE(NULLIF(LOWER(direction), ''), CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END)::transaction_direction;
+      END IF;
+    END
+    $$;
+  `);
+}
+
 async function runMigrations(): Promise<void> {
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -93,6 +163,7 @@ async function runMigrations(): Promise<void> {
       duplicates INTEGER,
       invalid_rows INTEGER,
       transfer_created INTEGER,
+      internal_transfer_auto_matched INTEGER,
       card_payment_detected INTEGER,
       card_payment_not_converted INTEGER,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -129,6 +200,8 @@ async function runMigrations(): Promise<void> {
       amount_cents INTEGER NOT NULL,
       currency TEXT NOT NULL DEFAULT 'BRL',
       type TEXT NOT NULL,
+      direction TEXT NOT NULL DEFAULT 'out',
+      is_internal_transfer BOOLEAN NOT NULL DEFAULT FALSE,
       status TEXT NOT NULL DEFAULT 'posted',
       account TEXT,
       bank TEXT,
@@ -136,6 +209,8 @@ async function runMigrations(): Promise<void> {
       imported_hash TEXT,
       transfer_group_id TEXT,
       transfer_peer_tx_id TEXT,
+      transfer_from_account_id TEXT,
+      transfer_to_account_id TEXT,
       raw_json TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -143,7 +218,9 @@ async function runMigrations(): Promise<void> {
       FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
       FOREIGN KEY (import_batch_id) REFERENCES import_batches(id) ON DELETE SET NULL,
-      FOREIGN KEY (transfer_peer_tx_id) REFERENCES transactions(id) ON DELETE SET NULL
+      FOREIGN KEY (transfer_peer_tx_id) REFERENCES transactions(id) ON DELETE SET NULL,
+      FOREIGN KEY (transfer_from_account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+      FOREIGN KEY (transfer_to_account_id) REFERENCES accounts(id) ON DELETE SET NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS uq_transactions_user_hash
       ON transactions(user_id, imported_hash)
@@ -222,11 +299,116 @@ async function runMigrations(): Promise<void> {
   await ensureColumn("accounts", "parent_account_id", "TEXT");
   await ensureColumn("transactions", "transfer_group_id", "TEXT");
   await ensureColumn("transactions", "transfer_peer_tx_id", "TEXT");
+  await ensureColumn("transactions", "transfer_from_account_id", "TEXT");
+  await ensureColumn("transactions", "transfer_to_account_id", "TEXT");
+  await ensureColumn("transactions", "direction", "TEXT NOT NULL DEFAULT 'out'");
+  await ensureColumn("transactions", "is_internal_transfer", "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("import_events", "internal_transfer_auto_matched", "INTEGER");
+
+  if (db.dialect === "postgres") {
+    await db.exec(`
+      UPDATE transactions
+      SET direction = CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
+      WHERE direction IS NULL
+         OR LOWER(direction::text) <> CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
+         OR BTRIM(direction::text) = ''
+         OR direction::text NOT IN ('in', 'out');
+    `);
+    await db.exec(`
+      UPDATE transactions
+      SET is_internal_transfer = CASE WHEN type = 'transfer' THEN TRUE ELSE FALSE END
+      WHERE is_internal_transfer IS DISTINCT FROM CASE WHEN type = 'transfer' THEN TRUE ELSE FALSE END;
+    `);
+    await db.exec(`
+      UPDATE transactions AS t
+      SET transfer_from_account_id = COALESCE(
+            t.transfer_from_account_id,
+            (
+              SELECT src.account_id
+              FROM transactions AS src
+              WHERE src.user_id = t.user_id
+                AND src.transfer_group_id = t.transfer_group_id
+                AND src.type = 'transfer'
+                AND src.amount_cents < 0
+              ORDER BY src.posted_at ASC, src.created_at ASC
+              LIMIT 1
+            )
+          ),
+          transfer_to_account_id = COALESCE(
+            t.transfer_to_account_id,
+            (
+              SELECT dst.account_id
+              FROM transactions AS dst
+              WHERE dst.user_id = t.user_id
+                AND dst.transfer_group_id = t.transfer_group_id
+                AND dst.type = 'transfer'
+                AND dst.amount_cents > 0
+              ORDER BY dst.posted_at ASC, dst.created_at ASC
+              LIMIT 1
+            )
+          )
+      WHERE t.type = 'transfer'
+        AND t.transfer_group_id IS NOT NULL
+        AND (t.transfer_from_account_id IS NULL OR t.transfer_to_account_id IS NULL);
+    `);
+  } else {
+    await db.exec(`
+      UPDATE transactions
+      SET direction = CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
+      WHERE direction IS NULL
+         OR LOWER(direction) <> CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
+         OR TRIM(direction) = ''
+         OR direction NOT IN ('in', 'out');
+    `);
+    await db.exec(`
+      UPDATE transactions
+      SET is_internal_transfer = CASE WHEN type = 'transfer' THEN 1 ELSE 0 END
+      WHERE CAST(COALESCE(is_internal_transfer, 0) AS INTEGER) <> CASE WHEN type = 'transfer' THEN 1 ELSE 0 END;
+    `);
+    await db.exec(`
+      UPDATE transactions AS t
+      SET transfer_from_account_id = COALESCE(
+            t.transfer_from_account_id,
+            (
+              SELECT src.account_id
+              FROM transactions AS src
+              WHERE src.user_id = t.user_id
+                AND src.transfer_group_id = t.transfer_group_id
+                AND src.type = 'transfer'
+                AND src.amount_cents < 0
+              ORDER BY src.posted_at ASC, src.created_at ASC
+              LIMIT 1
+            )
+          ),
+          transfer_to_account_id = COALESCE(
+            t.transfer_to_account_id,
+            (
+              SELECT dst.account_id
+              FROM transactions AS dst
+              WHERE dst.user_id = t.user_id
+                AND dst.transfer_group_id = t.transfer_group_id
+                AND dst.type = 'transfer'
+                AND dst.amount_cents > 0
+              ORDER BY dst.posted_at ASC, dst.created_at ASC
+              LIMIT 1
+            )
+          )
+      WHERE t.type = 'transfer'
+        AND t.transfer_group_id IS NOT NULL
+        AND (t.transfer_from_account_id IS NULL OR t.transfer_to_account_id IS NULL);
+    `);
+  }
+
+  await ensurePostgresTransactionTypeEnum();
+  await ensurePostgresTransactionDirectionEnum();
 
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_accounts_user_parent ON accounts(user_id, parent_account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_user_transfer_group ON transactions(user_id, transfer_group_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_account_transfer_group ON transactions(account_id, transfer_group_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_user_transfer_from ON transactions(user_id, transfer_from_account_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_user_transfer_to ON transactions(user_id, transfer_to_account_id);
+    CREATE INDEX IF NOT EXISTS idx_transactions_user_internal_transfer ON transactions(user_id, is_internal_transfer);
   `);
 }
 

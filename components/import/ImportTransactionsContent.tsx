@@ -124,7 +124,7 @@ export type ImportTransactionsContentHandle = {
 
 type ImportTransactionsContentProps = {
   accounts: AccountDTO[];
-  onSuccess: () => void;
+  onSuccess: () => Promise<void> | void;
   onAccountsRefresh?: () => Promise<void> | void;
   onFooterStateChange?: (state: ImportTransactionsFooterState) => void;
   showInlineCommitButton?: boolean;
@@ -136,9 +136,31 @@ type ImportCommitResult = {
   totalSkipped: number;
   duplicates?: number;
   invalidRows?: number;
+  duplicateDetails?: {
+    inDatabase?: number;
+    inPayload?: number;
+  };
+  invalidDetails?: {
+    missingAccount?: number;
+    invalidRows?: number;
+    invalidDate?: number;
+    skippedCardPaymentLines?: number;
+    invalidTransferRows?: number;
+    creditInvoiceRowsNotRouted?: number;
+  };
   totalTransfersCreated?: number;
   totalCardPaymentsDetected?: number;
   totalCardPaymentsNotConverted?: number;
+  transferReviewSuggestionsCount?: number;
+  transferReviewSuggestions?: Array<{
+    fromAccountId: string;
+    toAccountId: string;
+    date: string;
+    amount: number;
+    confidence: number;
+    description: string;
+    counterpartDescription: string;
+  }>;
   warnings?: string[];
   summary?: {
     imported: number;
@@ -415,6 +437,7 @@ export const ImportTransactionsContent = forwardRef<
 
   const canImport = steps === "preview" && validRowsCount > 0 && !loading;
   const importLabel = validRowsCount === 1 ? "Importar 1 linha" : `Importar ${validRowsCount} linhas`;
+  const shouldShowQuickAccountForm = showQuickAccountForm || mergedAccounts.length === 0;
 
   useEffect(() => {
     onFooterStateChange?.({
@@ -757,7 +780,7 @@ export const ImportTransactionsContent = forwardRef<
           description: saveRuleWarning
         });
       }
-      onSuccess();
+      await onSuccess();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro inesperado";
       setError(message);
@@ -874,60 +897,122 @@ export const ImportTransactionsContent = forwardRef<
 
         {steps === "preview" && parseData ? (
           <>
-            <div className="grid gap-3 md:grid-cols-2">
-              <FormField id="import-default-account" label="Conta padrão (fallback)" hint="Usada quando a linha importada não indicar conta.">
-                {(fieldProps) => (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm text-muted-foreground">Selecione uma conta para complementar dados faltantes.</span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowQuickAccountForm((prev) => !prev)}
-                        aria-expanded={showQuickAccountForm}
-                        aria-controls="quick-account-form"
-                      >
-                        {showQuickAccountForm ? "Fechar" : "Criar conta"}
-                      </Button>
-                    </div>
-                    <Select {...fieldProps} value={defaultAccountId} onChange={(event) => setDefaultAccountId(event.target.value)}>
-                      <option value="">Sem conta padrão</option>
+            <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+              <div className="rounded-2xl border border-border/80 bg-card p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold tracking-wide">Configuracao da importacao</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Defina uma conta fallback para linhas sem conta identificada no arquivo.
+                    </p>
+                  </div>
+                  {mergedAccounts.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowQuickAccountForm((prev) => !prev)}
+                      aria-expanded={showQuickAccountForm}
+                      aria-controls="quick-account-form"
+                    >
+                      {showQuickAccountForm ? "Fechar conta rapida" : "Criar conta rapida"}
+                    </Button>
+                  ) : (
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-200">
+                      Nenhuma conta cadastrada
+                    </span>
+                  )}
+                </div>
+
+                <FormField
+                  id="import-default-account"
+                  label="Conta padrao (fallback)"
+                  hint="Usada quando a linha importada nao indicar conta."
+                  className="mt-4"
+                >
+                  {(fieldProps) => (
+                    <Select
+                      {...fieldProps}
+                      value={defaultAccountId}
+                      onChange={(event) => setDefaultAccountId(event.target.value)}
+                    >
+                      <option value="">Sem conta padrao</option>
                       {mergedAccounts.map((account) => (
                         <option key={account.id} value={account.id}>
                           {account.name}
                         </option>
                       ))}
                     </Select>
-                  </div>
-                )}
-              </FormField>
+                  )}
+                </FormField>
+              </div>
 
-              <FeedbackMessage variant="info" className="space-y-1 p-4">
-                <p>Total detectado: {parseData.totalRows} linhas</p>
-                <p>Linhas válidas: {validRowsCount}</p>
-                <p>Linhas ignoradas: {ignoredRowsCount}</p>
-                <p>Linhas com erro: {errorRowsCount}</p>
-                <p>Tipo de origem: {parseData.sourceType.toUpperCase()}</p>
-                {parseData.documentType ? <p>Tipo de documento: {parseData.documentType}</p> : null}
-                {parseData.issuerProfile ? <p>Perfil detectado: {parseData.issuerProfile}</p> : null}
-                <p>Contas disponiveis: {mergedAccounts.length}</p>
-                {topReasonEntries.length > 0 ? (
-                  <p>Motivos principais: {topReasonEntries.map(([reason, count]) => `${reason} (${count})`).join(", ")}</p>
-                ) : null}
-              </FeedbackMessage>
-            </div>
+              <div className="rounded-2xl border border-border/80 bg-muted/20 p-4 sm:p-5">
+                <h3 className="text-sm font-semibold tracking-wide">Resumo do arquivo</h3>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Total detectado</p>
+                    <p className="mt-1 text-lg font-semibold">{parseData.totalRows}</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/40 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Linhas validas</p>
+                    <p className="mt-1 text-lg font-semibold text-emerald-600 dark:text-emerald-400">{validRowsCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200/70 bg-amber-50/40 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Ignoradas</p>
+                    <p className="mt-1 text-lg font-semibold text-amber-600 dark:text-amber-400">{ignoredRowsCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-rose-200/70 bg-rose-50/40 p-3 dark:border-rose-900/60 dark:bg-rose-950/20">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Com erro</p>
+                    <p className="mt-1 text-lg font-semibold text-rose-600 dark:text-rose-400">{errorRowsCount}</p>
+                  </div>
+                </div>
+                <dl className="mt-4 divide-y divide-border/70 rounded-xl border border-border/70 bg-card text-sm">
+                  <div className="flex items-center justify-between gap-3 px-3 py-2">
+                    <dt className="text-muted-foreground">Origem</dt>
+                    <dd className="font-medium">{parseData.sourceType.toUpperCase()}</dd>
+                  </div>
+                  {parseData.documentType ? (
+                    <div className="flex items-center justify-between gap-3 px-3 py-2">
+                      <dt className="text-muted-foreground">Documento</dt>
+                      <dd className="font-medium">{parseData.documentType}</dd>
+                    </div>
+                  ) : null}
+                  {parseData.issuerProfile ? (
+                    <div className="flex items-center justify-between gap-3 px-3 py-2">
+                      <dt className="text-muted-foreground">Perfil detectado</dt>
+                      <dd className="font-medium">{parseData.issuerProfile}</dd>
+                    </div>
+                  ) : null}
+                  <div className="flex items-center justify-between gap-3 px-3 py-2">
+                    <dt className="text-muted-foreground">Contas disponiveis</dt>
+                    <dd className="font-medium">{mergedAccounts.length}</dd>
+                  </div>
+                  {topReasonEntries.length > 0 ? (
+                    <div className="px-3 py-2">
+                      <dt className="text-muted-foreground">Motivos principais</dt>
+                      <dd className="mt-1 text-xs text-foreground">
+                        {topReasonEntries.map(([reason, count]) => `${reason} (${count})`).join(", ")}
+                      </dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
+            </section>
 
             {parseData.documentType === "credit_card_invoice" && defaultAccount?.type !== "credit" ? (
-              <FeedbackMessage variant="warning" className="p-4">
-                Este arquivo foi detectado como fatura de cartão. Selecione uma conta do tipo cartão de crédito para
-                manter os lançamentos separados da conta corrente. Se não existir conta de cartão para a instituição,
-                o sistema tentará criar automaticamente uma conta de cartão vinculada.
+              <FeedbackMessage variant="warning" className="space-y-2 p-4">
+                <p className="font-semibold">Fatura de cartao detectada</p>
+                <p>
+                  Selecione uma conta do tipo cartao de credito para manter os lancamentos separados da conta
+                  corrente. Se nao existir conta de cartao para a instituicao, o sistema tentara criar uma conta
+                  vinculada automaticamente.
+                </p>
               </FeedbackMessage>
             ) : null}
 
             {(defaultAccount?.type === "checking" || defaultAccount?.type === "cash") && creditAccounts.length > 0 ? (
-              <FeedbackMessage variant="info" className="space-y-3 p-4">
+              <section className="space-y-3 rounded-2xl border border-border/80 bg-card p-4 sm:p-5">
                 <div className="flex items-start gap-3">
                   <Checkbox
                     id="convert-card-payment-transfer"
@@ -936,10 +1021,10 @@ export const ImportTransactionsContent = forwardRef<
                   />
                   <div>
                     <label htmlFor="convert-card-payment-transfer" className="font-medium">
-                      Converter pagamentos de fatura em transferência para cartão
+                      Converter pagamentos de fatura em transferencia para cartao
                     </label>
                     <p className="text-sm text-muted-foreground">
-                      Débito sai da conta corrente e entra na conta de cartão, sem virar despesa duplicada.
+                      O debito sai da conta corrente e entra na conta de cartao sem gerar despesa duplicada.
                     </p>
                   </div>
                 </div>
@@ -947,8 +1032,9 @@ export const ImportTransactionsContent = forwardRef<
                 {convertCardPaymentsToTransfer ? (
                   <FormField
                     id="card-payment-target-account"
-                    label="Conta cartão destino (opcional)"
-                    hint="Se vazio, o sistema tenta inferir pelo vínculo de conta mãe."
+                    label="Conta cartao destino (opcional)"
+                    hint="Se vazio, o sistema tenta inferir automaticamente pelo vinculo da conta mãe."
+                    className="sm:max-w-xl"
                   >
                     {(fieldProps) => (
                       <Select
@@ -973,11 +1059,11 @@ export const ImportTransactionsContent = forwardRef<
                     )}
                   </FormField>
                 ) : null}
-              </FeedbackMessage>
+              </section>
             ) : null}
 
             {defaultAccount?.type === "credit" ? (
-              <FeedbackMessage variant="warning" className="space-y-3 p-4">
+              <section className="space-y-3 rounded-2xl border border-border/80 bg-card p-4 sm:p-5">
                 <div className="flex items-start gap-3">
                   <Checkbox
                     id="skip-card-payment-lines"
@@ -986,33 +1072,48 @@ export const ImportTransactionsContent = forwardRef<
                   />
                   <div>
                     <label htmlFor="skip-card-payment-lines" className="font-medium">
-                      Ignorar linhas de pagamento na fatura do cartão
+                      Ignorar linhas de pagamento na fatura do cartao
                     </label>
                     <p className="text-sm text-muted-foreground">
                       Evita importar o credito de pagamento da fatura e duplicar com o extrato da conta corrente.
                     </p>
                   </div>
                 </div>
-              </FeedbackMessage>
+              </section>
             ) : null}
 
-            {showQuickAccountForm || mergedAccounts.length === 0 ? (
-              <FeedbackMessage variant="warning" className="space-y-3 p-4" role="status">
-                <p className="font-medium">
-                  {mergedAccounts.length === 0
-                    ? "Nenhuma conta encontrada. Crie uma conta rápida para continuar a importação."
-                    : "Crie uma conta rápida sem sair do fluxo de importação."}
-                </p>
+            {shouldShowQuickAccountForm ? (
+              <section className="space-y-4 rounded-2xl border border-border/80 bg-card p-4 sm:p-5" role="status">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-semibold tracking-wide">Conta rapida para importacao</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {mergedAccounts.length === 0
+                        ? "Nenhuma conta encontrada. Crie uma conta para continuar a importacao."
+                        : "Crie uma nova conta sem sair do fluxo de importacao."}
+                    </p>
+                  </div>
+                  {mergedAccounts.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowQuickAccountForm(false)}
+                    >
+                      Ocultar formulario
+                    </Button>
+                  ) : null}
+                </div>
                 <form
                   id="quick-account-form"
-                  className="grid gap-3 md:grid-cols-6"
+                  className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12"
                   onSubmit={(event) => {
                     event.preventDefault();
                     void handleCreateAccount();
                   }}
                   aria-busy={creatingAccount}
                 >
-                  <FormField id="quick-account-name" label="Nome da conta" required>
+                  <FormField id="quick-account-name" label="Nome da conta" required className="xl:col-span-4">
                     {(fieldProps) => (
                       <Input
                         {...fieldProps}
@@ -1021,7 +1122,7 @@ export const ImportTransactionsContent = forwardRef<
                       />
                     )}
                   </FormField>
-                  <FormField id="quick-account-type" label="Tipo" required>
+                  <FormField id="quick-account-type" label="Tipo" required className="xl:col-span-3">
                     {(fieldProps) => (
                       <Select
                         {...fieldProps}
@@ -1037,7 +1138,7 @@ export const ImportTransactionsContent = forwardRef<
                       </Select>
                     )}
                   </FormField>
-                  <FormField id="quick-account-institution" label="Instituição">
+                  <FormField id="quick-account-institution" label="Instituicao" className="xl:col-span-3">
                     {(fieldProps) => (
                       <Input
                         {...fieldProps}
@@ -1048,7 +1149,7 @@ export const ImportTransactionsContent = forwardRef<
                       />
                     )}
                   </FormField>
-                  <FormField id="quick-account-currency" label="Moeda" required>
+                  <FormField id="quick-account-currency" label="Moeda" required className="xl:col-span-2">
                     {(fieldProps) => (
                       <Input
                         {...fieldProps}
@@ -1060,7 +1161,12 @@ export const ImportTransactionsContent = forwardRef<
                     )}
                   </FormField>
                   {quickAccount.type === "credit" ? (
-                    <FormField id="quick-account-parent" label="Conta mãe (opcional)">
+                    <FormField
+                      id="quick-account-parent"
+                      label="Conta mae (opcional)"
+                      hint="Vincule a conta de cartao a uma conta corrente para conciliacao automatica."
+                      className="md:col-span-2 xl:col-span-6"
+                    >
                       {(fieldProps) => (
                         <Select
                           {...fieldProps}
@@ -1069,7 +1175,7 @@ export const ImportTransactionsContent = forwardRef<
                             setQuickAccount((prev) => ({ ...prev, parentAccountId: event.target.value }))
                           }
                         >
-                          <option value="">Sem conta mãe</option>
+                          <option value="">Sem conta mae</option>
                           {nonCreditAccounts.map((account) => (
                             <option key={account.id} value={account.id}>
                               {account.name}
@@ -1079,13 +1185,13 @@ export const ImportTransactionsContent = forwardRef<
                       )}
                     </FormField>
                   ) : null}
-                  <div className="flex items-end">
-                    <Button type="submit" isLoading={creatingAccount} disabled={creatingAccount} className="w-full md:w-auto">
+                  <div className="md:col-span-2 xl:col-span-12 flex flex-wrap justify-end gap-2">
+                    <Button type="submit" isLoading={creatingAccount} disabled={creatingAccount} className="min-w-32">
                       {creatingAccount ? "Criando..." : "Criar conta"}
                     </Button>
                   </div>
                 </form>
-              </FeedbackMessage>
+              </section>
             ) : null}
 
             <RulesStep
@@ -1146,8 +1252,35 @@ export const ImportTransactionsContent = forwardRef<
             </p>
             {typeof result.duplicates === "number" ? <p>Duplicadas: {result.duplicates}</p> : null}
             {typeof result.invalidRows === "number" ? <p>Inválidas: {result.invalidRows}</p> : null}
+            {result.duplicateDetails ? (
+              <p className="text-muted-foreground">
+                Duplicadas (detalhe): banco={result.duplicateDetails.inDatabase ?? 0} | payload=
+                {result.duplicateDetails.inPayload ?? 0}
+              </p>
+            ) : null}
+            {result.invalidDetails ? (
+              <p className="text-muted-foreground">
+                Invalidas (detalhe): sem conta={result.invalidDetails.missingAccount ?? 0} | linha invalida=
+                {result.invalidDetails.invalidRows ?? 0} | data invalida={result.invalidDetails.invalidDate ?? 0} |
+                pagamento ignorado={result.invalidDetails.skippedCardPaymentLines ?? 0}
+              </p>
+            ) : null}
             {typeof result.totalTransfersCreated === "number" && result.totalTransfersCreated > 0 ? (
               <p>Transferencias criadas: {result.totalTransfersCreated}</p>
+            ) : null}
+            {typeof result.transferReviewSuggestionsCount === "number" && result.transferReviewSuggestionsCount > 0 ? (
+              <p>Sugestoes de conciliacao de transferencia: {result.transferReviewSuggestionsCount}</p>
+            ) : null}
+            {Array.isArray(result.transferReviewSuggestions) && result.transferReviewSuggestions.length > 0 ? (
+              <div className="space-y-1 text-muted-foreground">
+                {result.transferReviewSuggestions.slice(0, 3).map((suggestion, index) => (
+                  <p key={`review-suggestion-${index}`}>
+                    Revisar transferencia {index + 1}: {suggestion.date} | R$ {suggestion.amount.toFixed(2)} | conf{" "}
+                    {Math.round(suggestion.confidence * 100)}% | {suggestion.description} {"<->"}{" "}
+                    {suggestion.counterpartDescription}
+                  </p>
+                ))}
+              </div>
             ) : null}
             {typeof result.totalCardPaymentsDetected === "number" && result.totalCardPaymentsDetected > 0 ? (
               <p>Pagamentos de fatura detectados: {result.totalCardPaymentsDetected}</p>

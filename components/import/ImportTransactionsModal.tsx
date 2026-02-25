@@ -15,7 +15,7 @@ type ImportTransactionsModalProps = {
   open: boolean;
   accounts: AccountDTO[];
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
+  onSuccess: () => Promise<void> | void;
   onAccountsRefresh?: () => Promise<void> | void;
   triggerRef?: React.RefObject<HTMLElement | null>;
 };
@@ -193,8 +193,8 @@ export function ImportTransactionsModal({
             onFooterStateChange={setFooterState}
             showInlineCommitButton={false}
             previewMaxHeightClassName="max-h-[42vh] sm:max-h-[430px]"
-            onSuccess={() => {
-              onSuccess();
+            onSuccess={async () => {
+              await onSuccess();
               handleClose();
             }}
           />

@@ -27,6 +27,7 @@ export const importObservabilityRepo = {
     duplicates?: number;
     invalidRows?: number;
     transferCreated?: number;
+    internalTransferAutoMatched?: number;
     cardPaymentDetected?: number;
     cardPaymentNotConverted?: number;
   }): Promise<void> {
@@ -38,9 +39,9 @@ export const importObservabilityRepo = {
          id, user_id, source_type, event, phase, error_code,
          total_rows, valid_rows, ignored_rows, error_rows,
          imported, skipped, duplicates, invalid_rows,
-         transfer_created, card_payment_detected, card_payment_not_converted,
+         transfer_created, internal_transfer_auto_matched, card_payment_detected, card_payment_not_converted,
          created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.userId,
@@ -57,6 +58,7 @@ export const importObservabilityRepo = {
       clampCounter(input.duplicates),
       clampCounter(input.invalidRows),
       clampCounter(input.transferCreated),
+      clampCounter(input.internalTransferAutoMatched),
       clampCounter(input.cardPaymentDetected),
       clampCounter(input.cardPaymentNotConverted),
       createdAt
@@ -75,6 +77,7 @@ export const importObservabilityRepo = {
     errors: number;
     duplicates: number;
     transferCreated: number;
+    internalTransferAutoMatched: number;
     cardPaymentsDetected: number;
     cardPaymentsNotConverted: number;
   }>> {
@@ -101,6 +104,7 @@ export const importObservabilityRepo = {
             SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS errors,
             COALESCE(SUM(duplicates), 0) AS duplicates,
             COALESCE(SUM(transfer_created), 0) AS transfer_created,
+            COALESCE(SUM(internal_transfer_auto_matched), 0) AS internal_transfer_auto_matched,
             COALESCE(SUM(card_payment_detected), 0) AS card_payment_detected,
             COALESCE(SUM(card_payment_not_converted), 0) AS card_payment_not_converted
          FROM import_events
@@ -116,6 +120,7 @@ export const importObservabilityRepo = {
       errors: number;
       duplicates: number;
       transfer_created: number;
+      internal_transfer_auto_matched: number;
       card_payment_detected: number;
       card_payment_not_converted: number;
     }>;
@@ -128,6 +133,7 @@ export const importObservabilityRepo = {
       errors: row.errors,
       duplicates: row.duplicates,
       transferCreated: row.transfer_created,
+      internalTransferAutoMatched: row.internal_transfer_auto_matched,
       cardPaymentsDetected: row.card_payment_detected,
       cardPaymentsNotConverted: row.card_payment_not_converted
     }));

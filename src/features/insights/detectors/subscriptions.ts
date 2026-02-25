@@ -2,6 +2,11 @@ import { formatBRL } from "@/src/utils/format";
 import type { Insight, InsightsDetectorContext, PreparedTransaction } from "@/src/features/insights/types";
 import { median } from "@/src/features/insights/utils/stats";
 
+const MIN_SUBSCRIPTION_MONTHS = 3;
+const MIN_SUBSCRIPTION_AMOUNT = 20;
+const MIN_CONSISTENT_MONTHS = 3;
+const MIN_CONSISTENCY_RATIO = 0.6;
+
 type SubscriptionCandidate = {
   merchantKey: string;
   months: number;
@@ -39,18 +44,18 @@ function buildSubscriptionCandidate(
   merchantKey: string,
   transactions: PreparedTransaction[]
 ): SubscriptionCandidate | null {
-  if (transactions.length < 2) {
+  if (transactions.length < MIN_SUBSCRIPTION_MONTHS) {
     return null;
   }
 
   const monthly = getMonthlyObservations(transactions);
-  if (monthly.length < 2) {
+  if (monthly.length < MIN_SUBSCRIPTION_MONTHS) {
     return null;
   }
 
   const medianAmount = median(monthly.map((item) => item.amount));
   const medianDay = median(monthly.map((item) => item.day));
-  if (medianAmount <= 0) {
+  if (medianAmount < MIN_SUBSCRIPTION_AMOUNT) {
     return null;
   }
 
@@ -63,7 +68,8 @@ function buildSubscriptionCandidate(
     }
   }
 
-  if (consistentCount < 2) {
+  const consistencyRatio = consistentCount / monthly.length;
+  if (consistentCount < MIN_CONSISTENT_MONTHS || consistencyRatio < MIN_CONSISTENCY_RATIO) {
     return null;
   }
 
@@ -72,7 +78,7 @@ function buildSubscriptionCandidate(
     months: monthly.length,
     medianAmount,
     medianDay,
-    consistency: consistentCount / monthly.length
+    consistency: consistencyRatio
   };
 }
 

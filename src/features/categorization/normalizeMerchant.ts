@@ -1,4 +1,5 @@
 import type { TransactionDTO } from "@/lib/types";
+import { stripInstallmentMarker } from "@/lib/installments";
 
 const NOISE_TOKENS = new Set([
   "pix",
@@ -20,6 +21,9 @@ const NOISE_TOKENS = new Set([
   "deposito",
   "recebido",
   "enviado",
+  "parcela",
+  "parcelado",
+  "parc",
   "ag",
   "conta",
   "cc",
@@ -66,7 +70,8 @@ export function normalizeText(value: string): string {
 }
 
 export function extractMerchantKey(transaction: TransactionDTO): string {
-  const baseText = `${transaction.description || ""} ${transaction.account?.name || ""}`.trim();
+  const sanitizedDescription = stripInstallmentMarker(transaction.description || "");
+  const baseText = `${sanitizedDescription} ${transaction.account?.name || ""}`.trim();
   const normalized = normalizeText(baseText);
 
   if (!normalized) {

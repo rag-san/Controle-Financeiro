@@ -2,13 +2,27 @@ import { formatBRL, formatPercent } from "@/src/utils/format";
 import type { Insight, InsightsDetectorContext } from "@/src/features/insights/types";
 import { toPercentChange } from "@/src/features/insights/utils/stats";
 
+const MIN_TOP_CATEGORY_TOTAL = 150;
+const MIN_TOTAL_EXPENSES = 300;
+const MIN_CATEGORY_SHARE = 0.2;
+
 export function detectTopCategory(context: InsightsDetectorContext): Insight | null {
   if (context.categoryTotalsCurrent.size === 0) {
     return null;
   }
 
+  const totalExpenses = [...context.categoryTotalsCurrent.values()].reduce((acc, item) => acc + item.total, 0);
+  if (totalExpenses < MIN_TOTAL_EXPENSES) {
+    return null;
+  }
+
   const topCategory = [...context.categoryTotalsCurrent.values()].sort((left, right) => right.total - left.total)[0];
-  if (!topCategory || topCategory.total <= 0) {
+  if (!topCategory || topCategory.total < MIN_TOP_CATEGORY_TOTAL) {
+    return null;
+  }
+
+  const share = topCategory.total / Math.max(totalExpenses, 1);
+  if (share < MIN_CATEGORY_SHARE) {
     return null;
   }
 

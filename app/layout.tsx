@@ -6,8 +6,8 @@ import "@/styles/globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Controle Financeiro",
-  description: "Dashboard financeiro pessoal com importacao CSV/OFX"
+  title: "Financial Control",
+  description: "Personal finance dashboard with CSV/OFX/PDF imports"
 };
 
 export default function RootLayout({

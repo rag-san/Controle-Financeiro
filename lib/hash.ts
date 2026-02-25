@@ -20,14 +20,13 @@ export function createImportedHash(input: {
   externalId?: string | null;
 }): string {
   const normalizedDateIso = toNormalizedUtcDateIso(input.date);
+  const absoluteAmount = Math.abs(input.amount);
   const payload = [
     input.userId,
-    input.sourceType,
     normalizedDateIso,
-    input.amount.toFixed(2),
+    absoluteAmount.toFixed(2),
     input.normalizedDescription,
-    input.accountId,
-    input.externalId ?? ""
+    input.accountId
   ].join("|");
 
   return crypto.createHash("sha256").update(payload).digest("hex");

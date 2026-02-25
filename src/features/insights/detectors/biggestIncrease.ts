@@ -1,6 +1,10 @@
 import { formatBRL } from "@/src/utils/format";
 import type { Insight, InsightsDetectorContext } from "@/src/features/insights/types";
 
+const MIN_INCREASE_TO_NOTIFY = 80;
+const MIN_CURRENT_TOTAL = 120;
+const WARNING_INCREASE_THRESHOLD = 300;
+
 export function detectBiggestIncrease(context: InsightsDetectorContext): Insight | null {
   const keys = new Set<string>([
     ...context.categoryTotalsCurrent.keys(),
@@ -25,7 +29,7 @@ export function detectBiggestIncrease(context: InsightsDetectorContext): Insight
     const previousTotal = previous?.total ?? 0;
     const increase = currentTotal - previousTotal;
 
-    if (increase <= 0) {
+    if (increase < MIN_INCREASE_TO_NOTIFY || currentTotal < MIN_CURRENT_TOTAL) {
       continue;
     }
 
@@ -47,7 +51,7 @@ export function detectBiggestIncrease(context: InsightsDetectorContext): Insight
 
   return {
     id: "biggest-increase",
-    severity: best.increase >= 150 ? "warning" : "info",
+    severity: best.increase >= WARNING_INCREASE_THRESHOLD ? "warning" : "info",
     title: "Maior aumento de gasto",
     message: `${best.categoryName} aumentou ${formatBRL(best.increase)} vs período anterior.`,
     why: `Atual: ${formatBRL(best.current)} | Anterior: ${formatBRL(best.previous)}.`,

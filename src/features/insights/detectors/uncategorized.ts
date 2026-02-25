@@ -2,6 +2,9 @@ import type { Insight, InsightsDetectorContext } from "@/src/features/insights/t
 import { normalizeMerchant } from "@/src/features/insights/utils/merchant";
 
 const UNCATEGORIZED_MARKERS = ["sem categoria", "uncategorized", "nao categorizado", "não categorizado"];
+const MIN_UNCATEGORIZED_COUNT = 8;
+const MIN_UNCATEGORIZED_RATIO = 0.3;
+const MIN_COUNT_FOR_RATIO = 4;
 
 function isUncategorized(categoryId: string | null, categoryName: string): boolean {
   if (!categoryId) return true;
@@ -11,6 +14,11 @@ function isUncategorized(categoryId: string | null, categoryName: string): boole
 }
 
 export function detectUncategorized(context: InsightsDetectorContext): Insight | null {
+  const totalCurrent = context.currentTransactions.length;
+  if (totalCurrent === 0) {
+    return null;
+  }
+
   let count = 0;
 
   for (const transaction of context.currentTransactions) {
@@ -19,15 +27,19 @@ export function detectUncategorized(context: InsightsDetectorContext): Insight |
     }
   }
 
-  if (count < 5) {
+  const ratio = count / totalCurrent;
+  const shouldNotify =
+    count >= MIN_UNCATEGORIZED_COUNT || (count >= MIN_COUNT_FOR_RATIO && ratio >= MIN_UNCATEGORIZED_RATIO);
+
+  if (!shouldNotify) {
     return null;
   }
 
   return {
     id: "uncategorized-nudge",
-    severity: "warning",
+    severity: count >= MIN_UNCATEGORIZED_COUNT ? "warning" : "info",
     title: "Transações sem categoria",
-    message: `Você tem ${count} transações sem categoria neste período.`,
+    message: `Você tem ${count} transações sem categoria neste período (${Math.round(ratio * 100)}%).`,
     why: "Classificar esses lançamentos melhora a precisão dos insights e comparações.",
     cta: {
       label: "Organizar agora",

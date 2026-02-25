@@ -39,6 +39,11 @@ function round2(value: number): number {
   return Number(value.toFixed(2));
 }
 
+type FullDashboardOptions = {
+  forceReferenceDate?: boolean;
+  referenceDate?: Date;
+};
+
 export const dashboardRepo = {
   async summaryByRange(userId: string, from: Date, to: Date) {
     const txs = await transactionsRepo.listByDateRange(userId, from, to, true);
@@ -84,9 +89,11 @@ export const dashboardRepo = {
     };
   },
 
-  async fullDashboard(userId: string, now = new Date(), options?: { forceReferenceDate?: boolean }) {
+  async fullDashboard(userId: string, now = new Date(), options?: FullDashboardOptions) {
     const latestTransactionDate = await transactionsRepo.latestPostedAt(userId);
-    const referenceDate = options?.forceReferenceDate ? now : latestTransactionDate ?? now;
+    const referenceDate = options?.forceReferenceDate
+      ? options.referenceDate ?? now
+      : latestTransactionDate ?? now;
     const currentMonthStart = startOfMonth(referenceDate);
     const currentMonthEnd = endOfMonth(referenceDate);
     const previousMonthStart = startOfMonth(subMonths(referenceDate, 1));

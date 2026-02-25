@@ -27,6 +27,8 @@ import { buildReportsModel } from "@/src/features/reports/buildReportsModel";
 import type { ReportsPeriodPreset } from "@/src/features/reports/types";
 import { buildPeriodComparison } from "@/src/features/reports/utils/period";
 
+type DashboardViewPayload = { view: "dashboard" } & Awaited<ReturnType<typeof dashboardRepo.fullDashboard>>;
+
 const querySchema = z.object({
   view: z.enum(["reports", "cashflow", "categories", "dashboard"]),
   preset: z.enum(["1M", "3M", "6M", "YTD", "1Y", "ALL"]).optional(),
@@ -70,9 +72,13 @@ function toTransactionDTO(
     description: item.description,
     amount: item.amount,
     type: item.type,
+    direction: item.direction,
+    isInternalTransfer: item.isInternalTransfer,
     status: item.status,
     transferGroupId: item.transferGroupId ?? null,
     transferPeerTxId: item.transferPeerTxId ?? null,
+    transferFromAccountId: item.transferFromAccountId ?? null,
+    transferToAccountId: item.transferToAccountId ?? null,
     account: {
       id: item.account.id,
       name: item.account.name,
@@ -223,7 +229,43 @@ function isHistoricalMonth(monthKey: string): boolean {
   return monthKey < format(new Date(), "yyyy-MM");
 }
 
+function asDashboardViewPayload(value: unknown): DashboardViewPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<DashboardViewPayload>;
+
+  if (candidate.view !== "dashboard") return null;
+  if (typeof candidate.referenceMonth !== "string") return null;
+  if (typeof candidate.isCurrentMonthReference !== "boolean") return null;
+  if (!candidate.cards || typeof candidate.cards !== "object") return null;
+  if (!Array.isArray(candidate.spendingTrend)) return null;
+  if (!Array.isArray(candidate.topCategories)) return null;
+
+  return candidate as DashboardViewPayload;
+}
+
+function normalizeDashboardViewPayload(
+  payload: DashboardViewPayload,
+  input: { requestedMonth: string | null; now: Date }
+): DashboardViewPayload {
+  const referenceMonth = input.requestedMonth || payload.referenceMonth;
+  const isCurrentMonthReference = referenceMonth === format(input.now, "yyyy-MM");
+
+  if (
+    payload.referenceMonth === referenceMonth &&
+    payload.isCurrentMonthReference === isCurrentMonthReference
+  ) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    referenceMonth,
+    isCurrentMonthReference
+  };
+}
+
 async function buildDashboardViewPayloadWithSnapshots(input: { userId: string; month?: string }) {
+  const now = new Date();
   const requestedMonth = input.month?.trim() || null;
   if (requestedMonth && isHistoricalMonth(requestedMonth)) {
     const snapshot = await officialMetricSnapshotsRepo.find({
@@ -232,16 +274,27 @@ async function buildDashboardViewPayloadWithSnapshots(input: { userId: string; m
       periodKey: requestedMonth
     });
 
-    if (snapshot && snapshot.payload && typeof snapshot.payload === "object") {
-      return snapshot.payload as { view: "dashboard" } & Awaited<ReturnType<typeof dashboardRepo.fullDashboard>>;
+    const snapshotPayload = asDashboardViewPayload(snapshot?.payload);
+    if (snapshot && snapshotPayload) {
+      const normalizedSnapshot = normalizeDashboardViewPayload(snapshotPayload, { requestedMonth, now });
+      if (normalizedSnapshot !== snapshotPayload) {
+        await officialMetricSnapshotsRepo.upsert({
+          userId: input.userId,
+          metricKey: "dashboard",
+          periodKey: requestedMonth,
+          payload: normalizedSnapshot
+        });
+      }
+      return normalizedSnapshot;
     }
   }
 
-  const referenceDate = requestedMonth ? parseMonthKey(requestedMonth) : new Date();
-  const payload = {
+  const referenceDate = requestedMonth ? parseMonthKey(requestedMonth) : now;
+  const payload: DashboardViewPayload = {
     view: "dashboard" as const,
-    ...(await dashboardRepo.fullDashboard(input.userId, referenceDate, {
-      forceReferenceDate: Boolean(requestedMonth)
+    ...(await dashboardRepo.fullDashboard(input.userId, now, {
+      forceReferenceDate: true,
+      referenceDate
     }))
   };
 

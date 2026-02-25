@@ -18,6 +18,7 @@ type ImportTelemetryInput = {
   duplicates?: number;
   invalidRows?: number;
   transferCreated?: number;
+  internalTransferAutoMatched?: number;
   cardPaymentDetected?: number;
   cardPaymentNotConverted?: number;
   errorCode?: string;
@@ -53,6 +54,7 @@ export function logImportEvent(event: ImportEvent, input: ImportTelemetryInput):
     duplicates: safeCounter(input.duplicates),
     invalidRows: safeCounter(input.invalidRows),
     transferCreated: safeCounter(input.transferCreated),
+    internalTransferAutoMatched: safeCounter(input.internalTransferAutoMatched),
     cardPaymentDetected: safeCounter(input.cardPaymentDetected),
     cardPaymentNotConverted: safeCounter(input.cardPaymentNotConverted),
     errorCode: input.errorCode
@@ -76,6 +78,7 @@ export function logImportEvent(event: ImportEvent, input: ImportTelemetryInput):
       duplicates: input.duplicates,
       invalidRows: input.invalidRows,
       transferCreated: input.transferCreated,
+      internalTransferAutoMatched: input.internalTransferAutoMatched,
       cardPaymentDetected: input.cardPaymentDetected,
       cardPaymentNotConverted: input.cardPaymentNotConverted
     });

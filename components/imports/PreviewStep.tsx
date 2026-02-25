@@ -116,6 +116,9 @@ export function PreviewStep({
               Preview da importacao
             </h3>
             <p className="text-sm text-muted-foreground">Status por linha apos parse e normalizacao.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Mostrando {filteredRows.length} de {rows.length} linhas.
+            </p>
           </div>
           <div className="flex flex-col gap-2 lg:items-end">
             <SegmentedControl
@@ -150,7 +153,7 @@ export function PreviewStep({
         >
           <table className="min-w-[1080px] w-full text-sm">
             <caption className="sr-only">Tabela de linhas detectadas para importacao.</caption>
-            <thead className="sticky top-0 z-10 bg-muted/95 backdrop-blur">
+            <thead className="sticky top-0 z-10 border-b border-border bg-muted/95 backdrop-blur">
               <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <th className="p-3">Linha</th>
                 <th className="p-3">Data</th>
@@ -178,9 +181,11 @@ export function PreviewStep({
                   <tr
                     key={rowKey}
                     className={cn(
-                      "border-b border-border/60 align-top",
-                      row.status === "error" && "bg-rose-50/60 dark:bg-rose-950/20",
-                      row.status === "ignored" && "bg-amber-50/60 dark:bg-amber-950/20"
+                      "border-b border-border/60 align-top transition-colors odd:bg-background even:bg-muted/10 hover:bg-muted/25",
+                      row.status === "error" &&
+                        "bg-rose-50/70 hover:bg-rose-100/70 dark:bg-rose-950/20 dark:hover:bg-rose-950/30",
+                      row.status === "ignored" &&
+                        "bg-amber-50/70 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/30"
                     )}
                   >
                     <td className="p-3">{row.line ?? index + 1}</td>
@@ -203,7 +208,7 @@ export function PreviewStep({
                     </td>
                     <td className="p-3">
                       <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${rowStatusClassName(row.status)}`}
+                        className={`inline-flex items-center rounded-full border border-current/10 px-2 py-0.5 text-xs font-semibold ${rowStatusClassName(row.status)}`}
                       >
                         {rowStatusLabel(row.status)}
                       </span>

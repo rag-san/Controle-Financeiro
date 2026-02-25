@@ -16,9 +16,6 @@ const fixturePath = path.join(repoRoot, "tests", "fixtures", "import-transaction
 const fixtureIrregularLatin1Path = path.join(repoRoot, "tests", "fixtures", "import-irregular-latin1.csv");
 const fixtureMixedInvalidPath = path.join(repoRoot, "tests", "fixtures", "import-mixed-invalid.csv");
 const fixtureHistoricoDescricaoPath = path.join(repoRoot, "tests", "fixtures", "import-historico-descricao.csv");
-const fixtureInterStatementPdfPath = path.join(repoRoot, "Arquivosdeexemplo", "Extrato-24-11-2025-a-21-02-2026-PDF.pdf");
-const fixtureInterInvoicePdfPath = path.join(repoRoot, "Arquivosdeexemplo", "fatura-inter-2026-01.pdf");
-const fixtureMercadoPagoPdfPath = path.join(repoRoot, "Arquivosdeexemplo", "Fatura_MP_20260210.pdf");
 const testDbRelativePath = path.join("data", "finance.integration.db");
 const testDbPath = path.join(repoRoot, testDbRelativePath);
 const serverBootTimeoutMs = 120_000;
@@ -29,6 +26,92 @@ const serverLogs = [];
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function escapePdfText(value) {
+  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function buildSimplePdfBuffer(lines) {
+  const fontSize = 11;
+  const lineHeight = 14;
+  let y = 800;
+  const textOps = ["BT", `/F1 ${fontSize} Tf`];
+
+  for (const line of lines) {
+    textOps.push(`1 0 0 1 50 ${y} Tm (${escapePdfText(line)}) Tj`);
+    y -= lineHeight;
+  }
+
+  textOps.push("ET");
+  const content = `${textOps.join("\n")}\n`;
+
+  const objects = [];
+  const addObject = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+
+  addObject("<< /Type /Catalog /Pages 2 0 R >>");
+  addObject("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  addObject("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>");
+  addObject("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  addObject(`<< /Length ${Buffer.byteLength(content, "utf8")} >>\nstream\n${content}endstream`);
+
+  let pdfText = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(pdfText, "utf8"));
+    pdfText += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+
+  const xrefStart = Buffer.byteLength(pdfText, "utf8");
+  pdfText += `xref\n0 ${objects.length + 1}\n`;
+  pdfText += "0000000000 65535 f \n";
+  for (let objectId = 1; objectId <= objects.length; objectId += 1) {
+    pdfText += `${String(offsets[objectId]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdfText += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`;
+
+  return Buffer.from(pdfText, "utf8");
+}
+
+function buildPdfFixtures() {
+  const interStatement = buildSimplePdfBuffer([
+    "BANCO INTER",
+    "EXTRATO CONTA CORRENTE",
+    "SALDO DO DIA",
+    "PIX",
+    "01 de fevereiro de 2026",
+    "PIX ENVIADO HELENA -R$ 120,50",
+    "PIX RECEBIDO JOAO R$ 300,00",
+    "02 de fevereiro de 2026",
+    "COMPRA MERCADO -R$ 89,90"
+  ]);
+
+  const interInvoice = buildSimplePdfBuffer([
+    "BANCO INTER",
+    "DESPESAS DA FATURA",
+    "FATURA",
+    "Vencimento: 10/02/2026",
+    "05 de janeiro 2026 MERCADO QA R$ 89,90",
+    "07 de janeiro 2026 PAGAMENTO RECEBIDO + R$ 89,90"
+  ]);
+
+  const mercadoPagoInvoice = buildSimplePdfBuffer([
+    "MERCADO PAGO",
+    "DETALHES DE CONSUMO",
+    "FATURA",
+    "Vencimento: 10/02/2026",
+    "05/02 COMPRA APP R$ 45,90",
+    "08/02 ESTORNO APP R$ 10,00"
+  ]);
+
+  return {
+    interStatement,
+    interInvoice,
+    mercadoPagoInvoice
+  };
 }
 
 function cookieHeader(cookies) {
@@ -245,6 +328,20 @@ test("critical backend flow via API", async () => {
   const checkingAccountId = checkingAccount.payload?.id;
   assert.ok(typeof checkingAccountId === "string");
 
+  const reserveCheckingAccount = await apiRequest("/api/accounts", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      name: "Conta Reserva QA",
+      type: "checking",
+      institution: "QA Bank",
+      currency: "BRL"
+    }
+  });
+  assert.equal(reserveCheckingAccount.status, 201);
+  const reserveCheckingAccountId = reserveCheckingAccount.payload?.id;
+  assert.ok(typeof reserveCheckingAccountId === "string");
+
   const creditAccount = await apiRequest("/api/accounts", {
     method: "POST",
     cookies: authCookies,
@@ -419,7 +516,7 @@ test("critical backend flow via API", async () => {
       },
       {
         date: "2026-02-21",
-        description: "Pagamento Fatura Cartao Inter",
+        description: "Credit Card Payment Inter",
         amount: -500
       }
     ]
@@ -443,7 +540,7 @@ test("critical backend flow via API", async () => {
   const cardPaymentTransferLegs = transactionsAfterStatementTransfer.payload.items.filter(
     (item) =>
       item.type === "transfer" &&
-      item.description.includes("Pagamento Fatura Cartao Inter")
+      item.description.includes("Credit Card Payment Inter")
   );
   assert.equal(cardPaymentTransferLegs.length, 2);
   assert.ok(cardPaymentTransferLegs.some((item) => item.accountId === checkingAccountId && Number(item.amount) < 0));
@@ -472,13 +569,19 @@ test("critical backend flow via API", async () => {
           description: "Pagamento Recebido Fatura",
           amount: 250,
           documentType: "credit_card_invoice"
+        },
+        {
+          date: "2026-02-22",
+          description: "PAGAMENTO ON LINE",
+          amount: 862.08,
+          documentType: "credit_card_invoice"
         }
       ]
     }
   });
   assert.equal(invoiceCommit.status, 201);
   assert.equal(invoiceCommit.payload?.totalImported, 1);
-  assert.ok(invoiceCommit.payload?.totalSkipped >= 1);
+  assert.ok(invoiceCommit.payload?.totalSkipped >= 2);
 
   const invoiceWrongDefaultCommit = await apiRequest("/api/imports/commit", {
     method: "POST",
@@ -520,7 +623,7 @@ test("critical backend flow via API", async () => {
   const transferLegsAfterReimport = transactionsAfterStatementReimport.payload.items.filter(
     (item) =>
       item.type === "transfer" &&
-      item.description.includes("Pagamento Fatura Cartao Inter")
+      item.description.includes("Credit Card Payment Inter")
   );
   assert.equal(transferLegsAfterReimport.length, 2);
 
@@ -529,6 +632,10 @@ test("critical backend flow via API", async () => {
   );
   assert.ok(routedCreditPurchase);
   assert.equal(routedCreditPurchase.accountId, creditAccountId);
+  const onlinePaymentLine = transactionsAfterStatementReimport.payload.items.find(
+    (item) => item.description === "PAGAMENTO ON LINE"
+  );
+  assert.equal(onlinePaymentLine, undefined);
 
   const balancesAfterTransferFlow = await apiRequest("/api/accounts", { cookies: authCookies });
   assert.equal(balancesAfterTransferFlow.status, 200);
@@ -557,6 +664,202 @@ test("critical backend flow via API", async () => {
     .filter((item) => item.type === "expense")
     .reduce((sum, item) => sum + Math.round(Math.abs(Number(item.amount)) * 100), 0);
   assert.equal(februarySummary.payload?.totals?.expenses, expectedFebruaryExpensesCents);
+
+  const noDuplicateInvoiceExpenseCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "pdf",
+      fileName: "invoice-no-duplicate-expense.pdf",
+      defaultAccountId: creditAccountId,
+      mapping: {
+        skipCardPaymentLines: true
+      },
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-03-01",
+          description: "Compra cartao sem duplicidade",
+          amount: -1000,
+          documentType: "credit_card_invoice"
+        }
+      ]
+    }
+  });
+  assert.equal(noDuplicateInvoiceExpenseCommit.status, 201);
+  assert.equal(noDuplicateInvoiceExpenseCommit.payload?.totalImported, 1);
+
+  const checkingCardPaymentTransferCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "csv",
+      fileName: "checking-card-payment-transfer.csv",
+      defaultAccountId: checkingAccountId,
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-03-02",
+          description: "PAGAMENTO FATURA CARTAO QA",
+          amount: -1000
+        }
+      ]
+    }
+  });
+  assert.equal(checkingCardPaymentTransferCommit.status, 201);
+  assert.ok(checkingCardPaymentTransferCommit.payload?.totalImported >= 1);
+
+  const marchTransactionsSnapshot = await apiRequest(
+    "/api/transactions?period=custom&from=2026-03-01&to=2026-03-31&page=1&pageSize=200",
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(marchTransactionsSnapshot.status, 200);
+
+  const cardPaymentRowsMarch = marchTransactionsSnapshot.payload.items.filter(
+    (item) => item.description.includes("PAGAMENTO FATURA CARTAO QA")
+  );
+  assert.ok(cardPaymentRowsMarch.length >= 1);
+  assert.ok(cardPaymentRowsMarch.every((item) => item.type === "transfer"));
+
+  const marchExpenseCents = marchTransactionsSnapshot.payload.items
+    .filter((item) => item.type === "expense")
+    .reduce((sum, item) => sum + Math.round(Math.abs(Number(item.amount)) * 100), 0);
+  assert.equal(marchExpenseCents, 100000);
+
+  const internalTransferMatchCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "csv",
+      fileName: "internal-transfer-match.csv",
+      defaultAccountId: checkingAccountId,
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-03-05",
+          accountId: checkingAccountId,
+          description: "PIX TRANSFERENCIA CONTA RESERVA",
+          amount: -500
+        },
+        {
+          date: "2026-03-06",
+          accountId: reserveCheckingAccountId,
+          description: "PIX TRANSFERENCIA RECEBIDA CONTA RESERVA",
+          amount: 500
+        }
+      ]
+    }
+  });
+  assert.equal(internalTransferMatchCommit.status, 201);
+  assert.equal(internalTransferMatchCommit.payload?.totalTransfersCreated, 1);
+
+  const transferMatchTransactions = await apiRequest(
+    "/api/transactions?period=custom&from=2026-03-05&to=2026-03-06&page=1&pageSize=200",
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(transferMatchTransactions.status, 200);
+
+  const matchedTransferLegs = transferMatchTransactions.payload.items.filter(
+    (item) =>
+      item.type === "transfer" &&
+      [checkingAccountId, reserveCheckingAccountId].includes(item.accountId) &&
+      Math.round(Math.abs(Number(item.amount)) * 100) === 50000
+  );
+  assert.equal(matchedTransferLegs.length, 2);
+  const matchedTransferGroupId = matchedTransferLegs[0]?.transferGroupId ?? null;
+  assert.ok(typeof matchedTransferGroupId === "string" && matchedTransferGroupId.length > 0);
+  assert.ok(matchedTransferLegs.every((item) => item.transferGroupId === matchedTransferGroupId));
+
+  const transferOnlySummary = await apiRequest(
+    `/api/dashboard/summary?from=${encodeURIComponent("2026-03-05T00:00:00.000Z")}&to=${encodeURIComponent("2026-03-06T23:59:59.999Z")}`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(transferOnlySummary.status, 200);
+  assert.equal(transferOnlySummary.payload?.totals?.income, 0);
+  assert.equal(transferOnlySummary.payload?.totals?.expenses, 0);
+
+  const lowConfidenceTransferReviewCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "csv",
+      fileName: "internal-transfer-low-confidence-review.csv",
+      defaultAccountId: checkingAccountId,
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-03-08",
+          accountId: checkingAccountId,
+          description: "PIX TRANSFERENCIA PROJETO ALFA BETA",
+          amount: -450
+        },
+        {
+          date: "2026-03-09",
+          accountId: reserveCheckingAccountId,
+          description: "PIX RECEBIDO ALFA BETA RESERVA GAMMA",
+          amount: 450
+        }
+      ]
+    }
+  });
+  assert.equal(lowConfidenceTransferReviewCommit.status, 201);
+  assert.equal(lowConfidenceTransferReviewCommit.payload?.totalTransfersCreated, 0);
+  assert.ok(lowConfidenceTransferReviewCommit.payload?.transferReviewSuggestionsCount >= 1);
+  assert.ok(Array.isArray(lowConfidenceTransferReviewCommit.payload?.transferReviewSuggestions));
+
+  const lowConfidenceTransferRows = await apiRequest(
+    "/api/transactions?period=custom&from=2026-03-08&to=2026-03-09&page=1&pageSize=200",
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(lowConfidenceTransferRows.status, 200);
+  const lowConfidenceRows = lowConfidenceTransferRows.payload.items.filter(
+    (item) =>
+      item.description.includes("PROJETO ALFA BETA") || item.description.includes("ALFA BETA RESERVA GAMMA")
+  );
+  assert.equal(lowConfidenceRows.length, 2);
+  assert.ok(lowConfidenceRows.every((item) => item.type !== "transfer"));
+
+  const pixToThirdPartyCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "csv",
+      fileName: "pix-third-party-counterexample.csv",
+      defaultAccountId: checkingAccountId,
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-03-07",
+          accountId: checkingAccountId,
+          description: "PIX ENVIADO FORNECEDOR EXTERNO",
+          amount: -300
+        }
+      ]
+    }
+  });
+  assert.equal(pixToThirdPartyCommit.status, 201);
+  assert.equal(pixToThirdPartyCommit.payload?.totalTransfersCreated, 0);
+
+  const thirdPartyPixTransactions = await apiRequest(
+    "/api/transactions?period=custom&from=2026-03-07&to=2026-03-07&page=1&pageSize=100",
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(thirdPartyPixTransactions.status, 200);
+  const thirdPartyPix = thirdPartyPixTransactions.payload.items.find(
+    (item) => item.description === "PIX ENVIADO FORNECEDOR EXTERNO"
+  );
+  assert.ok(thirdPartyPix);
+  assert.equal(thirdPartyPix.type, "expense");
 
   const secondUserCookies = new Map();
   const secondUserEmail = `integration.second.${uniqueToken}@example.com`;
@@ -934,79 +1237,63 @@ test("critical backend flow via API", async () => {
   assert.ok(reusedRuleTx);
   assert.equal(reusedRuleTx.category?.id, reusedRuleCategoryId);
 
-  const interStatementPdfBuffer = await fs.readFile(fixtureInterStatementPdfPath);
-  const interStatementPdfFormData = new FormData();
-  interStatementPdfFormData.set("file", new Blob([interStatementPdfBuffer], { type: "application/pdf" }), "Extrato-Inter.pdf");
+  const generatedPdfFixtures = buildPdfFixtures();
+  const generatedInterStatementFormData = new FormData();
+  generatedInterStatementFormData.set(
+    "file",
+    new Blob([generatedPdfFixtures.interStatement], { type: "application/pdf" }),
+    "fixture-inter-statement.pdf"
+  );
 
-  const parsedInterStatementPdf = await apiRequest("/api/imports/parse", {
+  const parsedGeneratedInterStatement = await apiRequest("/api/imports/parse", {
     method: "POST",
     cookies: authCookies,
-    formData: interStatementPdfFormData
+    formData: generatedInterStatementFormData
   });
-  if (parsedInterStatementPdf.status === 200) {
-    assert.equal(parsedInterStatementPdf.payload?.sourceType, "pdf");
-    assert.equal(parsedInterStatementPdf.payload?.documentType, "bank_statement");
-    assert.ok(parsedInterStatementPdf.payload?.rows?.length > 0);
-    assert.ok(parsedInterStatementPdf.payload?.preview?.[0]?.transactionKind?.length > 0);
-  } else {
-    assert.equal(parsedInterStatementPdf.status, 422);
-    assert.ok(["source_parser_unavailable", "pdf_no_transactions"].includes(parsedInterStatementPdf.payload?.code));
-  }
+  assert.equal(parsedGeneratedInterStatement.status, 200);
+  assert.equal(parsedGeneratedInterStatement.payload?.sourceType, "pdf");
+  assert.equal(parsedGeneratedInterStatement.payload?.documentType, "bank_statement");
+  assert.equal(parsedGeneratedInterStatement.payload?.issuerProfile, "inter_statement");
+  assert.ok(Array.isArray(parsedGeneratedInterStatement.payload?.rows));
+  assert.ok(parsedGeneratedInterStatement.payload?.rows?.length >= 2);
 
-  const interInvoicePdfBuffer = await fs.readFile(fixtureInterInvoicePdfPath);
-  const interInvoicePdfFormData = new FormData();
-  interInvoicePdfFormData.set("file", new Blob([interInvoicePdfBuffer], { type: "application/pdf" }), "fatura-inter.pdf");
+  const generatedInterInvoiceFormData = new FormData();
+  generatedInterInvoiceFormData.set(
+    "file",
+    new Blob([generatedPdfFixtures.interInvoice], { type: "application/pdf" }),
+    "fixture-inter-invoice.pdf"
+  );
 
-  const parsedInterInvoicePdf = await apiRequest("/api/imports/parse", {
+  const parsedGeneratedInterInvoice = await apiRequest("/api/imports/parse", {
     method: "POST",
     cookies: authCookies,
-    formData: interInvoicePdfFormData
+    formData: generatedInterInvoiceFormData
   });
-  if (parsedInterInvoicePdf.status === 200) {
-    assert.equal(parsedInterInvoicePdf.payload?.sourceType, "pdf");
-    assert.equal(parsedInterInvoicePdf.payload?.documentType, "credit_card_invoice");
-    assert.equal(parsedInterInvoicePdf.payload?.issuerProfile, "inter_invoice");
-    assert.ok(parsedInterInvoicePdf.payload?.rows?.length > 0);
-  } else {
-    assert.equal(parsedInterInvoicePdf.status, 422);
-    assert.ok(["source_parser_unavailable", "pdf_no_transactions"].includes(parsedInterInvoicePdf.payload?.code));
-  }
+  assert.equal(parsedGeneratedInterInvoice.status, 200);
+  assert.equal(parsedGeneratedInterInvoice.payload?.sourceType, "pdf");
+  assert.equal(parsedGeneratedInterInvoice.payload?.documentType, "credit_card_invoice");
+  assert.equal(parsedGeneratedInterInvoice.payload?.issuerProfile, "inter_invoice");
+  assert.ok(Array.isArray(parsedGeneratedInterInvoice.payload?.rows));
+  assert.ok(parsedGeneratedInterInvoice.payload?.rows?.length >= 1);
 
-  const mercadoPagoPdfBuffer = await fs.readFile(fixtureMercadoPagoPdfPath);
-  const mercadoPagoPdfFormData = new FormData();
-  mercadoPagoPdfFormData.set("file", new Blob([mercadoPagoPdfBuffer], { type: "application/pdf" }), "fatura-mercado-pago.pdf");
+  const generatedMercadoPagoInvoiceFormData = new FormData();
+  generatedMercadoPagoInvoiceFormData.set(
+    "file",
+    new Blob([generatedPdfFixtures.mercadoPagoInvoice], { type: "application/pdf" }),
+    "fixture-mercado-pago-invoice.pdf"
+  );
 
-  const parsedMercadoPagoPdf = await apiRequest("/api/imports/parse", {
+  const parsedGeneratedMercadoPagoInvoice = await apiRequest("/api/imports/parse", {
     method: "POST",
     cookies: authCookies,
-    formData: mercadoPagoPdfFormData
+    formData: generatedMercadoPagoInvoiceFormData
   });
-  if (parsedMercadoPagoPdf.status === 200) {
-    assert.equal(parsedMercadoPagoPdf.payload?.sourceType, "pdf");
-    assert.ok(parsedMercadoPagoPdf.payload?.rows?.length > 0);
-  } else if (parsedMercadoPagoPdf.status === 422) {
-    assert.ok(["source_parser_unavailable", "pdf_no_transactions"].includes(parsedMercadoPagoPdf.payload?.code));
-  } else {
-    assert.equal(parsedMercadoPagoPdf.status, 400);
-    assert.equal(parsedMercadoPagoPdf.payload?.code, "pdf_password_required");
-
-    const mercadoPagoPdfPassword = process.env.MP_PDF_PASSWORD;
-    if (mercadoPagoPdfPassword) {
-      const mercadoPagoPdfWithPasswordFormData = new FormData();
-      mercadoPagoPdfWithPasswordFormData.set("file", new Blob([mercadoPagoPdfBuffer], { type: "application/pdf" }), "fatura-mercado-pago.pdf");
-      mercadoPagoPdfWithPasswordFormData.set("pdfPassword", mercadoPagoPdfPassword);
-
-      const parsedMercadoPagoPdfWithPassword = await apiRequest("/api/imports/parse", {
-        method: "POST",
-        cookies: authCookies,
-        formData: mercadoPagoPdfWithPasswordFormData
-      });
-
-      assert.equal(parsedMercadoPagoPdfWithPassword.status, 200);
-      assert.equal(parsedMercadoPagoPdfWithPassword.payload?.sourceType, "pdf");
-      assert.ok(parsedMercadoPagoPdfWithPassword.payload?.rows?.length > 0);
-    }
-  }
+  assert.equal(parsedGeneratedMercadoPagoInvoice.status, 200);
+  assert.equal(parsedGeneratedMercadoPagoInvoice.payload?.sourceType, "pdf");
+  assert.equal(parsedGeneratedMercadoPagoInvoice.payload?.documentType, "credit_card_invoice");
+  assert.equal(parsedGeneratedMercadoPagoInvoice.payload?.issuerProfile, "mercado_pago_invoice");
+  assert.ok(Array.isArray(parsedGeneratedMercadoPagoInvoice.payload?.rows));
+  assert.ok(parsedGeneratedMercadoPagoInvoice.payload?.rows?.length >= 1);
 
   const importCommitPayload = {
     sourceType: "csv",
@@ -1187,17 +1474,21 @@ test("critical backend flow via API", async () => {
   });
   assert.equal(officialDashboard.status, 200);
   assert.equal(officialDashboard.payload?.view, "dashboard");
+  const expectedCurrentMonth = new Date().toISOString().slice(0, 7);
+  assert.equal(officialDashboard.payload?.referenceMonth, expectedCurrentMonth);
+  assert.equal(officialDashboard.payload?.isCurrentMonthReference, true);
   assert.equal(typeof officialDashboard.payload?.cards?.income, "number");
   assert.equal(typeof officialDashboard.payload?.cards?.expense, "number");
   assert.equal(typeof officialDashboard.payload?.cards?.result, "number");
   assert.ok(Array.isArray(officialDashboard.payload?.topCategories));
 
-  const officialDashboardHistorical = await apiRequest("/api/metrics/official?view=dashboard&month=2026-02", {
+  const officialDashboardHistorical = await apiRequest("/api/metrics/official?view=dashboard&month=2026-01", {
     cookies: authCookies
   });
   assert.equal(officialDashboardHistorical.status, 200);
   assert.equal(officialDashboardHistorical.payload?.view, "dashboard");
-  assert.equal(officialDashboardHistorical.payload?.referenceMonth, "2026-02");
+  assert.equal(officialDashboardHistorical.payload?.referenceMonth, "2026-01");
+  assert.equal(officialDashboardHistorical.payload?.isCurrentMonthReference, false);
 
   const officialReports = await apiRequest("/api/metrics/official?view=reports&preset=3M", {
     cookies: authCookies
@@ -1238,11 +1529,26 @@ test("critical backend flow via API", async () => {
   });
   assert.equal(importObservability.status, 200);
   assert.equal(importObservability.payload?.view, "import-observability");
+  assert.equal(typeof importObservability.payload?.thresholds?.minEvents, "number");
+  assert.ok(Array.isArray(importObservability.payload?.alerts));
   assert.ok(Array.isArray(importObservability.payload?.bySourcePhase));
   assert.ok(Array.isArray(importObservability.payload?.recentErrors));
   assert.ok(
     importObservability.payload.bySourcePhase.some(
       (item) => item.sourceType === "csv" && item.phase === "commit" && item.events >= 1
+    )
+  );
+  const importObservabilitySensitive = await apiRequest(
+    "/api/metrics/import-observability?minEvents=1&duplicateRateThreshold=0.01",
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(importObservabilitySensitive.status, 200);
+  assert.ok(Array.isArray(importObservabilitySensitive.payload?.alerts));
+  assert.ok(
+    importObservabilitySensitive.payload.alerts.some((item) =>
+      ["high_error_rate", "high_duplicates_per_commit", "parser_unavailable_spike"].includes(item.code)
     )
   );
 

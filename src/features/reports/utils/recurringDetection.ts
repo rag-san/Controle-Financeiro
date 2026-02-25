@@ -1,4 +1,5 @@
 import { addMonths, endOfMonth, isValid } from "date-fns";
+import { hasInstallmentMarker } from "@/lib/installments";
 import type {
   ReportPreparedTransaction,
   ReportsPeriodRange,
@@ -65,6 +66,7 @@ export function detectRecurringMerchants(
 
   for (const transaction of transactions) {
     if (transaction.type !== "expense") continue;
+    if (hasInstallmentMarker(transaction.description)) continue;
     if (transaction.timestamp > currentPeriod.end.getTime()) continue;
 
     const current = groups.get(transaction.merchantKey) ?? {

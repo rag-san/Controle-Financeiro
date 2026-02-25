@@ -426,7 +426,10 @@ export function TransactionsPage(): React.JSX.Element {
       setLoading(true);
       try {
         const includeMeta = shouldLoadMetaRef.current ? "&includeMeta=1" : "";
-        const response = await fetch(`/api/transactions?${queryString}${includeMeta}`, { signal });
+        const response = await fetch(`/api/transactions?${queryString}${includeMeta}`, {
+          signal,
+          cache: "no-store"
+        });
         const { data, errorMessage } = await parseApiResponse<TransactionResponse | { error?: unknown }>(response);
 
         if (errorMessage) {
@@ -1018,8 +1021,8 @@ export function TransactionsPage(): React.JSX.Element {
         accounts={accounts}
         triggerRef={importButtonRef}
         onOpenChange={setImportModalOpen}
-        onSuccess={() => {
-          void loadTransactions();
+        onSuccess={async () => {
+          await refreshMetaAndData();
         }}
         onAccountsRefresh={() => refreshMetaAndData()}
       />

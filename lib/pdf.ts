@@ -584,6 +584,76 @@ function mapPdfError(error: unknown): PdfImportError {
   );
 }
 
+function decodePdfLiteralString(value: string): string {
+  let decoded = "";
+
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char !== "\\") {
+      decoded += char;
+      continue;
+    }
+
+    const next = value[index + 1];
+    if (!next) {
+      decoded += "\\";
+      continue;
+    }
+
+    if (next === "n") {
+      decoded += "\n";
+      index += 1;
+      continue;
+    }
+    if (next === "r") {
+      decoded += "\r";
+      index += 1;
+      continue;
+    }
+    if (next === "t") {
+      decoded += "\t";
+      index += 1;
+      continue;
+    }
+    if (next === "b") {
+      decoded += "\b";
+      index += 1;
+      continue;
+    }
+    if (next === "f") {
+      decoded += "\f";
+      index += 1;
+      continue;
+    }
+    if (next === "\\" || next === "(" || next === ")") {
+      decoded += next;
+      index += 1;
+      continue;
+    }
+
+    decoded += next;
+    index += 1;
+  }
+
+  return decoded;
+}
+
+function extractTextFromSimplePdfBuffer(buffer: Buffer): string | null {
+  const raw = buffer.toString("latin1");
+  const matches = [...raw.matchAll(/\((?:\\.|[^\\()])*\)\s*Tj/g)];
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const lines = matches
+    .map((match) => match[0].replace(/\s*Tj$/, "").trim())
+    .filter((chunk) => chunk.startsWith("(") && chunk.endsWith(")"))
+    .map((chunk) => decodePdfLiteralString(chunk.slice(1, -1)).trim())
+    .filter((line) => line.length > 0);
+
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 export function parseTransactionsFromPdfText(text: string): ParsedPdfCandidate[] {
   const rows: ParsedPdfCandidate[] = [];
   const candidates = collectCandidateLines(text);
@@ -663,80 +733,95 @@ export async function parsePdfImport(
   buffer: Buffer,
   options: PdfParseOptions = {}
 ): Promise<PdfImportResult> {
-  const PDFParseCtor = await loadPdfParseCtor();
-  configurePdfWorker(PDFParseCtor);
-  const parser = new PDFParseCtor({
-    data: buffer,
-    password: options.password
-  });
+  let text = "";
+  let parser:
+    | {
+        getText: (params: { lineEnforce: boolean }) => Promise<{ text: string }>;
+        destroy: () => Promise<void>;
+      }
+    | null = null;
 
   try {
+    const PDFParseCtor = await loadPdfParseCtor();
+    configurePdfWorker(PDFParseCtor);
+    parser = new PDFParseCtor({
+      data: buffer,
+      password: options.password
+    });
+
     const textResult = await parser.getText({
       lineEnforce: true
     });
+    text = fixCommonMojibake(textResult.text ?? "");
+  } catch (error) {
+    const mapped = mapPdfError(error);
+    const fallbackText = mapped.code === "parser_unavailable" ? extractTextFromSimplePdfBuffer(buffer) : null;
 
-    const text = fixCommonMojibake(textResult.text ?? "");
-    const classification = classifyPdfText(text);
-    const metadata = buildPdfMetadata(text, classification);
-    const dueDate = extractDueDateMetadata(text);
-
-    let parsedTransactions: ParsedPdfCandidate[] = [];
-
-    if (classification.issuerProfile === "inter_statement") {
-      parsedTransactions = parseInterStatementTransactions(text);
-    } else if (classification.issuerProfile === "inter_invoice") {
-      parsedTransactions = parseInterInvoiceTransactions(text);
-    } else if (classification.issuerProfile === "mercado_pago_invoice") {
-      parsedTransactions = parseMercadoPagoInvoiceTransactions(text, dueDate);
-    } else {
-      throw new PdfImportError(
-        "unsupported_issuer_profile",
-        "PDF reconhecido, mas o emissor/layout ainda nao possui parser dedicado. Tente CSV/OFX.",
-        `issuer_profile=${classification.issuerProfile}`,
-        {
-          issuerProfile: classification.issuerProfile,
-          documentType: classification.documentType,
-          supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES
-        }
-      );
+    if (!fallbackText) {
+      throw mapped;
     }
 
-    if (parsedTransactions.length === 0) {
-      throw new PdfImportError(
-        "no_transactions_found",
-        "Nao foi possivel extrair transacoes desse PDF automaticamente. Tente CSV/OFX ou outro modelo de PDF."
-      );
-    }
+    text = fixCommonMojibake(fallbackText);
+  } finally {
+    await parser?.destroy().catch(() => undefined);
+  }
 
-    const transactions = parsedTransactions.map((row) => {
-      const canonical = toCanonicalImportRow({
-        date: row.date,
-        amount: row.amount,
-        type: row.type,
-        sourceType: "pdf",
+  const classification = classifyPdfText(text);
+  const metadata = buildPdfMetadata(text, classification);
+  const dueDate = extractDueDateMetadata(text);
+
+  let parsedTransactions: ParsedPdfCandidate[] = [];
+
+  if (classification.issuerProfile === "inter_statement") {
+    parsedTransactions = parseInterStatementTransactions(text);
+  } else if (classification.issuerProfile === "inter_invoice") {
+    parsedTransactions = parseInterInvoiceTransactions(text);
+  } else if (classification.issuerProfile === "mercado_pago_invoice") {
+    parsedTransactions = parseMercadoPagoInvoiceTransactions(text, dueDate);
+  } else {
+    throw new PdfImportError(
+      "unsupported_issuer_profile",
+      "PDF reconhecido, mas o emissor/layout ainda nao possui parser dedicado. Tente CSV/OFX.",
+      `issuer_profile=${classification.issuerProfile}`,
+      {
+        issuerProfile: classification.issuerProfile,
         documentType: classification.documentType,
-        description: row.description,
-        raw: row.raw
-      });
+        supportedIssuerProfiles: SUPPORTED_PDF_ISSUER_PROFILES
+      }
+    );
+  }
 
-      return {
-        ...canonical,
-        sourceType: "pdf",
-        documentType: classification.documentType
-      } satisfies ParsedPdfRow;
+  if (parsedTransactions.length === 0) {
+    throw new PdfImportError(
+      "no_transactions_found",
+      "Nao foi possivel extrair transacoes desse PDF automaticamente. Tente CSV/OFX ou outro modelo de PDF."
+    );
+  }
+
+  const transactions = parsedTransactions.map((row) => {
+    const canonical = toCanonicalImportRow({
+      date: row.date,
+      amount: row.amount,
+      type: row.type,
+      sourceType: "pdf",
+      documentType: classification.documentType,
+      description: row.description,
+      raw: row.raw
     });
 
     return {
-      transactions,
-      documentType: classification.documentType,
-      issuerProfile: classification.issuerProfile,
-      metadata
-    };
-  } catch (error) {
-    throw mapPdfError(error);
-  } finally {
-    await parser.destroy().catch(() => undefined);
-  }
+      ...canonical,
+      sourceType: "pdf",
+      documentType: classification.documentType
+    } satisfies ParsedPdfRow;
+  });
+
+  return {
+    transactions,
+    documentType: classification.documentType,
+    issuerProfile: classification.issuerProfile,
+    metadata
+  };
 }
 
 export async function parsePdfBuffer(buffer: Buffer, options: PdfParseOptions = {}): Promise<ParsedPdfRow[]> {

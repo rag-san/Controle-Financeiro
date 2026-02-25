@@ -2,6 +2,11 @@ import { differenceInCalendarDays, isAfter, min } from "date-fns";
 import { formatBRL, formatPercent } from "@/src/utils/format";
 import type { Insight, InsightsDetectorContext } from "@/src/features/insights/types";
 
+const MIN_ELAPSED_DAYS = 5;
+const MIN_EXPECTED_BASE = 150;
+const MIN_DELTA_PERCENT = 8;
+const WARNING_DELTA_PERCENT = 20;
+
 function sumExpenses(items: InsightsDetectorContext["currentExpenses"]): number {
   let total = 0;
   for (const item of items) {
@@ -21,6 +26,10 @@ export function detectSpendPace(context: InsightsDetectorContext): Insight | nul
   const elapsedDays = Math.max(1, differenceInCalendarDays(capDate, currentPeriod.start) + 1);
   const totalDays = Math.max(1, differenceInCalendarDays(currentPeriod.end, currentPeriod.start) + 1);
 
+  if (elapsedDays < MIN_ELAPSED_DAYS) {
+    return null;
+  }
+
   let currentSoFar = 0;
   for (const expense of context.currentExpenses) {
     if (!isAfter(expense.date, capDate)) {
@@ -33,9 +42,17 @@ export function detectSpendPace(context: InsightsDetectorContext): Insight | nul
     return null;
   }
 
+  if (Math.max(expected, previousTotal, currentSoFar) < MIN_EXPECTED_BASE) {
+    return null;
+  }
+
   const deltaPercent = ((currentSoFar - expected) / expected) * 100;
+  if (Math.abs(deltaPercent) < MIN_DELTA_PERCENT) {
+    return null;
+  }
+
   const faster = deltaPercent > 0;
-  const severity: Insight["severity"] = deltaPercent >= 12 ? "warning" : "info";
+  const severity: Insight["severity"] = deltaPercent >= WARNING_DELTA_PERCENT ? "warning" : "info";
 
   return {
     id: "spend-pace",

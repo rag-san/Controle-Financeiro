@@ -25,7 +25,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(cached, { headers: deprecatedDashboardHeaders });
     }
 
-    const payload = await dashboardRepo.fullDashboard(auth.userId);
+    const payload = await dashboardRepo.fullDashboard(auth.userId, new Date(), {
+      forceReferenceDate: true
+    });
     setCache(cacheKey, payload, 30_000);
 
     return NextResponse.json(payload, { headers: deprecatedDashboardHeaders });

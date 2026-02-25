@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type CategorizationRule } from "@/lib/categorizationRules";
 import { createImportedHash, createTransferKeyHash } from "@/lib/hash";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
+import { extractInstallmentInfo } from "@/lib/installments";
 import { categorizeImportRowDeterministic } from "@/lib/import-categorization-deterministic";
 import { normalizeDescription, normalizeTransaction } from "@/lib/normalize";
 import { accountsRepo } from "@/lib/server/accounts.repo";
@@ -13,10 +14,45 @@ import { transactionsRepo } from "@/lib/server/transactions.repo";
 export const MAX_IMPORT_COMMIT_ROWS = 5000;
 
 const CARD_PAYMENT_STATEMENT_PATTERN =
-  /PAGAMENTO\s+FATURA|PGTO\s+FATURA|PAGTO\s+FATURA|PAGAMENTO\s+CARTAO|FATURA\s+CARTAO|PAGAMENTO\s+DE\s+FATURA/i;
+  /\b(?:PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|FATURA\s+CARTAO|PAGAMENTO\s+DE\s+FATURA|CREDIT\s+CARD\s+PAYMENT|PAYMENT\s+OF\s+(?:THE\s+)?CREDIT\s+CARD|FATURA)\b/i;
 const CARD_PAYMENT_INVOICE_SKIP_PATTERN =
-  /PAGAMENTO\s+RECEBIDO|PAGAMENTO\s+FATURA|PGTO\s+FATURA|PAGTO\s+FATURA|CREDITO\s+DE\s+PAGAMENTO/i;
+  /\b(?:PAGAMENTO\s+RECEBIDO|PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CREDIT\s+CARD\s+PAYMENT|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
 const CARD_NAME_HINT_PATTERN = /CARTAO|CREDITO|CREDIT/i;
+const INTERNAL_TRANSFER_KEYWORD_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER)\b/i;
+const INTERNAL_TRANSFER_DESCRIPTION_HINT_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER|ENVIO|RECEBIDO)\b/i;
+const INTERNAL_TRANSFER_MAX_DATE_DIFF_MS = 24 * 60 * 60 * 1000;
+const INTERNAL_TRANSFER_SCORE_WEIGHTS = {
+  amount: 0.5,
+  date: 0.3,
+  description: 0.2
+} as const;
+const INTERNAL_TRANSFER_MIN_DESCRIPTION_SCORE = 0.35;
+const INTERNAL_TRANSFER_MIN_TOTAL_SCORE = 0.75;
+const INTERNAL_TRANSFER_REVIEW_MIN_TOTAL_SCORE = 0.55;
+const MAX_TRANSFER_REVIEW_SUGGESTIONS = 20;
+
+const INTERNAL_TRANSFER_STOPWORDS = new Set([
+  "PIX",
+  "TED",
+  "DOC",
+  "TRANSFERENCIA",
+  "TRANSFER",
+  "TRANSF",
+  "ENTRE",
+  "CONTA",
+  "CONTAS",
+  "PARA",
+  "DE",
+  "DA",
+  "DO",
+  "NO",
+  "NA",
+  "EM",
+  "ENVIO",
+  "ENVIADO",
+  "RECEBIDO",
+  "RECEBIDA"
+]);
 
 export const importCommitPayloadSchema = z.object({
   sourceType: z.enum(["csv", "ofx", "pdf", "manual"]),
@@ -108,13 +144,27 @@ function shouldDetectCardPaymentFromStatement(input: {
 function shouldSkipCardPaymentOnCreditImport(input: {
   accountType: UserAccount["type"];
   normalizedDescription: string;
+  amount: number;
   skipCardPaymentLines: boolean;
 }): boolean {
   if (!input.skipCardPaymentLines || input.accountType !== "credit") {
     return false;
   }
 
-  return CARD_PAYMENT_INVOICE_SKIP_PATTERN.test(input.normalizedDescription);
+  if (CARD_PAYMENT_INVOICE_SKIP_PATTERN.test(input.normalizedDescription)) {
+    return true;
+  }
+
+  // Fallback para linhas positivas típicas de "pagamento online" em fatura.
+  if (
+    input.amount > 0 &&
+    /\b(?:PAGAMENTO|PAGTO|PGTO)\b/.test(input.normalizedDescription) &&
+    /\bON(?:\s*|-)?LINE\b/.test(input.normalizedDescription)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function resolveCardPaymentTargetAccountId(input: {
@@ -414,6 +464,140 @@ async function loadRules(userId: string, applyRules: boolean): Promise<Categoriz
   }));
 }
 
+type ImportDraftRow = {
+  userId: string;
+  accountId: string;
+  categoryId: string | null;
+  date: Date;
+  description: string;
+  normalizedDescription: string;
+  amount: number;
+  type: "income" | "expense" | "transfer";
+  direction: "in" | "out";
+  isInternalTransfer: boolean;
+  transferFromAccountId?: string | null;
+  transferToAccountId?: string | null;
+  status: "posted";
+  importedHash: string;
+  raw: Record<string, unknown>;
+};
+
+type PendingInternalTransferCandidate = {
+  importRow: ImportDraftRow;
+  absoluteAmountCents: number;
+  direction: "in" | "out";
+  normalizedDescription: string;
+  externalId: string | undefined;
+};
+
+type InternalTransferReviewSuggestion = {
+  fromAccountId: string;
+  toAccountId: string;
+  date: string;
+  amount: number;
+  confidence: number;
+  description: string;
+  counterpartDescription: string;
+};
+
+function directionFromAmount(amount: number): "in" | "out" {
+  return amount >= 0 ? "in" : "out";
+}
+
+function toAbsoluteCents(amount: number): number {
+  return Math.round(Math.abs(amount) * 100);
+}
+
+function hasInternalTransferKeyword(normalizedDescription: string): boolean {
+  return INTERNAL_TRANSFER_KEYWORD_PATTERN.test(normalizedDescription);
+}
+
+function isWithinInternalTransferDateWindow(left: Date, right: Date): boolean {
+  return Math.abs(left.getTime() - right.getTime()) <= INTERNAL_TRANSFER_MAX_DATE_DIFF_MS;
+}
+
+function tokenizeInternalTransferDescription(normalizedDescription: string): string[] {
+  return normalizedDescription
+    .split(/\s+/)
+    .map((token) => token.replace(/[^A-Z0-9]/g, "").trim())
+    .filter((token) => token.length >= 3 && !INTERNAL_TRANSFER_STOPWORDS.has(token));
+}
+
+function computeInternalTransferDescriptionConfidence(left: string, right: string): number {
+  if (!INTERNAL_TRANSFER_DESCRIPTION_HINT_PATTERN.test(left) || !INTERNAL_TRANSFER_DESCRIPTION_HINT_PATTERN.test(right)) {
+    return 0;
+  }
+
+  if (left === right) {
+    return 1;
+  }
+
+  const leftTokens = new Set(tokenizeInternalTransferDescription(left));
+  const rightTokens = new Set(tokenizeInternalTransferDescription(right));
+
+  if (leftTokens.size === 0 || rightTokens.size === 0) {
+    if (left.includes(right) || right.includes(left)) {
+      return 0.75;
+    }
+    return 0;
+  }
+
+  let intersection = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      intersection += 1;
+    }
+  }
+
+  const union = leftTokens.size + rightTokens.size - intersection;
+  if (union <= 0) {
+    return 0;
+  }
+
+  return intersection / union;
+}
+
+function computeInternalTransferMatchScore(input: {
+  amountMatches: boolean;
+  dateDiffMs: number;
+  descriptionScore: number;
+}): number {
+  const amountScore = input.amountMatches ? 1 : 0;
+  const boundedDateDiff = Math.max(0, Math.min(input.dateDiffMs, INTERNAL_TRANSFER_MAX_DATE_DIFF_MS));
+  const dateScore = 1 - boundedDateDiff / (INTERNAL_TRANSFER_MAX_DATE_DIFF_MS * 2);
+  const descriptionScore = Math.max(0, Math.min(input.descriptionScore, 1));
+
+  return (
+    amountScore * INTERNAL_TRANSFER_SCORE_WEIGHTS.amount +
+    dateScore * INTERNAL_TRANSFER_SCORE_WEIGHTS.date +
+    descriptionScore * INTERNAL_TRANSFER_SCORE_WEIGHTS.description
+  );
+}
+
+function shouldAttemptAutomaticInternalTransferMatch(input: {
+  type: "income" | "expense";
+  normalizedDescription: string;
+}): boolean {
+  return hasInternalTransferKeyword(input.normalizedDescription) && (input.type === "income" || input.type === "expense");
+}
+
+function buildInstallmentRawMetadata(description: string): Record<string, unknown> {
+  const installment = extractInstallmentInfo(description);
+  if (!installment) {
+    return {};
+  }
+
+  return {
+    installmentDetected: true,
+    installmentCurrent: installment.currentInstallment,
+    installmentTotal: installment.totalInstallments,
+    installmentRemaining: installment.remainingInstallments,
+    installmentMarker: installment.marker,
+    installmentBaseDescription: installment.baseDescription,
+    installmentBaseNormalizedDescription: installment.normalizedBaseDescription
+  };
+}
+
 export async function commitImportForUser(userId: string, payload: ImportCommitPayload) {
   const { resolveAccountId, accounts, accountById, registerAccount } = await buildAccountResolver(
     userId,
@@ -437,23 +621,12 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   let totalCardPaymentsDetected = 0;
   let totalCardPaymentsNotConverted = 0;
   let totalTransfersCreated = 0;
+  let totalInternalTransfersAutoMatched = 0;
   const warnings: string[] = [];
   let cardPaymentNotConvertedWarnings = 0;
   const autoCreatedCreditByParentId = new Map<string, string>();
 
-  const importRows: Array<{
-    userId: string;
-    accountId: string;
-    categoryId: string | null;
-    date: Date;
-    description: string;
-    normalizedDescription: string;
-    amount: number;
-    type: "income" | "expense";
-    status: "posted";
-    importedHash: string;
-    raw: Record<string, unknown>;
-  }> = [];
+  const importRows: ImportDraftRow[] = [];
   const transferRows: Array<{
     userId: string;
     fromAccountId: string;
@@ -468,6 +641,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     inImportedHash: string;
     raw: Record<string, unknown>;
   }> = [];
+  const pendingInternalTransferCandidates: PendingInternalTransferCandidate[] = [];
+  const transferReviewSuggestions: InternalTransferReviewSuggestion[] = [];
+  const transferReviewSuggestionKeys = new Set<string>();
 
   for (const row of payload.rows) {
     let resolvedAccountId = resolveAccountId(row);
@@ -551,11 +727,13 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       categoryId: row.categoryId ?? null,
       raw: row.raw ?? {}
     });
+    const installmentRawMetadata = buildInstallmentRawMetadata(canonical.description);
 
     if (
       shouldSkipCardPaymentOnCreditImport({
         accountType: resolvedAccount.type,
         normalizedDescription: canonical.normalizedDescription,
+        amount: canonical.amount,
         skipCardPaymentLines: mappingOptions.skipCardPaymentLines
       })
     ) {
@@ -565,13 +743,11 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
 
     const wantsExplicitTransfer =
       canonical.type === "transfer" || Boolean(row.transferToAccountId) || Boolean(row.transferFromAccountId);
-    const detectedCardPayment =
-      mappingOptions.convertCardPaymentsToTransfer &&
-      shouldDetectCardPaymentFromStatement({
-        accountType: resolvedAccount.type,
-        amount: canonical.amount,
-        normalizedDescription: canonical.normalizedDescription
-      });
+    const detectedCardPayment = shouldDetectCardPaymentFromStatement({
+      accountType: resolvedAccount.type,
+      amount: canonical.amount,
+      normalizedDescription: canonical.normalizedDescription
+    });
 
     if (detectedCardPayment) {
       totalCardPaymentsDetected += 1;
@@ -645,7 +821,8 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           outImportedHash: `${transferHashBase}:OUT`,
           inImportedHash: `${transferHashBase}:IN`,
           raw: {
-            ...(row.raw ?? {}),
+            ...(canonical.raw ?? {}),
+            ...installmentRawMetadata,
             balanceAfter: canonical.balanceAfter ?? null,
             transactionKindRaw: canonical.transactionKindRaw,
             counterpartyRaw: canonical.counterpartyRaw,
@@ -657,6 +834,51 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
             transferDetectedFromCardPayment: detectedCardPayment,
             transferFromAccountId: fromAccount.id,
             transferToAccountId: toAccount.id
+          }
+        });
+        continue;
+      }
+
+      if (detectedCardPayment) {
+        const importedHash = createImportedHash({
+          userId,
+          sourceType: payload.sourceType,
+          date: canonical.date,
+          amount: canonical.amount,
+          normalizedDescription: canonical.normalizedDescription,
+          accountId: fromAccount.id,
+          externalId: row.externalId
+        });
+
+        importRows.push({
+          userId,
+          accountId: fromAccount.id,
+          categoryId: null,
+          date: canonical.date,
+          description: canonical.description,
+          normalizedDescription: canonical.normalizedDescription,
+          amount: canonical.amount,
+          type: "transfer",
+          direction: "out",
+          isInternalTransfer: true,
+          transferFromAccountId: fromAccount.id,
+          transferToAccountId: null,
+          status: "posted",
+          importedHash,
+          raw: {
+            ...(canonical.raw ?? {}),
+            ...installmentRawMetadata,
+            balanceAfter: canonical.balanceAfter ?? null,
+            transactionKindRaw: canonical.transactionKindRaw,
+            counterpartyRaw: canonical.counterpartyRaw,
+            transactionKindNorm: canonical.transactionKindNorm,
+            counterpartyNorm: canonical.counterpartyNorm,
+            merchantKey: canonical.merchantKey,
+            sourceType: canonical.sourceType,
+            documentType: canonical.documentType ?? null,
+            transferDetectedFromCardPayment: true,
+            transferFromAccountId: fromAccount.id,
+            transferToAccountId: null
           }
         });
         continue;
@@ -694,7 +916,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       externalId: row.externalId
     });
 
-    importRows.push({
+    const draftImportRow: ImportDraftRow = {
       userId,
       accountId: resolvedAccountId,
       categoryId,
@@ -703,10 +925,15 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       normalizedDescription: canonical.normalizedDescription,
       amount: canonical.amount,
       type: canonicalType,
+      direction: directionFromAmount(canonical.amount),
+      isInternalTransfer: false,
+      transferFromAccountId: null,
+      transferToAccountId: null,
       status: "posted",
       importedHash,
       raw: {
-        ...(row.raw ?? {}),
+        ...(canonical.raw ?? {}),
+        ...installmentRawMetadata,
         balanceAfter: canonical.balanceAfter ?? null,
         transactionKindRaw: canonical.transactionKindRaw,
         counterpartyRaw: canonical.counterpartyRaw,
@@ -718,7 +945,161 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         categorySource: row.categoryId ? "manual" : deterministic.categorySource,
         matchedRule: row.categoryId ? null : deterministic.matchedRule
       }
-    });
+    };
+
+    if (
+      shouldAttemptAutomaticInternalTransferMatch({
+        type: canonicalType,
+        normalizedDescription: canonical.normalizedDescription
+      })
+    ) {
+      const absoluteAmountCents = toAbsoluteCents(canonical.amount);
+      const oppositeDirection = draftImportRow.direction === "out" ? "in" : "out";
+      let bestMatchIndex = -1;
+      let bestMatchConfidence = 0;
+      let bestMatchDateDiffMs = Number.POSITIVE_INFINITY;
+      let bestReviewMatchIndex = -1;
+      let bestReviewConfidence = 0;
+      let bestReviewDateDiffMs = Number.POSITIVE_INFINITY;
+
+      for (let index = 0; index < pendingInternalTransferCandidates.length; index += 1) {
+        const candidate = pendingInternalTransferCandidates[index];
+        if (candidate.direction !== oppositeDirection) continue;
+        if (candidate.absoluteAmountCents !== absoluteAmountCents) continue;
+        if (candidate.importRow.accountId === draftImportRow.accountId) continue;
+        if (!isWithinInternalTransferDateWindow(candidate.importRow.date, draftImportRow.date)) continue;
+
+        const dateDiffMs = Math.abs(candidate.importRow.date.getTime() - draftImportRow.date.getTime());
+
+        const descriptionScore = computeInternalTransferDescriptionConfidence(
+          candidate.normalizedDescription,
+          draftImportRow.normalizedDescription
+        );
+        if (descriptionScore < INTERNAL_TRANSFER_MIN_DESCRIPTION_SCORE) continue;
+
+        const confidence = computeInternalTransferMatchScore({
+          amountMatches: true,
+          dateDiffMs,
+          descriptionScore
+        });
+        if (confidence >= INTERNAL_TRANSFER_REVIEW_MIN_TOTAL_SCORE) {
+          const isBetterReviewConfidence = confidence > bestReviewConfidence;
+          const isEqualReviewConfidenceCloserDate =
+            confidence === bestReviewConfidence && dateDiffMs < bestReviewDateDiffMs;
+
+          if (isBetterReviewConfidence || isEqualReviewConfidenceCloserDate) {
+            bestReviewConfidence = confidence;
+            bestReviewDateDiffMs = dateDiffMs;
+            bestReviewMatchIndex = index;
+          }
+        }
+
+        if (confidence < INTERNAL_TRANSFER_MIN_TOTAL_SCORE) continue;
+
+        const isBetterConfidence = confidence > bestMatchConfidence;
+        const isEqualConfidenceCloserDate =
+          confidence === bestMatchConfidence && dateDiffMs < bestMatchDateDiffMs;
+
+        if (isBetterConfidence || isEqualConfidenceCloserDate) {
+          bestMatchConfidence = confidence;
+          bestMatchDateDiffMs = dateDiffMs;
+          bestMatchIndex = index;
+        }
+      }
+
+      if (bestMatchIndex >= 0) {
+        const matchedCandidate = pendingInternalTransferCandidates.splice(bestMatchIndex, 1)[0];
+        if (matchedCandidate) {
+          const outLeg = draftImportRow.direction === "out" ? draftImportRow : matchedCandidate.importRow;
+          const inLeg = draftImportRow.direction === "in" ? draftImportRow : matchedCandidate.importRow;
+          const transferDate = outLeg.date;
+          const transferDescription = outLeg.description || inLeg.description;
+          const transferNormalizedDescription =
+            outLeg.normalizedDescription.length >= inLeg.normalizedDescription.length
+              ? outLeg.normalizedDescription
+              : inLeg.normalizedDescription;
+          const transferHashBase = createTransferKeyHash({
+            userId,
+            date: transferDate,
+            amount: outLeg.amount,
+            normalizedDescription: transferNormalizedDescription,
+            fromAccountId: outLeg.accountId,
+            toAccountId: inLeg.accountId,
+            externalId: row.externalId ?? matchedCandidate.externalId
+          });
+
+          transferRows.push({
+            userId,
+            fromAccountId: outLeg.accountId,
+            toAccountId: inLeg.accountId,
+            date: transferDate,
+            description: transferDescription,
+            normalizedDescription: transferNormalizedDescription,
+            amount: outLeg.amount,
+            status: "posted",
+            transferHashBase,
+            outImportedHash: `${transferHashBase}:OUT`,
+            inImportedHash: `${transferHashBase}:IN`,
+            raw: {
+              ...(outLeg.raw ?? {}),
+              ...(inLeg.raw ?? {}),
+              transferDetectedAutomatic: true,
+              transferDetectedFromCardPayment: false,
+              transferDetectedConfidence: Number(bestMatchConfidence.toFixed(3)),
+              transferFromAccountId: outLeg.accountId,
+              transferToAccountId: inLeg.accountId
+            }
+          });
+          totalInternalTransfersAutoMatched += 1;
+          continue;
+        }
+      }
+
+      if (bestReviewMatchIndex >= 0 && transferReviewSuggestions.length < MAX_TRANSFER_REVIEW_SUGGESTIONS) {
+        const reviewCandidate = pendingInternalTransferCandidates[bestReviewMatchIndex];
+        if (reviewCandidate) {
+          const reviewOutLeg = draftImportRow.direction === "out" ? draftImportRow : reviewCandidate.importRow;
+          const reviewInLeg = draftImportRow.direction === "in" ? draftImportRow : reviewCandidate.importRow;
+          const reviewDate = reviewOutLeg.date.toISOString().slice(0, 10);
+          const reviewKey = [
+            reviewOutLeg.accountId,
+            reviewInLeg.accountId,
+            reviewDate,
+            String(toAbsoluteCents(reviewOutLeg.amount))
+          ].join("|");
+
+          if (!transferReviewSuggestionKeys.has(reviewKey)) {
+            transferReviewSuggestionKeys.add(reviewKey);
+            transferReviewSuggestions.push({
+              fromAccountId: reviewOutLeg.accountId,
+              toAccountId: reviewInLeg.accountId,
+              date: reviewDate,
+              amount: Number(Math.abs(reviewOutLeg.amount).toFixed(2)),
+              confidence: Number(bestReviewConfidence.toFixed(3)),
+              description: reviewOutLeg.description,
+              counterpartDescription: reviewInLeg.description
+            });
+          }
+        }
+      }
+
+      pendingInternalTransferCandidates.push({
+        importRow: draftImportRow,
+        absoluteAmountCents,
+        direction: draftImportRow.direction,
+        normalizedDescription: draftImportRow.normalizedDescription,
+        externalId: row.externalId
+      });
+      continue;
+    }
+
+    importRows.push(draftImportRow);
+  }
+
+  if (pendingInternalTransferCandidates.length > 0) {
+    for (const candidate of pendingInternalTransferCandidates) {
+      importRows.push(candidate.importRow);
+    }
   }
 
   const batch = await importsRepo.createBatch({
@@ -793,6 +1174,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       normalizedDescription: row.normalizedDescription,
       amount: row.amount,
       status: row.status,
+      isInternalTransfer: true,
       importBatchId: batch.id,
       importedHashBase: row.transferHashBase,
       raw: row.raw
@@ -812,6 +1194,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   const invalidRows = missingAccountCount + invalidRowCount;
   const policySkippedRows = skippedCardPaymentLines;
   const totalSkipped = duplicates + invalidRows + policySkippedRows;
+  const transferReviewSuggestionsCount = transferReviewSuggestions.length;
 
   const importedDates = [...rowsToCreate.map((row) => row.date.getTime()), ...importedTransferTimestamps].filter(
     (value) => Number.isFinite(value)
@@ -832,12 +1215,13 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     duplicates,
     invalidRows,
     totalTransfersCreated,
+    totalInternalTransfersAutoMatched,
     totalCardPaymentsDetected,
     totalCardPaymentsNotConverted,
     warnings: [
       ...(cardPaymentNotConvertedWarnings > 0
         ? [
-            `${cardPaymentNotConvertedWarnings} pagamento(s) de fatura nao foram convertidos por falta de conta destino unica.`
+            `${cardPaymentNotConvertedWarnings} pagamento(s) de fatura foram registrados como transferencia sem conta destino definida.`
           ]
         : []),
       ...(skippedCardPaymentLines > 0
@@ -857,6 +1241,11 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       ...(creditInvoiceAccountsAutoCreated > 0
         ? [
             `${creditInvoiceAccountsAutoCreated} conta(s) de cartao foram criadas automaticamente a partir da conta bancaria vinculada.`
+          ]
+        : []),
+      ...(transferReviewSuggestionsCount > 0
+        ? [
+            `${transferReviewSuggestionsCount} possivel(is) transferencia(s) interna(s) com confianca media foram detectadas para revisao manual.`
           ]
         : []),
       ...warnings
@@ -879,6 +1268,8 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       duplicates,
       invalid: invalidRows + policySkippedRows
     },
+    transferReviewSuggestionsCount,
+    transferReviewSuggestions,
     totalReceived: payload.rows.length,
     deterministicCategorizedCount,
     aiCategorizedCount: 0,

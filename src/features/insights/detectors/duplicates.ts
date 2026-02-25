@@ -2,6 +2,9 @@ import { format } from "date-fns";
 import { formatBRL } from "@/src/utils/format";
 import type { Insight, InsightsDetectorContext, PreparedTransaction } from "@/src/features/insights/types";
 
+const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MIN_DUPLICATE_AMOUNT = 30;
+
 type DuplicateCandidate = {
   merchantKey: string;
   amount: number;
@@ -22,7 +25,7 @@ function findCandidateInGroup(group: PreparedTransaction[]): DuplicateCandidate 
     const previous = ordered[index - 1];
     const diffMs = current.timestamp - previous.timestamp;
 
-    if (diffMs <= 48 * 60 * 60 * 1000) {
+    if (diffMs <= DUPLICATE_WINDOW_MS) {
       duplicateCount += 1;
       if (duplicateCount > maxCount) {
         maxCount = duplicateCount;
@@ -48,6 +51,7 @@ export function detectDuplicates(context: InsightsDetectorContext): Insight | nu
 
   for (const transaction of context.currentExpenses) {
     if (transaction.merchantKey === "transacao") continue;
+    if (transaction.absAmount < MIN_DUPLICATE_AMOUNT) continue;
     const amountCents = Math.round(transaction.absAmount * 100);
     const key = `${transaction.merchantKey}|${amountCents}`;
     const bucket = groups.get(key) ?? [];
@@ -74,9 +78,9 @@ export function detectDuplicates(context: InsightsDetectorContext): Insight | nu
 
   return {
     id: "duplicate-charge",
-    severity: "warning",
+    severity: best.occurrences >= 3 || best.amount >= 120 ? "warning" : "info",
     title: "Possível cobrança duplicada",
-    message: `${best.merchantKey} ${formatBRL(best.amount)} apareceu ${best.occurrences}x em até 48h.`,
+    message: `${best.merchantKey} ${formatBRL(best.amount)} apareceu ${best.occurrences}x em até 24h.`,
     why: `Ocorrências detectadas em ${dateLabel} com mesmo valor e mesmo estabelecimento.`,
     cta: {
       label: "Revisar transações",

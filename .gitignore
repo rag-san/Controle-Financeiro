@@ -34,3 +34,4 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 artifacts/
+Arquivosdeexemplo/*

@@ -106,6 +106,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         duplicates: result.duplicates,
         invalidRows: result.invalidRows,
         transferCreated: result.totalTransfersCreated,
+        internalTransferAutoMatched: result.totalInternalTransfersAutoMatched,
         cardPaymentDetected: result.totalCardPaymentsDetected,
         cardPaymentNotConverted: result.totalCardPaymentsNotConverted
       });
