@@ -50,7 +50,7 @@ export function TopCategoriesCard({
   periodDescription
 }: TopCategoriesCardProps): React.JSX.Element {
   return (
-    <Card className="h-full">
+    <Card className="h-full border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle>Principais categorias</CardTitle>
@@ -66,7 +66,7 @@ export function TopCategoriesCard({
 
       <CardContent>
         {categorias.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-sm text-muted-foreground" role="status">
+          <div className="rounded-xl border border-dashed border-slate-300/80 p-6 text-sm text-muted-foreground dark:border-slate-800" role="status">
             Sem categorias com gastos no periodo selecionado.
           </div>
         ) : (

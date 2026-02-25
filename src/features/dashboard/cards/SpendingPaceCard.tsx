@@ -39,7 +39,7 @@ export function SpendingPaceCard({
   const markerLabel = `${headlineValue} ${headlineLabel}`;
 
   return (
-    <Card className="h-full">
+    <Card className="h-full border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2">
@@ -75,7 +75,7 @@ export function SpendingPaceCard({
             markerLabel={markerLabel}
           />
         ) : (
-          <div className="flex h-[280px] items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 text-sm text-muted-foreground">
+          <div className="flex h-[280px] items-center justify-center rounded-xl border border-dashed border-slate-300/90 text-sm text-muted-foreground dark:border-slate-800">
             Dados disponiveis apos os primeiros lancamentos do periodo.
           </div>
         )}

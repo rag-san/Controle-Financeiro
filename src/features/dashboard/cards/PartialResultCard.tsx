@@ -35,7 +35,7 @@ export function PartialResultCard({
   periodDescription
 }: PartialResultCardProps): React.JSX.Element {
   return (
-    <Card className="h-full">
+    <Card className="h-full border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2">

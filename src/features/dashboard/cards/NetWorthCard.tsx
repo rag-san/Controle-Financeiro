@@ -64,7 +64,7 @@ export function NetWorthCard({
   const variationBadge = resolveVariationBadge(variacao);
 
   return (
-    <Card className="h-full">
+    <Card className="h-full border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle>Patrimonio</CardTitle>
@@ -122,7 +122,7 @@ export function NetWorthCard({
             </ResponsiveContainer>
           </div>
         ) : (
-          <div className="flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 bg-muted/20 text-center text-muted-foreground">
+          <div className="flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300/80 text-center text-muted-foreground dark:border-slate-800">
             <Clock3 className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
             <p role="status">Dados disponiveis apos 7 dias</p>
             {/* TODO: ligar serie real de patrimonio por periodo assim que houver snapshots historicos suficientes. */}
