@@ -81,8 +81,34 @@ async function ensurePostgresTransactionDirectionEnum(): Promise<void> {
           AND (data_type <> 'USER-DEFINED' OR udt_name <> 'transaction_direction')
       ) THEN
         ALTER TABLE transactions
+          ALTER COLUMN direction DROP DEFAULT;
+
+        ALTER TABLE transactions
           ALTER COLUMN direction TYPE transaction_direction
-          USING COALESCE(NULLIF(LOWER(direction), ''), CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END)::transaction_direction;
+          USING (
+            CASE
+              WHEN LOWER(COALESCE(NULLIF(direction::text, ''), '')) IN ('in', 'out') THEN LOWER(direction::text)
+              ELSE CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
+            END
+          )::transaction_direction;
+      END IF;
+    END
+    $$;
+  `);
+
+  await db.exec(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'transactions'
+          AND column_name = 'direction'
+      ) THEN
+        ALTER TABLE transactions
+          ALTER COLUMN direction SET DEFAULT 'out'::transaction_direction,
+          ALTER COLUMN direction SET NOT NULL;
       END IF;
     END
     $$;
