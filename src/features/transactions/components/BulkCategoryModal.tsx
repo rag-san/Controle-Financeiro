@@ -66,7 +66,7 @@ export function BulkCategoryModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="bulk-category-modal-title"
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-xl"
+        className="w-full max-w-md rounded-2xl border border-slate-200/70 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950"
       >
         <h2 id="bulk-category-modal-title" className="text-base font-semibold text-foreground">
           Definir categoria

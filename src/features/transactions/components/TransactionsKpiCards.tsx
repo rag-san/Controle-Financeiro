@@ -20,7 +20,7 @@ function KpiCard({
   valueClassName?: string;
 }): React.JSX.Element {
   return (
-    <article className="rounded-2xl border border-border/80 bg-card p-4 shadow-[0_4px_14px_rgba(15,23,42,0.04)]">
+    <article className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
         {icon}
         <span>{title}</span>

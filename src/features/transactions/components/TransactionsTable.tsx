@@ -115,8 +115,11 @@ export function TransactionsTable({
   const someSelected = !allSelected && items.some((item) => selectedIdsSet.has(item.id));
 
   return (
-    <section className="rounded-2xl border border-border/80 bg-card shadow-[0_4px_14px_rgba(15,23,42,0.04)]" aria-label="Tabela de transacoes">
-      <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+    <section
+      className="rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      aria-label="Tabela de transacoes"
+    >
+      <div className="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
         <p className="text-sm text-muted-foreground">
           Exibindo <span className="font-semibold text-foreground">{totalCount}</span> transacao(oes)
         </p>
@@ -127,7 +130,7 @@ export function TransactionsTable({
         className="min-w-[860px]"
         containerClassName="max-h-[70vh] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border"
       >
-        <TableHeader className="sticky top-0 z-10 bg-card/95 backdrop-blur">
+        <TableHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-slate-950/95">
           <TableRow>
             <TableHead className="w-11 pr-2">
               <Checkbox

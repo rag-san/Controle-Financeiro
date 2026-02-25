@@ -39,7 +39,10 @@ export function TransactionForm({
   const canSubmit = Boolean(values.description.trim() && values.amount.trim() && values.accountId);
 
   return (
-    <section className="surface-card p-4" aria-labelledby="tx-form-title">
+    <section
+      className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      aria-labelledby="tx-form-title"
+    >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 id="tx-form-title" className="text-base font-semibold">
           Nova transacao

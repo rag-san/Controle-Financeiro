@@ -36,7 +36,7 @@ export function BulkActionsBar({
 
   return (
     <section
-      className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-card px-4 py-3 shadow-[0_3px_10px_rgba(15,23,42,0.04)] sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between"
       aria-live="polite"
       aria-label="Acoes em lote"
     >

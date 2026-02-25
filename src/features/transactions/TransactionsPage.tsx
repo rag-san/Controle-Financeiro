@@ -1137,7 +1137,7 @@ export function TransactionsPage(): React.JSX.Element {
           onConfirm={() => handleDeleteSelected()}
         />
 
-        <div className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-muted-foreground">
             Pagina {pagination.page} de {pagination.totalPages}
           </p>

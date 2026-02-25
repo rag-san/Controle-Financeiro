@@ -50,7 +50,7 @@ function FilterSelect({
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-xl border-border/90 bg-card/80 text-sm"
+        className="h-10 rounded-xl border-slate-200/90 bg-white text-sm dark:border-slate-800 dark:bg-slate-950"
         disabled={disabled}
       >
         {children}
@@ -71,7 +71,7 @@ export function TransactionsFiltersBar({
 }: TransactionsFiltersBarProps): React.JSX.Element {
   return (
     <section
-      className="rounded-2xl border border-border/80 bg-card p-4 shadow-[0_4px_14px_rgba(15,23,42,0.04)]"
+      className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"
       aria-label="Filtros de transacoes"
       aria-busy={busy}
     >
@@ -92,7 +92,7 @@ export function TransactionsFiltersBar({
             onChange={(event) => onSearchQueryChange(event.target.value)}
             placeholder="Buscar descricao ou estabelecimento"
             disabled={busy}
-            className="h-10 rounded-xl border-border/90 bg-card/80 pl-9"
+            className="h-10 rounded-xl border-slate-200/90 bg-white pl-9 dark:border-slate-800 dark:bg-slate-950"
           />
         </div>
 
@@ -169,7 +169,7 @@ export function TransactionsFiltersBar({
                     value={filters.from}
                     onChange={(event) => onChange({ from: event.target.value })}
                     disabled={busy}
-                    className="h-10 min-w-[152px] rounded-xl pr-9"
+                    className="h-10 min-w-[152px] rounded-xl border-slate-200/90 bg-white pr-9 dark:border-slate-800 dark:bg-slate-950"
                   />
                   <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 </div>
@@ -183,7 +183,7 @@ export function TransactionsFiltersBar({
                     value={filters.to}
                     onChange={(event) => onChange({ to: event.target.value })}
                     disabled={busy}
-                    className="h-10 min-w-[152px] rounded-xl pr-9"
+                    className="h-10 min-w-[152px] rounded-xl border-slate-200/90 bg-white pr-9 dark:border-slate-800 dark:bg-slate-950"
                   />
                   <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 </div>
