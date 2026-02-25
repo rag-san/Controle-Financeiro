@@ -183,7 +183,7 @@ export function NetWorthPage(): React.JSX.Element {
       }
 
       if (!netWorthResponse.ok || !netWorthData || !Array.isArray(netWorthData)) {
-        throw new Error(extractApiError(netWorthData, "Nao foi possivel carregar patrimonio."));
+        throw new Error(extractApiError(netWorthData, "Não foi possível carregar patrimônio."));
       }
 
       const { data: accountsData } = await parseApiResponse<AccountDTO[] | { error?: unknown }>(
@@ -372,3 +372,4 @@ export function NetWorthPage(): React.JSX.Element {
     </PageShell>
   );
 }
+

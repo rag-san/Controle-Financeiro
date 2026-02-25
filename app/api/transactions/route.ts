@@ -52,7 +52,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       payload = await request.json();
     } catch {
-      return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+      return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
     }
     const parsed = createTransactionSchema.safeParse(payload);
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const transaction = await createTransactionForUser(auth.userId, parsed.data);
 
     if (!transaction) {
-      return NextResponse.json({ error: "Falha ao criar transacao" }, { status: 500 });
+      return NextResponse.json({ error: "Falha ao criar transação" }, { status: 500 });
     }
 
     invalidateFinanceCaches(auth.userId);
@@ -81,7 +81,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     try {
       payload = await request.json();
     } catch {
-      return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+      return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
     }
 
     const parsed = bulkDeleteSchema.safeParse(payload);
@@ -101,5 +101,6 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     });
   });
 }
+
 
 

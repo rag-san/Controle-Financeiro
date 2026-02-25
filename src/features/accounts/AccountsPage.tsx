@@ -90,7 +90,7 @@ export function AccountsPage(): React.JSX.Element {
         }
 
         if (!accountsResponse.ok || !accountsData || !Array.isArray(accountsData)) {
-          throw new Error(extractApiError(accountsData, "Nao foi possivel carregar contas."));
+          throw new Error(extractApiError(accountsData, "Não foi possível carregar contas."));
         }
 
         const { data: netWorthData } = await parseApiResponse<NetWorthEntryDTO[] | { error?: unknown }>(
@@ -109,7 +109,7 @@ export function AccountsPage(): React.JSX.Element {
         setAccounts([]);
         setNetWorthEntries([]);
         setErrorMessage(
-          loadError instanceof Error ? loadError.message : "Nao foi possivel carregar dados das contas."
+          loadError instanceof Error ? loadError.message : "Não foi possível carregar dados das contas."
         );
       } finally {
         setLoading(false);
@@ -249,7 +249,7 @@ export function AccountsPage(): React.JSX.Element {
         }
 
         if (!response.ok || !data || Array.isArray(data) || !("id" in data) || !("name" in data)) {
-          throw new Error(extractApiError(data, "Nao foi possivel criar a conta."));
+          throw new Error(extractApiError(data, "Não foi possível criar a conta."));
         }
 
         const createdAccount = data as AccountDTO;
@@ -426,3 +426,4 @@ export function AccountsPage(): React.JSX.Element {
     </PageShell>
   );
 }
+

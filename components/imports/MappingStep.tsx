@@ -94,7 +94,7 @@ export function MappingStep({
           )}
         </FormField>
 
-        <FormField id="mapping-description" label="Descricao" required>
+        <FormField id="mapping-description" label="Descrição" required>
           {(fieldProps) => (
             <Select {...fieldProps} value={mapping.description} onChange={(event) => update("description", event.target.value)}>
               <option value="">Selecione</option>
@@ -103,7 +103,7 @@ export function MappingStep({
           )}
         </FormField>
 
-        <FormField id="mapping-history" label="Historico (tipo da transacao)">
+        <FormField id="mapping-history" label="Histórico (tipo da transação)">
           {(fieldProps) => (
             <Select {...fieldProps} value={mapping.history} onChange={(event) => update("history", event.target.value)}>
               <option value="">Nenhum</option>
@@ -179,4 +179,5 @@ export function MappingStep({
     </section>
   );
 }
+
 

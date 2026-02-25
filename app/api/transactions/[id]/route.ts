@@ -33,7 +33,7 @@ export async function PATCH(
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
   }
   const parsed = updateTransactionSchema.safeParse(payload);
 
@@ -44,13 +44,13 @@ export async function PATCH(
   const existing = await transactionsRepo.findByIdForUser(id, auth.userId);
 
   if (!existing) {
-    return NextResponse.json({ error: "Transacao nao encontrada" }, { status: 404 });
+    return NextResponse.json({ error: "Transação não encontrada" }, { status: 404 });
   }
 
   if (existing.type === "transfer") {
     return NextResponse.json(
       {
-        error: "Transacoes de transferencia nao podem ser editadas. Exclua e recrie o par."
+        error: "Transações de transferência não podem ser editadas. Exclua e recrie o par."
       },
       { status: 409 }
     );
@@ -81,7 +81,7 @@ export async function PATCH(
   });
 
   if (!transaction) {
-    return NextResponse.json({ error: "Transacao nao encontrada" }, { status: 404 });
+    return NextResponse.json({ error: "Transação não encontrada" }, { status: 404 });
   }
 
   invalidateFinanceCaches(auth.userId);
@@ -103,5 +103,4 @@ export async function DELETE(
 
   return NextResponse.json({ success: true });
 }
-
 

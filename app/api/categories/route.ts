@@ -49,7 +49,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
   }
   const parsed = createCategorySchema.safeParse(payload);
 
@@ -71,5 +71,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json(category, { status: 201 });
   });
 }
+
 
 

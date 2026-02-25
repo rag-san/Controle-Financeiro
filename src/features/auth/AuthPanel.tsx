@@ -69,7 +69,7 @@ export function AuthPanel(): React.JSX.Element {
         setLoading(false);
         setFieldErrors(validationErrors);
         setError("Corrija os campos destacados para continuar.");
-        toast({ variant: "error", title: "Cadastro invalido", description: "Revise os campos do formulario." });
+        toast({ variant: "error", title: "Cadastro inválido", description: "Revise os campos do formulário." });
         return;
       }
 
@@ -90,7 +90,7 @@ export function AuthPanel(): React.JSX.Element {
         }
 
         if (!response.ok) {
-          const message = extractApiError(data, "Nao foi possivel criar a conta");
+          const message = extractApiError(data, "Não foi possível criar a conta");
           setLoading(false);
           setError(message);
           toast({ variant: "error", title: "Falha no cadastro", description: message });
@@ -101,7 +101,7 @@ export function AuthPanel(): React.JSX.Element {
       } catch {
         setLoading(false);
         setError("Falha de rede ao criar conta.");
-        toast({ variant: "error", title: "Falha de rede", description: "Nao foi possivel criar a conta." });
+        toast({ variant: "error", title: "Falha de rede", description: "Não foi possível criar a conta." });
         return;
       }
     }
@@ -116,7 +116,7 @@ export function AuthPanel(): React.JSX.Element {
 
     if (result?.error) {
       const message =
-        result.error === "CredentialsSignin" ? "Email ou senha invalidos" : "Nao foi possivel fazer login.";
+        result.error === "CredentialsSignin" ? "Email ou senha inválidos" : "Não foi possível fazer login.";
       setError(message);
       toast({ variant: "error", title: "Falha no login", description: message });
       return;
@@ -199,11 +199,12 @@ export function AuthPanel(): React.JSX.Element {
             onClick={() => resetAuthState(mode === "signin" ? "signup" : "signin")}
             disabled={loading}
           >
-            {mode === "signin" ? "Nao tem conta? Criar agora" : "Ja tem conta? Entrar"}
+            {mode === "signin" ? "Não tem conta? Criar agora" : "Já tem conta? Entrar"}
           </Button>
         </form>
       </CardContent>
     </Card>
   );
 }
+
 

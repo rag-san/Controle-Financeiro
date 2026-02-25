@@ -43,7 +43,7 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
         }
 
         if (!response.ok || !payload || !("view" in payload) || payload.view !== "cashflow") {
-          throw new Error(extractApiError(payload, "Nao foi possivel carregar o fluxo de caixa oficial."));
+          throw new Error(extractApiError(payload, "Não foi possível carregar o fluxo de caixa oficial."));
         }
 
         if (!active) return;
@@ -52,7 +52,7 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
         if (!active) return;
         setData(null);
         setError(
-          loadError instanceof Error ? loadError.message : "Nao foi possivel carregar o fluxo de caixa."
+          loadError instanceof Error ? loadError.message : "Não foi possível carregar o fluxo de caixa."
         );
       } finally {
         if (active) {
@@ -70,3 +70,4 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
 
   return { data, loading, error };
 }
+

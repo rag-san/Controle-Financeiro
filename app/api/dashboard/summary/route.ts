@@ -25,12 +25,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const to = parsed.data.to ? new Date(parsed.data.to) : endOfMonth(now);
 
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-      return NextResponse.json({ error: "Periodo invalido" }, { status: 400 });
+      return NextResponse.json({ error: "Período inválido" }, { status: 400 });
     }
 
     const payload = await dashboardRepo.summaryByRange(auth.userId, from, to);
     return NextResponse.json(payload);
   });
 }
+
 
 

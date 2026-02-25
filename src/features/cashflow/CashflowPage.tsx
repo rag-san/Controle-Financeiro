@@ -49,7 +49,7 @@ export function CashflowPage(): React.JSX.Element {
         <CashflowLoading />
       ) : !data ? (
         <FeedbackMessage variant="error">
-          {error || "Nao foi possivel carregar os dados de fluxo de caixa."}
+          {error || "Não foi possível carregar os dados de fluxo de caixa."}
         </FeedbackMessage>
       ) : (
         <div className="space-y-4">
@@ -83,3 +83,4 @@ export function CashflowPage(): React.JSX.Element {
     </PageShell>
   );
 }
+

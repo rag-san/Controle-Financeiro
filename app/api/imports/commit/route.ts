@@ -60,13 +60,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       try {
         payload = await request.json();
       } catch {
-        return commitError(400, "invalid_json", "Payload JSON invalido.");
+        return commitError(400, "invalid_json", "Payload JSON inválido.");
       }
 
       metadata = payloadMetadata(payload);
 
       if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-        return commitError(400, "invalid_payload", "Payload de importacao invalido.");
+        return commitError(400, "invalid_payload", "Payload de importação inválido.");
       }
 
       const payloadRecord = payload as Record<string, unknown>;
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const parsed = importCommitPayloadSchema.safeParse(payload);
 
       if (!parsed.success) {
-        return commitError(400, "invalid_payload", "Payload de importacao invalido.", {
+        return commitError(400, "invalid_payload", "Payload de importação inválido.", {
           issues: parsed.error.flatten()
         });
       }
@@ -130,5 +130,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   });
 }
+
 
 

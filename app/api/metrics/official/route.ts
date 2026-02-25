@@ -319,13 +319,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     if (parsed.data.view === "reports" && !parsed.data.preset) {
-      return NextResponse.json({ error: "Preset e obrigatorio para view=reports." }, { status: 400 });
+      return NextResponse.json({ error: "Preset é obrigatório para view=reports." }, { status: 400 });
     }
     if (parsed.data.view === "cashflow" && !parsed.data.period) {
-      return NextResponse.json({ error: "Periodo e obrigatorio para view=cashflow." }, { status: 400 });
+      return NextResponse.json({ error: "Período é obrigatório para view=cashflow." }, { status: 400 });
     }
     if (parsed.data.view === "categories" && !parsed.data.month) {
-      return NextResponse.json({ error: "Mes e obrigatorio para view=categories." }, { status: 400 });
+      return NextResponse.json({ error: "Mês é obrigatório para view=categories." }, { status: 400 });
     }
 
     const cacheQuery = request.nextUrl.searchParams.toString();

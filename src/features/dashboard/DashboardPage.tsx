@@ -581,8 +581,10 @@ export function DashboardPage(): React.JSX.Element {
       : "warning"
     : "info";
   const noticeTitle = `Sem lançamentos em ${fallbackTargetMonthLabel}.`;
-  const noticeSubtitle = isReferenceFallbackActive
-    ? `Mostrando dados de ${dashboardView?.referenceMonthLabel ?? fallbackTargetMonthLabel}.`
+  const referenceNoticeMonthLabel = dashboardView?.referenceMonthLabel ?? fallbackTargetMonthLabel;
+  const shouldShowReferenceNotice = isReferenceFallbackActive && referenceNoticeMonthLabel !== fallbackTargetMonthLabel;
+  const noticeSubtitle = shouldShowReferenceNotice
+    ? `Mostrando dados de ${referenceNoticeMonthLabel}.`
     : `Comparando com ${previousFallbackTargetMonthLabel}.`;
   const isCurrentMonthScope = !isMonthFilterActive && data?.isCurrentMonthReference === true;
   const spendingCurrentLabel = isCurrentMonthScope ? "Este mês" : "Período selecionado";

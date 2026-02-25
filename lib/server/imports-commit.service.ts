@@ -1335,7 +1335,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         : []),
       ...(creditInvoiceRowsNotRouted > 0
         ? [
-            `${creditInvoiceRowsNotRouted} linha(s) de fatura nao foram importadas porque nao foi possivel definir a conta de cartao de credito.`
+            `${creditInvoiceRowsNotRouted} linha(s) de fatura não foram importadas porque não foi possível definir a conta de cartão de crédito.`
           ]
         : []),
       ...(creditInvoiceRowsReassigned > 0
@@ -1343,12 +1343,12 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         : []),
       ...(creditInvoiceAccountsAutoCreated > 0
         ? [
-            `${creditInvoiceAccountsAutoCreated} conta(s) de cartao foram criadas automaticamente a partir da conta bancaria vinculada.`
+            `${creditInvoiceAccountsAutoCreated} conta(s) de cartão foram criadas automaticamente a partir da conta bancária vinculada.`
           ]
         : []),
       ...(transferReviewSuggestionsCount > 0
         ? [
-            `${transferReviewSuggestionsCount} possivel(is) transferencia(s) interna(s) com confianca media foram detectadas para revisao manual.`
+            `${transferReviewSuggestionsCount} possível(is) transferência(s) interna(s) com confiança média foram detectadas para revisão manual.`
           ]
         : []),
       ...warnings
@@ -1388,3 +1388,4 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         : null
   };
 }
+

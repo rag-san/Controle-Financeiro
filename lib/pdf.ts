@@ -1,4 +1,4 @@
-﻿import { createRequire } from "node:module";
+import { createRequire } from "node:module";
 import { parseFlexibleDate } from "@/lib/normalize";
 import { parseMoneyInput } from "@/lib/money";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
@@ -740,13 +740,13 @@ function mapPdfError(error: unknown): PdfImportError {
   if (lowered.includes("no password given")) {
     return new PdfImportError(
       "password_required",
-      "Este PDF esta protegido por senha. Informe a senha para continuar.",
+      "Este PDF está protegido por senha. Informe a senha para continuar.",
       message
     );
   }
 
   if (lowered.includes("incorrect password") || lowered.includes("invalid password") || lowered.includes("wrong password")) {
-    return new PdfImportError("password_invalid", "Senha do PDF invalida.", message);
+    return new PdfImportError("password_invalid", "Senha do PDF inválida.", message);
   }
 
   return new PdfImportError(
@@ -844,6 +844,46 @@ type PdfParseFunction = (
   }
 ) => Promise<PdfParseFunctionResult> | PdfParseFunctionResult;
 
+type PdfJsTextItem = {
+  str?: unknown;
+};
+
+type PdfJsTextContent = {
+  items?: PdfJsTextItem[];
+};
+
+type PdfJsPage = {
+  getTextContent: () => Promise<PdfJsTextContent>;
+};
+
+type PdfJsDocument = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfJsPage>;
+};
+
+type PdfJsLoadingTask = {
+  promise: Promise<PdfJsDocument>;
+  destroy?: () => Promise<void> | void;
+};
+
+type PdfJsModule = {
+  getDocument: (params: {
+    data: Uint8Array;
+    password?: string;
+    useSystemFonts?: boolean;
+    isEvalSupported?: boolean;
+    stopAtErrors?: boolean;
+  }) => PdfJsLoadingTask;
+};
+
+function isPdfJsModule(value: unknown): value is PdfJsModule {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return typeof (value as { getDocument?: unknown }).getDocument === "function";
+}
+
 function isPdfParseClassCtor(value: unknown): value is PdfParseClassCtor {
   if (typeof value !== "function") {
     return false;
@@ -930,6 +970,44 @@ async function extractTextWithPdfParse(buffer: Buffer, options: PdfParseOptions)
   throw new PdfImportError("parser_unavailable", "Módulo pdf-parse indisponível neste ambiente.");
 }
 
+async function extractTextWithPdfJs(buffer: Buffer, options: PdfParseOptions): Promise<string> {
+  const imported = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown;
+  if (!isPdfJsModule(imported)) {
+    throw new PdfImportError("parser_unavailable", "Módulo pdfjs-dist indisponível neste ambiente.");
+  }
+
+  const loadingTask = imported.getDocument({
+    data: new Uint8Array(buffer),
+    password: options.password,
+    useSystemFonts: true,
+    isEvalSupported: false,
+    stopAtErrors: false
+  });
+
+  try {
+    const document = await loadingTask.promise;
+    const chunks: string[] = [];
+
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+      const page = await document.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const text = (content.items ?? [])
+        .map((item) => (typeof item.str === "string" ? item.str : ""))
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (text) {
+        chunks.push(text);
+      }
+    }
+
+    return fixCommonMojibake(chunks.join("\n"));
+  } finally {
+    await loadingTask.destroy?.();
+  }
+}
+
 export async function parsePdfImport(
   buffer: Buffer,
   options: PdfParseOptions = {}
@@ -938,15 +1016,28 @@ export async function parsePdfImport(
 
   try {
     text = await extractTextWithPdfParse(buffer, options);
-  } catch (error) {
-    const mapped = mapPdfError(error);
-    const fallbackText = mapped.code === "parser_unavailable" ? extractTextFromSimplePdfBuffer(buffer) : null;
-
-    if (!fallbackText) {
-      throw mapped;
+  } catch (primaryError) {
+    const mappedPrimaryError = mapPdfError(primaryError);
+    if (mappedPrimaryError.code === "password_required" || mappedPrimaryError.code === "password_invalid") {
+      throw mappedPrimaryError;
     }
 
-    text = fixCommonMojibake(fallbackText);
+    try {
+      text = await extractTextWithPdfJs(buffer, options);
+    } catch (secondaryError) {
+      const mappedSecondaryError = mapPdfError(secondaryError);
+      const fallbackText = extractTextFromSimplePdfBuffer(buffer);
+
+      if (!fallbackText) {
+        throw new PdfImportError(
+          "parser_unavailable",
+          mappedSecondaryError.message,
+          [mappedPrimaryError.technicalReason, mappedSecondaryError.technicalReason].filter(Boolean).join(" | ")
+        );
+      }
+
+      text = fixCommonMojibake(fallbackText);
+    }
   }
 
   const classification = classifyPdfText(text);
