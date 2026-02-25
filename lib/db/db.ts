@@ -54,7 +54,11 @@ function resolvePostgresUrl(): string {
 }
 
 const POSTGRES_URL = resolvePostgresUrl();
-const IS_VERCEL = process.env.VERCEL === "1";
+const IS_VERCEL =
+  process.env.VERCEL === "1" ||
+  Boolean(process.env.VERCEL_ENV) ||
+  Boolean(process.env.VERCEL_URL) ||
+  Boolean(process.env.VERCEL_REGION);
 
 function resolveDialect(): FinanceDbDialect {
   if (IS_VERCEL && !POSTGRES_URL) {

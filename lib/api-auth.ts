@@ -1,5 +1,6 @@
 import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
+import { AUTH_SECRET } from "@/lib/auth";
 import { getRequiredUserId } from "@/lib/auth";
 import { getCache, setCache } from "@/lib/cache";
 import { usersRepo } from "@/lib/server/users.repo";
@@ -27,7 +28,7 @@ export async function requireUser(request?: NextRequest): Promise<{ userId: stri
   if (request) {
     const token = await getToken({
       req: request,
-      secret: process.env.NEXTAUTH_SECRET
+      secret: AUTH_SECRET
     });
 
     if (token?.sub) {

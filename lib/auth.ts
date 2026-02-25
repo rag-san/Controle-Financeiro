@@ -13,7 +13,20 @@ const credentialsSchema = z.object({
 const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 8;
 const LOGIN_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 
+function resolveAuthSecret(): string | undefined {
+  const nextAuthSecret = process.env.NEXTAUTH_SECRET?.trim();
+  if (nextAuthSecret) return nextAuthSecret;
+
+  const authSecret = process.env.AUTH_SECRET?.trim();
+  if (authSecret) return authSecret;
+
+  return undefined;
+}
+
+export const AUTH_SECRET = resolveAuthSecret();
+
 export const authOptions: NextAuthOptions = {
+  secret: AUTH_SECRET,
   session: {
     strategy: "jwt"
   },
