@@ -44,7 +44,7 @@ export function SegmentedControl<Value extends string>({
   return (
     <div
       className={cn(
-        "inline-flex w-fit max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-full bg-slate-100/80 p-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden dark:bg-slate-900/80",
+        "inline-flex w-fit max-w-full flex-nowrap items-center gap-1 overflow-x-auto rounded-full bg-muted/70 p-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
         className
       )}
       role="group"
@@ -65,10 +65,10 @@ export function SegmentedControl<Value extends string>({
             aria-pressed={isActive}
             tabIndex={index === selectedIndex ? 0 : -1}
             className={cn(
-              "shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              "shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               isActive
-                ? "bg-blue-500 text-white shadow-sm"
-                : "text-slate-600 hover:bg-slate-200/80 dark:text-slate-200 dark:hover:bg-slate-800"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
             {option.label}

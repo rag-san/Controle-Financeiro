@@ -10,7 +10,7 @@ export function Card({ children, className, ...props }: CardProps): React.JSX.El
     <section
       {...props}
       className={cn(
-        "rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm dark:border-border dark:bg-card",
+        "rounded-2xl border border-border/90 bg-card p-6 text-card-foreground shadow-[0_1px_2px_rgba(15,23,42,0.05)]",
         className
       )}
     >
@@ -32,7 +32,7 @@ export function CardTitle({ children, className, ...props }: CardProps): React.J
     <h2
       {...props}
       className={cn(
-        "text-sm font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-muted-foreground",
+        "text-sm font-semibold uppercase tracking-[0.08em] text-muted-foreground",
         className
       )}
     >

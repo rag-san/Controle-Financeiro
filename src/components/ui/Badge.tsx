@@ -10,7 +10,7 @@ export interface BadgeProps {
 const variantClassMap: Record<BadgeProps["variant"], string> = {
   positive: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
   negative: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
-  neutral: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+  neutral: "bg-muted text-muted-foreground"
 };
 
 export function Badge({ value, variant, className }: BadgeProps): React.JSX.Element {

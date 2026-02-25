@@ -6,7 +6,7 @@ import "@/styles/globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Financial Control",
+  title: "Finance Control",
   description: "Personal finance dashboard with CSV/OFX/PDF imports"
 };
 

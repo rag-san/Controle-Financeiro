@@ -58,7 +58,7 @@ export function TopCategoriesCard({
         </div>
         <Link
           href={hrefVerMais}
-          className="text-sm font-semibold text-blue-500 transition hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="text-sm font-semibold text-primary transition hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver mais ↗
         </Link>
@@ -66,12 +66,12 @@ export function TopCategoriesCard({
 
       <CardContent>
         {categorias.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300/80 p-6 text-sm text-muted-foreground dark:border-border" role="status">
+          <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-sm text-muted-foreground" role="status">
             Sem categorias com gastos no periodo selecionado.
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="hidden grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4 px-2 text-xs font-semibold uppercase tracking-wide text-slate-400 md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground md:grid">
               <span>Categoria</span>
               <span className="text-right">Atual</span>
               <span>vs Mes anterior</span>
@@ -85,13 +85,13 @@ export function TopCategoriesCard({
               return (
                 <div
                   key={item.categoryId}
-                  className="rounded-xl border border-slate-200/70 p-3 dark:border-border md:grid md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center md:gap-4 md:rounded-none md:border-0 md:p-0"
+                  className="rounded-xl border border-border/80 p-3 md:grid md:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1.8fr)_minmax(0,1fr)_minmax(0,1fr)] md:items-center md:gap-4 md:rounded-none md:border-0 md:p-0"
                 >
                   <div>
                     <CategoryPill name={item.name} />
                   </div>
 
-                  <div className="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100 md:mt-0 md:text-right">
+                  <div className="mt-2 text-sm font-semibold text-foreground md:mt-0 md:text-right">
                     {formatBRL(item.current)}
                   </div>
 
@@ -103,7 +103,7 @@ export function TopCategoriesCard({
                     <Badge value={formatVariationLabel(item.variation)} variant={status} />
                   </div>
 
-                  <div className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-300 md:mt-0 md:text-right">
+                  <div className="mt-2 text-sm font-semibold text-muted-foreground md:mt-0 md:text-right">
                     {formatBRL(item.previous)}
                   </div>
                 </div>

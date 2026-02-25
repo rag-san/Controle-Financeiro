@@ -44,13 +44,13 @@ export function SpendingPaceCard({
         <div>
           <CardTitle className="flex items-center gap-2">
             <span>Ritmo de gastos</span>
-            <Info className="h-4 w-4 text-slate-400" aria-hidden="true" />
+            <Info className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardTitle>
           <p className="text-sm text-muted-foreground">Comparativo acumulado {periodDescription}.</p>
         </div>
         <Link
           href={hrefVerTodas}
-          className="text-sm font-semibold text-blue-500 transition hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="text-sm font-semibold text-primary transition hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver todas ↗
         </Link>
@@ -58,8 +58,8 @@ export function SpendingPaceCard({
 
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <p className="text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-            {headlineValue} <span className="text-3xl text-slate-600 dark:text-slate-300">{headlineLabel}</span>
+          <p className="text-4xl font-semibold tracking-tight text-foreground">
+            {headlineValue} <span className="text-3xl text-muted-foreground">{headlineLabel}</span>
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge value={formatSignedPercent(variationPercent)} variant={resolveBadgeVariant(variationPercent)} />
@@ -75,7 +75,7 @@ export function SpendingPaceCard({
             markerLabel={markerLabel}
           />
         ) : (
-          <div className="flex h-[280px] items-center justify-center rounded-xl border border-dashed border-slate-300/90 text-sm text-muted-foreground dark:border-border">
+          <div className="flex h-[280px] items-center justify-center rounded-xl border border-dashed border-border/80 bg-muted/20 text-sm text-muted-foreground">
             Dados disponiveis apos os primeiros lancamentos do periodo.
           </div>
         )}

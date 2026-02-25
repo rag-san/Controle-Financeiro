@@ -72,7 +72,7 @@ export function NetWorthCard({
         </div>
         <Link
           href={hrefVerTodas}
-          className="text-sm font-semibold text-blue-500 transition hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="text-sm font-semibold text-primary transition hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver todas ↗
         </Link>
@@ -80,7 +80,7 @@ export function NetWorthCard({
 
       <CardContent className="flex h-full min-h-[320px] flex-col justify-between gap-6">
         <div className="space-y-2">
-          <p className="text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{formatBRL(valorTotal)}</p>
+          <p className="text-4xl font-semibold tracking-tight text-foreground">{formatBRL(valorTotal)}</p>
           <Badge value={variationBadge.value} variant={variationBadge.variant} />
         </div>
 
@@ -110,13 +110,20 @@ export function NetWorthCard({
                     />
                   }
                 />
-                <Line type="monotone" dataKey="value" name="Patrimonio" stroke="#3b82f6" strokeWidth={2.4} dot={false} />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  name="Patrimonio"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2.4}
+                  dot={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
         ) : (
-          <div className="flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300/80 text-center text-muted-foreground dark:border-border">
-            <Clock3 className="h-8 w-8 text-slate-400" aria-hidden="true" />
+          <div className="flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 bg-muted/20 text-center text-muted-foreground">
+            <Clock3 className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
             <p role="status">Dados disponiveis apos 7 dias</p>
             {/* TODO: ligar serie real de patrimonio por periodo assim que houver snapshots historicos suficientes. */}
           </div>

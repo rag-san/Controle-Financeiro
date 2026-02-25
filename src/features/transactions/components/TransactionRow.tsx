@@ -78,7 +78,7 @@ export function TransactionRow({
           />
           {suggestion ? (
             <span
-              className="inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300"
+              className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary"
               title={suggestion.reason}
             >
               Sugerido • {Math.round(suggestion.confidence * 100)}%
@@ -89,7 +89,7 @@ export function TransactionRow({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-7 rounded-md px-2 text-[11px] font-semibold text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-300 dark:hover:bg-blue-950/30"
+              className="h-7 rounded-md px-2 text-[11px] font-semibold text-primary hover:bg-primary/10 hover:text-primary"
               onClick={() => onApplySuggestion(transaction, suggestion)}
               isLoading={applyingSuggestion}
               disabled={applyingSuggestion}

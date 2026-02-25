@@ -699,7 +699,7 @@ export function DashboardPage(): React.JSX.Element {
                 className={[
                   "!rounded-lg !px-3 !py-2",
                   isMonthFilterActive
-                    ? "!bg-slate-50/70 !text-slate-700 dark:!bg-slate-900/35 dark:!text-slate-200"
+                    ? "!bg-muted/55 !text-muted-foreground"
                     : "!bg-amber-50/45 !text-amber-800 dark:!bg-amber-950/25 dark:!text-amber-200"
                 ].join(" ")}
               >
@@ -716,14 +716,14 @@ export function DashboardPage(): React.JSX.Element {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Link
                       href={fallbackTransactionsHref}
-                      className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+                      className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       Ver transacoes do mes
                     </Link>
                     {isMonthFilterActive ? (
                       <button
                         type="button"
-                        className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+                        className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         onClick={() => {
                           setDashboardMonth("");
                           setShowFilters(false);

@@ -96,7 +96,7 @@ export function TransactionsFiltersBar({
           />
         </div>
 
-        <div className="overflow-x-auto pb-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700">
+        <div className="overflow-x-auto pb-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
           <div className="flex min-w-max items-center gap-2 pr-1 sm:min-w-0 sm:flex-wrap">
             <FilterSelect
               id="tx-filter-period"
