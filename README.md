@@ -80,7 +80,10 @@ Arquivo de referencia: `.env.example`
 - `NEXTAUTH_SECRET`: segredo da sessao/auth (obrigatorio em producao)
 - `NEXTAUTH_URL`: URL base da aplicacao (ex.: `http://localhost:3000`)
 - `DATABASE_URL`: string de conexao PostgreSQL (principal)
+- `POSTGRES_URL` / `POSTGRES_URL_NON_POOLING`: aliases aceitos automaticamente (Vercel Postgres)
 - `FINANCE_DB_PATH`: fallback SQLite (usado apenas sem `DATABASE_URL`)
+- `PG_POOL_MAX`: limite do pool de conexoes PostgreSQL (padrao: `1` no Vercel, `10` fora)
+- `PG_IDLE_TIMEOUT_MS` e `PG_CONNECTION_TIMEOUT_MS`: timeouts do pool PostgreSQL
 - `API_PROFILING`: ativa profiling de rotas (`0` ou `1`)
 - `API_PROFILING_SLOW_QUERY_MS`: limite para considerar query lenta
 - `OLLAMA_URL`: endpoint do Ollama (IA local opcional)
@@ -118,6 +121,7 @@ Arquivo de referencia: `.env.example`
 - Em Vercel, SQLite nao e suportado para este projeto.
 - Configure obrigatoriamente `DATABASE_URL` (ou `POSTGRES_URL`) apontando para PostgreSQL.
 - Se estiver usando Vercel Postgres, copie `POSTGRES_URL` para `DATABASE_URL` para manter compatibilidade com ambiente local.
+- Em ambientes serverless, mantenha `PG_POOL_MAX` baixo (ex.: `1` a `3`) para evitar excesso de conexoes.
 
 ### Migrar dados do SQLite para PostgreSQL
 

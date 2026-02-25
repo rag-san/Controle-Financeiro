@@ -46,6 +46,7 @@ function resolvePostgresUrl(): string {
   return (
     process.env.DATABASE_URL?.trim() ||
     process.env.POSTGRES_URL?.trim() ||
+    process.env.POSTGRES_URL_NON_POOLING?.trim() ||
     process.env.POSTGRES_PRISMA_URL?.trim() ||
     process.env.FINANCE_DATABASE_URL?.trim() ||
     ""
@@ -123,9 +124,13 @@ function createPgPool(): Pool {
     throw new Error("DATABASE_URL nao configurada para PostgreSQL.");
   }
 
+  const defaultPoolMax = IS_VERCEL ? 1 : 10;
+
   return new Pool({
     connectionString: POSTGRES_URL,
-    max: Number(process.env.PG_POOL_MAX ?? 10)
+    max: Number(process.env.PG_POOL_MAX ?? defaultPoolMax),
+    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS ?? 30_000),
+    connectionTimeoutMillis: Number(process.env.PG_CONNECTION_TIMEOUT_MS ?? 10_000)
   });
 }
 
