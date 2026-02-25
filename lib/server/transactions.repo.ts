@@ -482,7 +482,7 @@ export const transactionsRepo = {
           `INSERT INTO transactions (
              id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
              amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', ${TX_TRANSFER_LITERAL_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
+           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', ${TX_TRANSFER_LITERAL_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
         );
 
         await insert.run(
