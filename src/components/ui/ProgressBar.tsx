@@ -8,10 +8,10 @@ export interface ProgressBarProps {
 }
 
 const colorClassMap: Record<NonNullable<ProgressBarProps["color"]>, string> = {
-  blue: "bg-blue-500",
+  blue: "bg-primary",
   green: "bg-emerald-500",
   red: "bg-rose-500",
-  gray: "bg-slate-400"
+  gray: "bg-muted-foreground/40"
 };
 
 function clampPercentage(value: number): number {
@@ -26,7 +26,7 @@ export function ProgressBar({ percentage, color = "blue", className }: ProgressB
 
   return (
     <div
-      className={cn("h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-800", className)}
+      className={cn("h-2.5 w-full rounded-full bg-muted", className)}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}

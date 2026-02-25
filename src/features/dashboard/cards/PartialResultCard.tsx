@@ -40,13 +40,13 @@ export function PartialResultCard({
         <div>
           <CardTitle className="flex items-center gap-2">
             <span>Resultado parcial</span>
-            <Info className="h-4 w-4 text-slate-400" aria-hidden="true" />
+            <Info className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </CardTitle>
           <p className="text-sm text-muted-foreground">Comparativo do {periodDescription}.</p>
         </div>
         <Link
           href={hrefFluxoDeCaixa}
-          className="text-sm font-semibold text-blue-500 transition hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="text-sm font-semibold text-primary transition hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           fluxo de caixa ↗
         </Link>
@@ -54,7 +54,7 @@ export function PartialResultCard({
 
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <p className="text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">{formatBRL(resultadoAtual)}</p>
+          <p className="text-4xl font-semibold tracking-tight text-foreground">{formatBRL(resultadoAtual)}</p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge value={formatSignedPercent(porcentagemVariacao)} variant={resolveBadgeVariant(porcentagemVariacao)} />
             <span>vs {formatBRL(resultadoMesAnterior)} mes anterior</span>
@@ -63,18 +63,18 @@ export function PartialResultCard({
 
         <ProgressBar percentage={porcentagemProgresso} color="blue" />
 
-        <div className="grid grid-cols-3 gap-4 border-t border-slate-200 pt-4 text-sm dark:border-border">
+        <div className="grid grid-cols-3 gap-4 border-t border-border/80 pt-4 text-sm">
           <div className="space-y-1">
             <p className="text-muted-foreground">Receita</p>
-            <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(receita)}</p>
+            <p className="text-xl font-semibold text-foreground">{formatBRL(receita)}</p>
           </div>
           <div className="space-y-1">
             <p className="text-muted-foreground">Gasto</p>
-            <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(gasto)}</p>
+            <p className="text-xl font-semibold text-foreground">{formatBRL(gasto)}</p>
           </div>
           <div className="space-y-1">
             <p className="text-muted-foreground">Excluido</p>
-            <p className="text-xl font-semibold text-slate-900 dark:text-slate-100">{formatBRL(excluido)}</p>
+            <p className="text-xl font-semibold text-foreground">{formatBRL(excluido)}</p>
           </div>
         </div>
       </CardContent>

@@ -1,4 +1,4 @@
-# Financial Control v1.1.0
+# Finance Control v1.1.0
 
 Aplicacao full-stack de controle financeiro pessoal com Next.js + PostgreSQL.
 
