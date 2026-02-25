@@ -77,7 +77,7 @@ npm run dev
 
 Arquivo de referencia: `.env.example`
 
-- `NEXTAUTH_SECRET`: segredo da sessao/auth (obrigatorio em producao)
+- `NEXTAUTH_SECRET`: segredo da sessao/auth (recomendado em producao)
 - `AUTH_SECRET`: alias aceito para o segredo de auth (fallback para `NEXTAUTH_SECRET`)
 - `NEXTAUTH_URL`: URL base da aplicacao (ex.: `http://localhost:3000`)
 - `DATABASE_URL`: string de conexao PostgreSQL (principal)
@@ -120,7 +120,7 @@ Arquivo de referencia: `.env.example`
 - Configure obrigatoriamente `DATABASE_URL` (ou `POSTGRES_URL`) apontando para PostgreSQL.
 - Se estiver usando Vercel Postgres, copie `POSTGRES_URL` para `DATABASE_URL` para manter compatibilidade com ambiente local.
 - Em ambientes serverless, mantenha `PG_POOL_MAX` baixo (ex.: `1` a `3`) para evitar excesso de conexoes.
-- Configure obrigatoriamente `NEXTAUTH_SECRET` (ou `AUTH_SECRET`) em Production e Preview.
+- Recomenda-se configurar `NEXTAUTH_SECRET` (ou `AUTH_SECRET`) em Production e Preview.
 
 ### Migrar dados do SQLite para PostgreSQL
 
