@@ -5,7 +5,6 @@ import {
   eachWeekOfInterval,
   differenceInMilliseconds,
   endOfDay,
-  format,
   isWithinInterval,
   startOfDay,
   startOfYear,
@@ -14,6 +13,7 @@ import {
   subYears
 } from "date-fns";
 import type { AccountDTO } from "@/lib/types";
+import { normalizeDateKey } from "@/src/features/shared/utils/dateKey";
 import type {
   AccountsRangeKey,
   AccountsSummary,
@@ -26,14 +26,7 @@ export type DateInterval = {
   start: Date;
   end: Date;
 };
-
-export function normalizeDateKey(value: string | Date): string {
-  if (value instanceof Date) {
-    return format(value, "yyyy-MM-dd");
-  }
-
-  return value.slice(0, 10);
-}
+export { normalizeDateKey };
 
 export function deriveAccountsSummary(accounts: AccountDTO[]): AccountsSummary {
   return accounts.reduce(

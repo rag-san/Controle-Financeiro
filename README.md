@@ -7,7 +7,7 @@ Aplicacao full-stack de controle financeiro pessoal com Next.js + PostgreSQL.
 - Frontend e backend no mesmo projeto (Next App Router + API Routes)
 - Autenticacao com NextAuth (Credentials)
 - Persistencia principal em PostgreSQL (`pg`)
-- Importacao de extrato por CSV, OFX e PDF (PDF: suporte atual para Inter e Mercado Pago)
+- Importacao de extrato por CSV, OFX e PDF (PDF: suporte atual para Inter, Mercado Pago e Nubank)
 - Dashboard, relatorios, contas, categorias, recorrencias e patrimonio
 
 ## Stack
@@ -97,7 +97,8 @@ Arquivo de referencia: `.env.example`
 - `npm run dev`: desenvolvimento (Turbopack)
 - `npm run dev:webpack`: desenvolvimento com webpack
 - `npm run reset:data`: limpa dados operacionais (transacoes/importacoes/relatorios), preserva usuarios/contas/categorias/regras e garante categorias padrao por usuario
-- `npm run reset:data:full`: limpeza total de dados (inclui usuarios, contas, categorias e regras)
+- `npm run reset:data:full`: limpeza operacional ampliada (preserva usuarios, contas, categorias e regras)
+- `npm run reset:data:hard`: limpeza total (inclui usuarios, contas, categorias e regras)
 - `npm run typecheck`: TypeScript sem emitir arquivos
 - `npm run lint`: ESLint (Next)
 - `npm run verify`: typecheck + lint

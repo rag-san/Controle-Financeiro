@@ -9,6 +9,9 @@ Parser de PDF habilitado apenas para layouts validados de:
   - Fatura de cartao (`issuerProfile: inter_invoice`)
 - Mercado Pago:
   - Fatura (`issuerProfile: mercado_pago_invoice`)
+  - Extrato de conta (`issuerProfile: mercado_pago_statement`)
+- Nubank:
+  - Fatura (`issuerProfile: nubank_invoice`)
 
 Regra importante: nao usar parser generico para "adivinhar" qualquer layout.  
 Para bancos nao reconhecidos, retornar erro estruturado e orientar CSV/OFX.
@@ -17,7 +20,7 @@ Para bancos nao reconhecidos, retornar erro estruturado e orientar CSV/OFX.
 
 - [x] Erro estruturado para perfil de emissor nao suportado (`pdf_unsupported_issuer_profile`)
 - [x] Testes unitarios de classificacao por emissor/layout (`tests/unit/pdf-classification.test.ts`)
-- [ ] Adicionar novo banco com parser dedicado e fixture real
+- [x] Adicionar novos emissores com parser dedicado e fixture de integracao (Mercado Pago extrato, Nubank fatura)
 
 ## Como adicionar suporte a um novo banco
 

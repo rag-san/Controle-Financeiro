@@ -9,12 +9,6 @@ type ProfiledQuery = {
   sql: string;
 };
 
-type QueryEvent = {
-  duration: number;
-  target?: string;
-  query: string;
-};
-
 type RequestProfileState = {
   requestId: string;
   route: string;
@@ -45,35 +39,8 @@ function round(value: number): number {
   return Number(value.toFixed(2));
 }
 
-function currentSlowQueryThresholdMs(): number {
-  const raw = Number(process.env.API_PROFILING_SLOW_QUERY_MS ?? "80");
-  return Number.isFinite(raw) && raw > 0 ? raw : 80;
-}
-
-function compactSql(query: string): string {
-  return query.replace(/\s+/g, " ").trim().slice(0, 280);
-}
-
 export function isApiProfilingEnabled(): boolean {
   return parseBooleanFlag(process.env.API_PROFILING);
-}
-
-export function recordPrismaQuery(event: QueryEvent): void {
-  if (!isApiProfilingEnabled()) return;
-
-  const state = requestProfiler.getStore();
-  if (!state) return;
-
-  state.queryCount += 1;
-  state.queryDurationMs += event.duration;
-
-  if (event.duration >= currentSlowQueryThresholdMs()) {
-    state.slowQueries.push({
-      durationMs: event.duration,
-      target: event.target,
-      sql: compactSql(event.query)
-    });
-  }
 }
 
 export async function withRouteProfiling(

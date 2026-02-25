@@ -3,7 +3,6 @@ import {
   eachMonthOfInterval,
   eachWeekOfInterval,
   endOfDay,
-  format,
   isWithinInterval,
   startOfDay,
   startOfYear,
@@ -11,6 +10,7 @@ import {
   subMonths,
   subYears
 } from "date-fns";
+import { normalizeDateKey } from "@/src/features/shared/utils/dateKey";
 import type {
   DateInterval,
   NetWorthEntryDTO,
@@ -23,14 +23,7 @@ function toSafeNumber(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Number(value.toFixed(2));
 }
-
-export function normalizeDateKey(value: string | Date): string {
-  if (value instanceof Date) {
-    return format(value, "yyyy-MM-dd");
-  }
-
-  return value.slice(0, 10);
-}
+export { normalizeDateKey };
 
 export function buildHistorySeries(entries: NetWorthEntryDTO[]): NetWorthPoint[] {
   const groupedByDate = new Map<string, { assets: number; debts: number }>();

@@ -108,19 +108,31 @@ export function TransactionsFiltersBar({
             </span>
           ) : null}
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="sm:hidden"
-          aria-expanded={mobileAdvancedOpen}
-          aria-controls="tx-advanced-filters"
-          onClick={() => setMobileAdvancedOpen((previous) => !previous)}
-          disabled={busy}
-        >
-          {mobileAdvancedOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          {mobileAdvancedOpen ? "Ocultar" : "Mais filtros"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-auto px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+            onClick={onClear}
+            disabled={busy}
+          >
+            Limpar filtros
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="sm:hidden"
+            aria-expanded={mobileAdvancedOpen}
+            aria-controls="tx-advanced-filters"
+            onClick={() => setMobileAdvancedOpen((previous) => !previous)}
+            disabled={busy}
+          >
+            {mobileAdvancedOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {mobileAdvancedOpen ? "Ocultar" : "Mais filtros"}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -237,19 +249,6 @@ export function TransactionsFiltersBar({
             ) : null}
           </div>
         </div>
-      </div>
-
-      <div className="mt-2 flex justify-end">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-auto px-1 py-0 text-sm text-muted-foreground hover:text-foreground"
-          onClick={onClear}
-          disabled={busy}
-        >
-          Limpar filtros
-        </Button>
       </div>
     </section>
   );

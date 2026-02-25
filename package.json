@@ -8,6 +8,7 @@
     "dev:webpack": "next dev",
     "reset:data": "tsx scripts/reset-data.ts",
     "reset:data:full": "tsx scripts/reset-data.ts --full",
+    "reset:data:hard": "tsx scripts/reset-data.ts --full --purge-config",
     "seed": "tsx scripts/seed.ts",
     "validate": "tsx scripts/validate-backend-flow.ts",
     "test": "npm run test:unit && npm run test:integration",

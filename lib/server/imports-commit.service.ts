@@ -16,7 +16,7 @@ export const MAX_IMPORT_COMMIT_ROWS = 5000;
 const CARD_PAYMENT_STATEMENT_PATTERN =
   /\b(?:PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|FATURA\s+CARTAO|PAGAMENTO\s+DE\s+FATURA|CREDIT\s+CARD\s+PAYMENT|PAYMENT\s+OF\s+(?:THE\s+)?CREDIT\s+CARD|FATURA)\b/i;
 const CARD_PAYMENT_INVOICE_SKIP_PATTERN =
-  /\b(?:PAGAMENTO\s+RECEBIDO|PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CREDIT\s+CARD\s+PAYMENT|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
+  /\b(?:PAGAMENTO\s+RECEBIDO|PAGAMENTO\s+EM|PGTO\s+EM|PAGTO\s+EM|PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CREDIT\s+CARD\s+PAYMENT|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
 const CARD_NAME_HINT_PATTERN = /CARTAO|CREDITO|CREDIT/i;
 const INTERNAL_TRANSFER_KEYWORD_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER)\b/i;
 const INTERNAL_TRANSFER_DESCRIPTION_HINT_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER|ENVIO|RECEBIDO)\b/i;
@@ -478,6 +478,7 @@ type ImportDraftRow = {
   transferFromAccountId?: string | null;
   transferToAccountId?: string | null;
   status: "posted";
+  externalId?: string | null;
   importedHash: string;
   raw: Record<string, unknown>;
 };
@@ -506,6 +507,19 @@ function directionFromAmount(amount: number): "in" | "out" {
 
 function toAbsoluteCents(amount: number): number {
   return Math.round(Math.abs(amount) * 100);
+}
+
+function normalizeExternalIdentity(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function buildExternalIdentityKey(accountId: string, externalId: string): string {
+  return `${accountId}|${externalId}`;
 }
 
 function hasInternalTransferKeyword(normalizedDescription: string): boolean {
@@ -637,6 +651,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     amount: number;
     status: "posted";
     transferHashBase: string;
+    externalIdBase: string | null;
+    outExternalId: string | null;
+    inExternalId: string | null;
     outImportedHash: string;
     inImportedHash: string;
     raw: Record<string, unknown>;
@@ -727,6 +744,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       categoryId: row.categoryId ?? null,
       raw: row.raw ?? {}
     });
+    const canonicalExternalId = normalizeExternalIdentity(canonical.externalId ?? row.externalId);
     const installmentRawMetadata = buildInstallmentRawMetadata(canonical.description);
 
     if (
@@ -805,8 +823,10 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           normalizedDescription: canonical.normalizedDescription,
           fromAccountId: fromAccount.id,
           toAccountId: toAccount.id,
-          externalId: row.externalId
+          externalId: canonicalExternalId
         });
+        const outExternalId = canonicalExternalId ? `${canonicalExternalId}:OUT` : null;
+        const inExternalId = canonicalExternalId ? `${canonicalExternalId}:IN` : null;
 
         transferRows.push({
           userId,
@@ -818,6 +838,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           amount: canonical.amount,
           status: "posted",
           transferHashBase,
+          externalIdBase: canonicalExternalId,
+          outExternalId,
+          inExternalId,
           outImportedHash: `${transferHashBase}:OUT`,
           inImportedHash: `${transferHashBase}:IN`,
           raw: {
@@ -847,7 +870,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           amount: canonical.amount,
           normalizedDescription: canonical.normalizedDescription,
           accountId: fromAccount.id,
-          externalId: row.externalId
+          externalId: canonicalExternalId
         });
 
         importRows.push({
@@ -864,6 +887,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           transferFromAccountId: fromAccount.id,
           transferToAccountId: null,
           status: "posted",
+          externalId: canonicalExternalId,
           importedHash,
           raw: {
             ...(canonical.raw ?? {}),
@@ -913,7 +937,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       amount: canonical.amount,
       normalizedDescription: canonical.normalizedDescription,
       accountId: resolvedAccountId,
-      externalId: row.externalId
+      externalId: canonicalExternalId
     });
 
     const draftImportRow: ImportDraftRow = {
@@ -930,6 +954,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       transferFromAccountId: null,
       transferToAccountId: null,
       status: "posted",
+      externalId: canonicalExternalId,
       importedHash,
       raw: {
         ...(canonical.raw ?? {}),
@@ -1027,6 +1052,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
             toAccountId: inLeg.accountId,
             externalId: row.externalId ?? matchedCandidate.externalId
           });
+          const transferExternalId = normalizeExternalIdentity(row.externalId ?? matchedCandidate.externalId);
+          const outExternalId = transferExternalId ? `${transferExternalId}:OUT` : null;
+          const inExternalId = transferExternalId ? `${transferExternalId}:IN` : null;
 
           transferRows.push({
             userId,
@@ -1038,6 +1066,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
             amount: outLeg.amount,
             status: "posted",
             transferHashBase,
+            externalIdBase: transferExternalId,
+            outExternalId,
+            inExternalId,
             outImportedHash: `${transferHashBase}:OUT`,
             inImportedHash: `${transferHashBase}:IN`,
             raw: {
@@ -1088,7 +1119,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         absoluteAmountCents,
         direction: draftImportRow.direction,
         normalizedDescription: draftImportRow.normalizedDescription,
-        externalId: row.externalId
+        externalId: normalizeExternalIdentity(row.externalId) ?? undefined
       });
       continue;
     }
@@ -1117,25 +1148,82 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     ...importRows.map((row) => row.importedHash),
     ...transferRows.flatMap((row) => [row.outImportedHash, row.inImportedHash])
   ];
+  const externalIdentities = [
+    ...importRows
+      .filter((row) => Boolean(row.externalId))
+      .map((row) => ({
+        accountId: row.accountId,
+        externalId: row.externalId as string
+      })),
+    ...transferRows.flatMap((row) => {
+      const pairs: Array<{ accountId: string; externalId: string }> = [];
+      if (row.outExternalId) {
+        pairs.push({
+          accountId: row.fromAccountId,
+          externalId: row.outExternalId
+        });
+      }
+      if (row.inExternalId) {
+        pairs.push({
+          accountId: row.toAccountId,
+          externalId: row.inExternalId
+        });
+      }
+      return pairs;
+    })
+  ];
   const existingHashes = new Set(await transactionsRepo.findImportedHashes(userId, importedHashes));
+  const existingExternalIdentityKeys = new Set(
+    await transactionsRepo.findExistingExternalAccountKeys(userId, externalIdentities)
+  );
   const seenInBatch = new Set<string>();
+  const seenExternalIdentityKeysInBatch = new Set<string>();
   let duplicateInDatabaseCount = 0;
   let duplicateInPayloadCount = 0;
 
   const rowsToCreate = importRows.filter((row) => {
+    const externalIdentityKey = row.externalId
+      ? buildExternalIdentityKey(row.accountId, row.externalId)
+      : null;
+    if (externalIdentityKey && existingExternalIdentityKeys.has(externalIdentityKey)) {
+      duplicateInDatabaseCount += 1;
+      return false;
+    }
     if (existingHashes.has(row.importedHash)) {
       duplicateInDatabaseCount += 1;
+      return false;
+    }
+    if (externalIdentityKey && seenExternalIdentityKeysInBatch.has(externalIdentityKey)) {
+      duplicateInPayloadCount += 1;
       return false;
     }
     if (seenInBatch.has(row.importedHash)) {
       duplicateInPayloadCount += 1;
       return false;
     }
+    if (externalIdentityKey) {
+      seenExternalIdentityKeysInBatch.add(externalIdentityKey);
+    }
     seenInBatch.add(row.importedHash);
     return true;
   });
 
   const transferRowsToCreate = transferRows.filter((row) => {
+    const outExternalIdentityKey = row.outExternalId
+      ? buildExternalIdentityKey(row.fromAccountId, row.outExternalId)
+      : null;
+    const inExternalIdentityKey = row.inExternalId
+      ? buildExternalIdentityKey(row.toAccountId, row.inExternalId)
+      : null;
+
+    const hasDuplicateExternalInDb =
+      (outExternalIdentityKey && existingExternalIdentityKeys.has(outExternalIdentityKey)) ||
+      (inExternalIdentityKey && existingExternalIdentityKeys.has(inExternalIdentityKey));
+    if (hasDuplicateExternalInDb) {
+      duplicateInDatabaseCount += 1;
+      return false;
+    }
+
     const hasDuplicateInDb = existingHashes.has(row.outImportedHash) || existingHashes.has(row.inImportedHash);
     if (hasDuplicateInDb) {
       duplicateInDatabaseCount += 1;
@@ -1148,8 +1236,22 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       return false;
     }
 
+    const hasDuplicateExternalInPayload =
+      (outExternalIdentityKey && seenExternalIdentityKeysInBatch.has(outExternalIdentityKey)) ||
+      (inExternalIdentityKey && seenExternalIdentityKeysInBatch.has(inExternalIdentityKey));
+    if (hasDuplicateExternalInPayload) {
+      duplicateInPayloadCount += 1;
+      return false;
+    }
+
     seenInBatch.add(row.outImportedHash);
     seenInBatch.add(row.inImportedHash);
+    if (outExternalIdentityKey) {
+      seenExternalIdentityKeysInBatch.add(outExternalIdentityKey);
+    }
+    if (inExternalIdentityKey) {
+      seenExternalIdentityKeysInBatch.add(inExternalIdentityKey);
+    }
     return true;
   });
 
@@ -1177,6 +1279,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       isInternalTransfer: true,
       importBatchId: batch.id,
       importedHashBase: row.transferHashBase,
+      externalIdBase: row.externalIdBase,
       raw: row.raw
     });
 

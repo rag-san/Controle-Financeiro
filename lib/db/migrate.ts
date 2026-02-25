@@ -312,6 +312,7 @@ async function runMigrations(): Promise<void> {
   await ensureColumn("transactions", "transfer_peer_tx_id", "TEXT");
   await ensureColumn("transactions", "transfer_from_account_id", "TEXT");
   await ensureColumn("transactions", "transfer_to_account_id", "TEXT");
+  await ensureColumn("transactions", "external_id", "TEXT");
   await ensureColumn("transactions", "direction", "TEXT NOT NULL DEFAULT 'out'");
   await ensureColumn("transactions", "is_internal_transfer", "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("import_events", "internal_transfer_auto_matched", "INTEGER");
@@ -372,7 +373,37 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_transactions_user_transfer_from ON transactions(user_id, transfer_from_account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_user_transfer_to ON transactions(user_id, transfer_to_account_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_user_internal_transfer ON transactions(user_id, is_internal_transfer);
+    CREATE INDEX IF NOT EXISTS idx_transactions_user_account_external_id
+      ON transactions(user_id, account_id, external_id)
+      WHERE external_id IS NOT NULL AND BTRIM(external_id) <> '';
   `);
+
+  if (db.dialect === "postgres") {
+    await db.exec(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_indexes
+          WHERE schemaname = 'public' AND indexname = 'uq_transactions_user_account_external_id'
+        ) THEN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM transactions
+            WHERE external_id IS NOT NULL
+              AND BTRIM(external_id) <> ''
+            GROUP BY user_id, account_id, external_id
+            HAVING COUNT(*) > 1
+          ) THEN
+            CREATE UNIQUE INDEX uq_transactions_user_account_external_id
+              ON transactions(user_id, account_id, external_id)
+              WHERE external_id IS NOT NULL AND BTRIM(external_id) <> '';
+          END IF;
+        END IF;
+      END
+      $$;
+    `);
+  }
 }
 
 export async function migrate(): Promise<void> {

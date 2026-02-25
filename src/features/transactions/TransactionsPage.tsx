@@ -226,6 +226,33 @@ function resolvePeriodFromQuery(value: string | null): TransactionsFiltersState[
   return null;
 }
 
+function formatPeriodDateLabel(value: string): string {
+  if (!value) return "";
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return format(parsed, "dd/MM/yyyy");
+}
+
+function resolveTransactionsPeriodLabel(filters: Pick<TransactionsFiltersState, "period" | "from" | "to">): string {
+  if (filters.period === "7d") return "Ultimos 7 dias";
+  if (filters.period === "30d") return "Ultimos 30 dias";
+  if (filters.period === "90d") return "Ultimos 90 dias";
+  if (filters.period === "this-month") return "Este mes";
+  if (filters.period === "last-month") return "Mes passado";
+  if (filters.period === "all") return "Todo periodo";
+
+  if (filters.period === "custom") {
+    const fromLabel = filters.from ? formatPeriodDateLabel(filters.from) : "";
+    const toLabel = filters.to ? formatPeriodDateLabel(filters.to) : "";
+
+    if (fromLabel && toLabel) return `${fromLabel} a ${toLabel}`;
+    if (fromLabel) return `A partir de ${fromLabel}`;
+    if (toLabel) return `Ate ${toLabel}`;
+  }
+
+  return "Periodo atual";
+}
+
 function isUncategorizedTransaction(transaction: TransactionDTO): boolean {
   if (!transaction.categoryId) {
     return true;
@@ -1014,6 +1041,16 @@ export function TransactionsPage(): React.JSX.Element {
     </>
   );
 
+  const periodLabel = useMemo(
+    () =>
+      resolveTransactionsPeriodLabel({
+        period: filters.period,
+        from: filters.from,
+        to: filters.to
+      }),
+    [filters.period, filters.from, filters.to]
+  );
+
   return (
     <PageShell title="Transações" subtitle="Lancamentos, filtros e categorizacao manual" actions={actions}>
       <ImportTransactionsModal
@@ -1023,11 +1060,17 @@ export function TransactionsPage(): React.JSX.Element {
         onOpenChange={setImportModalOpen}
         onSuccess={async () => {
           await refreshMetaAndData();
+          router.refresh();
         }}
         onAccountsRefresh={() => refreshMetaAndData()}
       />
       <div className="space-y-4">
-        <TransactionsKpiCards income={summary.income} expense={summary.expense} balance={summary.balance} />
+        <TransactionsKpiCards
+          income={summary.income}
+          expense={summary.expense}
+          balance={summary.balance}
+          periodLabel={periodLabel}
+        />
 
         {showCreate ? (
           <TransactionForm
@@ -1081,6 +1124,7 @@ export function TransactionsPage(): React.JSX.Element {
           sortField={sortState.field}
           sortDirection={sortState.direction}
           totalCount={pagination.totalCount}
+          visibleCount={visibleTransactions.length}
           onToggleSort={(field) =>
             setSortState((previous) => {
               if (previous.field === field) {
@@ -1111,6 +1155,8 @@ export function TransactionsPage(): React.JSX.Element {
             });
           }}
           onClearFilters={clearAllFilters}
+          onCreateTransaction={() => setShowCreate(true)}
+          onImportStatement={() => setImportModalOpen(true)}
         />
 
         <BulkCategoryModal
@@ -1138,9 +1184,15 @@ export function TransactionsPage(): React.JSX.Element {
         />
 
         <div className="flex flex-col gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            Pagina {pagination.page} de {pagination.totalPages}
-          </p>
+          <div>
+            <p className="text-sm text-muted-foreground">
+              Mostrando <span className="font-semibold text-foreground">{visibleTransactions.length}</span> de{" "}
+              <span className="font-semibold text-foreground">{pagination.totalCount}</span> resultado(s)
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Pagina {pagination.page} de {pagination.totalPages}
+            </p>
+          </div>
           <div className="flex w-full gap-2 sm:w-auto">
             <Button
               variant="outline"

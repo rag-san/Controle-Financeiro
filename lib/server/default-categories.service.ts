@@ -14,73 +14,254 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
     name: "Moradia",
     color: "#f97316",
     icon: "Home",
-    patterns: ["ALUGUEL", "CONDOMINIO", "IPTU"]
+    patterns: ["ALUGUEL", "ALUG", "CONDOMINIO", "CONDOM", "IPTU", "IMOBILIARIA", "FINANCIAMENTO IMOBILIARIO"]
   },
   {
     name: "Supermercado",
     color: "#10b981",
     icon: "ShoppingCart",
-    patterns: ["SUPERMERCADO", "MERCADO", "ATACADAO", "CARREFOUR", "EXTRA"]
+    patterns: [
+      "SUPERMERCADO",
+      "MERCADO",
+      "ATACADAO",
+      "CARREFOUR",
+      "EXTRA",
+      "MERCADINHO",
+      "PAGUE M",
+      "CASADECARNES",
+      "AGROMIL",
+      "ASSAI",
+      "COOP",
+      "SUPERMERCADOS",
+      "HORTIFRUTI",
+      "ATACAREJO",
+      "QUITANDA"
+    ]
   },
   {
     name: "Restaurantes",
     color: "#a855f7",
     icon: "UtensilsCrossed",
-    patterns: ["IFOOD", "RESTAURANTE", "LANCHONETE", "PIZZARIA", "BURGER"]
+    patterns: [
+      "IFOOD",
+      "RESTAURANTE",
+      "LANCHONETE",
+      "PIZZARIA",
+      "BURGER",
+      "LANCHES",
+      "ACAI",
+      "MILKSHAKE",
+      "SORVETE",
+      "OGGI SORVETES",
+      "IMPERIODOACAI",
+      "PADARIA",
+      "PASTELARIA",
+      "CHURRASCARIA",
+      "MCDONALD",
+      "MC DONALD",
+      "SUBWAY"
+    ]
   },
   {
     name: "Transporte",
     color: "#0ea5e9",
     icon: "Car",
-    patterns: ["UBER", "99APP", "COMBUSTIVEL", "POSTO", "ESTACIONAMENTO"]
+    patterns: [
+      "UBER",
+      "99APP",
+      "99 POP",
+      "COMBUSTIVEL",
+      "POSTO",
+      "ESTACIONAMENTO",
+      "IPIRANGA",
+      "SHELL",
+      "SEM PARAR",
+      "PEDAGIO",
+      "MOBILIDADE"
+    ]
   },
   {
     name: "Utilidades",
     color: "#14b8a6",
     icon: "Zap",
-    patterns: ["ENERGIA", "LUZ", "AGUA", "INTERNET", "VIVO FIBRA", "CLARO"]
+    patterns: [
+      "ENERGIA",
+      "LUZ",
+      "AGUA",
+      "INTERNET",
+      "VIVO FIBRA",
+      "CLARO",
+      "CLARO FLEX",
+      "TIM",
+      "VIVO",
+      "OI",
+      "ENEL",
+      "CPFL",
+      "SABESP",
+      "GAS"
+    ]
   },
   {
     name: "Saude",
     color: "#ef4444",
     icon: "HeartPulse",
-    patterns: ["FARMACIA", "DROGARIA", "HOSPITAL", "CLINICA", "UNIMED"]
+    patterns: [
+      "FARMACIA",
+      "DROGARIA",
+      "HOSPITAL",
+      "CLINICA",
+      "UNIMED",
+      "DROGA RAIA",
+      "DROGASIL",
+      "PAGUE MENOS",
+      "PACHECO",
+      "PANVEL",
+      "LABORATORIO",
+      "ODONTO"
+    ]
   },
   {
     name: "Educacao",
     color: "#6366f1",
     icon: "GraduationCap",
-    patterns: ["ESCOLA", "FACULDADE", "CURSO", "ALURA", "UDEMY"]
+    patterns: ["ESCOLA", "FACULDADE", "CURSO", "ALURA", "UDEMY", "ESTACIO", "UNIP", "KUMON", "IDIOMA", "CURSINHO"]
   },
   {
     name: "Assinaturas",
     color: "#8b5cf6",
     icon: "Repeat",
-    patterns: ["NETFLIX", "SPOTIFY", "DISNEY", "GOOGLE ONE", "YOUTUBE PREMIUM"]
+    patterns: [
+      "NETFLIX",
+      "SPOTIFY",
+      "DISNEY",
+      "GOOGLE ONE",
+      "YOUTUBE PREMIUM",
+      "IFOOD CLUB",
+      "AMAZON PRIME",
+      "PRIME VIDEO",
+      "HBO MAX",
+      "MAX",
+      "GLOBOPLAY",
+      "APPLE.COM/BILL",
+      "ICLOUD",
+      "DEEZER"
+    ]
   },
   {
     name: "Transferencias",
     color: "#64748b",
     icon: "ArrowLeftRight",
-    patterns: ["PIX RECEBIDO", "PIX ENVIADO", "TED", "DOC", "TRANSFERENCIA"]
+    patterns: [
+      "PIX RECEBIDO",
+      "PIX ENVIADO",
+      "TED",
+      "DOC",
+      "TRANSFERENCIA",
+      "TRANSFERENCIA PIX",
+      "TRANSFER PIX",
+      "PAGAMENTO CARTAO DE CREDITO",
+      "PAGAMENTO ON LINE",
+      "PAGAMENTO DA FATURA",
+      "FATURA CARTAO"
+    ]
   },
   {
     name: "Investimentos",
     color: "#22c55e",
     icon: "TrendingUp",
-    patterns: ["INVESTIMENTO", "CDB", "TESOURO", "CORRETORA", "B3"]
+    patterns: [
+      "INVESTIMENTO",
+      "CDB",
+      "TESOURO",
+      "CORRETORA",
+      "B3",
+      "RESERVA POR GASTOS",
+      "DINHEIRO RESERVADO",
+      "DINHEIRO RETIRADO FUTURO",
+      "NU INVEST",
+      "INTER INVEST",
+      "XP INVEST",
+      "RENDA FIXA",
+      "FII",
+      "FUNDO IMOBILIARIO",
+      "ACOES",
+      "ETF"
+    ]
   },
   {
     name: "Lazer",
     color: "#ec4899",
     icon: "PartyPopper",
-    patterns: ["CINEMA", "SHOW", "TEATRO", "PARQUE"]
+    patterns: ["CINEMA", "SHOW", "TEATRO", "PARQUE", "PLAYSTATION", "STEAM", "XBOX", "EPIC GAMES", "BOLICHE"]
   },
   {
     name: "Renda",
     color: "#16a34a",
     icon: "Wallet",
-    patterns: ["SALARIO", "PROVENTO", "FREELA", "RENDIMENTO"]
+    patterns: [
+      "SALARIO",
+      "PROVENTO",
+      "FREELA",
+      "RENDIMENTO",
+      "RENDIMENTOS",
+      "MELI DOLAR",
+      "DIVIDENDO",
+      "BONIFICACAO",
+      "PRO LABORE",
+      "REEMBOLSO"
+    ]
+  },
+  {
+    name: "Seguros e Protecao",
+    color: "#0f766e",
+    icon: "Shield",
+    patterns: [
+      "MAPFRE",
+      "SEGURO",
+      "SEGURADORA",
+      "PORTO SEGURO",
+      "TOKIO MARINE",
+      "SULAMERICA",
+      "BRADESCO SEGUROS",
+      "AZUL SEGUROS",
+      "ITAU SEGUROS"
+    ]
+  },
+  {
+    name: "Taxas e Encargos",
+    color: "#475569",
+    icon: "Receipt",
+    patterns: [
+      "IOF",
+      "JUROS DE MORA",
+      "ENCARGOS ROTATIVO",
+      "MULTA POR ATRASO",
+      "TARIFA",
+      "ANUIDADE",
+      "TARIFA BANCARIA",
+      "ENCARGO",
+      "JUROS",
+      "MORA",
+      "ROTATIVO"
+    ]
+  },
+  {
+    name: "Financiamentos e Consorcios",
+    color: "#334155",
+    icon: "Landmark",
+    patterns: [
+      "FINANCIAM",
+      "FINANCIAMENTO",
+      "CONSORCIO",
+      "ANCORA ADMINISTRADORA",
+      "SANTANDER SOCIEDADE DE CREDITO",
+      "LIMITE CONVERTIDO EM SALDO",
+      "EMPRESTIMO",
+      "CREDITO PESSOAL",
+      "CONSIGNADO",
+      "PARCELAMENTO DE COMPRA",
+      "AMORTIZACAO"
+    ]
   }
 ];
 

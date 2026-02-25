@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { CheckCircle2, Info, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type ToastVariant = "success" | "error" | "info";
@@ -27,9 +27,16 @@ type ToastContextValue = {
 };
 
 const toastStyleByVariant: Record<ToastVariant, string> = {
-  info: "border-border bg-card text-foreground",
-  success: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200",
-  error: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200"
+  info: "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900/60 dark:bg-slate-950 dark:text-sky-100",
+  success:
+    "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-slate-950 dark:text-emerald-100",
+  error: "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-900/60 dark:bg-slate-950 dark:text-rose-100"
+};
+
+const toastIconByVariant: Record<ToastVariant, React.ComponentType<{ className?: string }>> = {
+  info: Info,
+  success: CheckCircle2,
+  error: TriangleAlert
 };
 
 const ToastContext = React.createContext<ToastContextValue | null>(null);
@@ -77,7 +84,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }): Reac
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed right-4 top-4 z-[120] flex w-[min(92vw,22rem)] flex-col gap-2">
+      <div className="pointer-events-none fixed right-3 top-3 z-[220] flex w-[min(92vw,22rem)] flex-col gap-2 sm:right-4 sm:top-4">
         {toasts.map((item) => (
           <div
             key={item.id}
@@ -89,9 +96,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }): Reac
             )}
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="space-y-0.5">
-                {item.title ? <p className="text-sm font-semibold">{item.title}</p> : null}
-                <p className="text-sm">{item.description}</p>
+              <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                {React.createElement(toastIconByVariant[item.variant], {
+                  className: "mt-0.5 h-4 w-4 shrink-0 opacity-90"
+                })}
+                <div className="min-w-0 space-y-0.5">
+                  {item.title ? <p className="text-sm font-semibold">{item.title}</p> : null}
+                  <p className="text-sm">{item.description}</p>
+                </div>
               </div>
               <button
                 type="button"

@@ -263,6 +263,7 @@ export const transactionsRepo = {
     type: "income" | "expense" | "transfer";
     status: "posted" | "pending";
     importBatchId?: string | null;
+    externalId?: string | null;
     importedHash?: string | null;
     transferGroupId?: string | null;
     transferPeerTxId?: string | null;
@@ -279,12 +280,13 @@ export const transactionsRepo = {
     const transferToAccountId = input.type === "transfer" ? (input.transferToAccountId ?? null) : null;
     const direction = input.direction ?? directionFromAmount(input.amount);
     const isInternalTransfer = input.type === "transfer" ? (input.isInternalTransfer ?? true) : false;
+    const externalId = input.externalId?.trim() ? input.externalId.trim().toUpperCase() : null;
 
     await db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, direction, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.userId,
@@ -299,6 +301,7 @@ export const transactionsRepo = {
       direction,
       toDbBoolean(isInternalTransfer),
       input.status,
+      externalId,
       input.importedHash ?? null,
       input.transferGroupId ?? null,
       input.transferPeerTxId ?? null,
@@ -324,6 +327,7 @@ export const transactionsRepo = {
       amount: number;
       type: "income" | "expense" | "transfer";
       status: "posted" | "pending";
+      externalId?: string | null;
       importedHash?: string | null;
       transferGroupId?: string | null;
       transferPeerTxId?: string | null;
@@ -342,8 +346,8 @@ export const transactionsRepo = {
     const insert = db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, direction, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const run = db.transaction(async () => {
@@ -354,6 +358,7 @@ export const transactionsRepo = {
         const transferToAccountId = row.type === "transfer" ? (row.transferToAccountId ?? null) : null;
         const direction = row.direction ?? directionFromAmount(row.amount);
         const isInternalTransfer = row.type === "transfer" ? (row.isInternalTransfer ?? true) : false;
+        const externalId = row.externalId?.trim() ? row.externalId.trim().toUpperCase() : null;
         await insert.run(
           createId(),
           row.userId,
@@ -368,6 +373,7 @@ export const transactionsRepo = {
           direction,
           toDbBoolean(isInternalTransfer),
           row.status,
+          externalId,
           row.importedHash ?? null,
           row.transferGroupId ?? null,
           row.transferPeerTxId ?? null,
@@ -397,6 +403,7 @@ export const transactionsRepo = {
     isInternalTransfer?: boolean;
     importBatchId?: string | null;
     importedHashBase?: string | null;
+    externalIdBase?: string | null;
     raw?: Record<string, unknown> | null;
   }): Promise<{
     created: boolean;
@@ -419,6 +426,9 @@ export const transactionsRepo = {
     const importedHashBase = input.importedHashBase?.trim() ? input.importedHashBase.trim() : null;
     const outImportedHash = importedHashBase ? `${importedHashBase}:OUT` : null;
     const inImportedHash = importedHashBase ? `${importedHashBase}:IN` : null;
+    const externalIdBase = input.externalIdBase?.trim() ? input.externalIdBase.trim().toUpperCase() : null;
+    const outExternalId = externalIdBase ? `${externalIdBase}:OUT` : null;
+    const inExternalId = externalIdBase ? `${externalIdBase}:IN` : null;
 
     const duplicateResult = {
       created: false as const,
@@ -472,6 +482,27 @@ export const transactionsRepo = {
           }
         }
 
+        if (outExternalId && inExternalId) {
+          const existingByExternalId = (await db
+            .prepare(
+              `SELECT id
+               FROM transactions
+               WHERE user_id = ?
+                 AND (
+                   (account_id = ? AND external_id = ?)
+                   OR (account_id = ? AND external_id = ?)
+                 )
+               LIMIT 1`
+            )
+            .get(input.userId, input.fromAccountId, outExternalId, input.toAccountId, inExternalId)) as
+            | { id: string }
+            | undefined;
+
+          if (existingByExternalId) {
+            return duplicateResult;
+          }
+        }
+
         const transferGroupId = createId();
         const outTxId = createId();
         const inTxId = createId();
@@ -481,8 +512,8 @@ export const transactionsRepo = {
         const insert = db.prepare(
           `INSERT INTO transactions (
              id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-             amount_cents, currency, type, direction, is_internal_transfer, status, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', ${TX_TRANSFER_LITERAL_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
+             amount_cents, currency, type, direction, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', ${TX_TRANSFER_LITERAL_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
         );
 
         await insert.run(
@@ -497,6 +528,7 @@ export const transactionsRepo = {
           "out",
           toDbBoolean(isInternalTransfer),
           input.status,
+          outExternalId,
           outImportedHash,
           transferGroupId,
           input.fromAccountId,
@@ -523,6 +555,7 @@ export const transactionsRepo = {
           "in",
           toDbBoolean(isInternalTransfer),
           input.status,
+          inExternalId,
           inImportedHash,
           transferGroupId,
           input.fromAccountId,
@@ -556,10 +589,9 @@ export const transactionsRepo = {
       });
     } catch (error) {
       if (
-        outImportedHash &&
-        inImportedHash &&
         error instanceof Error &&
-        error.message.toLowerCase().includes("unique")
+        error.message.toLowerCase().includes("unique") &&
+        ((outImportedHash && inImportedHash) || (outExternalId && inExternalId))
       ) {
         return duplicateResult;
       }
@@ -818,6 +850,59 @@ export const transactionsRepo = {
       .all(userId, ...hashes)) as Array<{ imported_hash: string | null }>;
 
     return rows.map((row) => row.imported_hash).filter((value): value is string => Boolean(value));
+  },
+
+  async findExistingExternalAccountKeys(
+    userId: string,
+    identities: Array<{ accountId: string; externalId: string }>
+  ): Promise<string[]> {
+    const normalizedInput = new Set<string>();
+    const accountIds = new Set<string>();
+    const externalIds = new Set<string>();
+
+    for (const item of identities) {
+      const accountId = item.accountId?.trim();
+      const externalId = item.externalId?.trim().toUpperCase();
+      if (!accountId || !externalId) continue;
+      const key = `${accountId}|${externalId}`;
+      normalizedInput.add(key);
+      accountIds.add(accountId);
+      externalIds.add(externalId);
+    }
+
+    if (normalizedInput.size === 0) {
+      return [];
+    }
+
+    const accountPlaceholders = [...accountIds].map(() => "?").join(",");
+    const externalPlaceholders = [...externalIds].map(() => "?").join(",");
+    const rows = (await db
+      .prepare(
+        `SELECT account_id, external_id
+         FROM (
+           SELECT account_id, UPPER(external_id) AS external_id
+           FROM transactions
+           WHERE user_id = ?
+             AND account_id IN (${accountPlaceholders})
+             AND UPPER(external_id) IN (${externalPlaceholders})
+         ) AS normalized_external`
+      )
+      .all(userId, ...accountIds, ...externalIds)) as Array<{
+      account_id: string;
+      external_id: string | null;
+    }>;
+
+    return [
+      ...new Set(
+        rows
+          .map((row) => {
+            if (!row.external_id) return null;
+            const key = `${row.account_id}|${row.external_id}`;
+            return normalizedInput.has(key) ? key : null;
+          })
+          .filter((value): value is string => Boolean(value))
+      )
+    ];
   },
 
   async countByAccount(userId: string, accountId: string): Promise<number> {

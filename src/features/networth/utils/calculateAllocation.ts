@@ -1,5 +1,5 @@
-import { format } from "date-fns";
 import type { AccountDTO } from "@/lib/types";
+import { normalizeDateKey } from "@/src/features/shared/utils/dateKey";
 import type {
   AllocationFallbackSource,
   AllocationHistoryPoint,
@@ -41,14 +41,6 @@ const fallbackPalette = [
 function toSafeCurrency(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Number(value.toFixed(2));
-}
-
-function normalizeDateKey(value: string | Date): string {
-  if (value instanceof Date) {
-    return format(value, "yyyy-MM-dd");
-  }
-
-  return value.slice(0, 10);
 }
 
 function hashString(value: string): number {

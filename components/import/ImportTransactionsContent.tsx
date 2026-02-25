@@ -184,7 +184,7 @@ function formatShortDate(value: string): string {
 }
 
 const PDF_PARSE_UNAVAILABLE_MESSAGE =
-  "Suporte de PDF atual: Banco Inter e Mercado Pago. Para outros bancos, use CSV/OFX.";
+  "Nao foi possivel ler este PDF automaticamente. Suporte atual: Inter (extrato/fatura), Mercado Pago (extrato/fatura) e Nubank (fatura). Se persistir, use CSV/OFX ou envie o layout para suporte.";
 const PDF_PASSWORD_REQUIRED_MESSAGE = "Este PDF parece protegido por senha. Informe a senha e tente novamente.";
 
 function getFileExtension(filename: string): string {
@@ -634,6 +634,15 @@ export const ImportTransactionsContent = forwardRef<
 
       if (onAccountsRefresh) {
         await onAccountsRefresh();
+      }
+
+      if (file) {
+        const mappingOverride = Object.fromEntries(
+          Object.entries(mapping).filter(([, value]) => typeof value === "string" && value.trim().length > 0)
+        ) as Record<string, string>;
+
+        lastCompletedParseSignatureRef.current = null;
+        await parseFile(file, Object.keys(mappingOverride).length > 0 ? mappingOverride : undefined);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao criar conta.";

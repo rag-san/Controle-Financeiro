@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { parseFlexibleDate } from "@/lib/normalize";
 import { parseMoneyInput } from "@/lib/money";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
@@ -24,31 +25,34 @@ export type ParsedPdfRow = {
 
 type ParsedPdfCandidate = {
   date: Date;
+  balanceAfter?: number | null;
   description: string;
   amount: number;
   type: "income" | "expense" | "transfer";
+  externalId?: string;
+  accountHint?: string;
   raw: {
     line: string;
     dateText: string;
     amountText: string;
+    [key: string]: unknown;
   };
 };
 
-type ParsedLine = {
-  date: Date;
-  description: string;
-  amount: number;
-  type: "income" | "expense" | "transfer";
-  dateText: string;
-  amountText: string;
-};
-
 export type PdfDocumentType = "bank_statement" | "credit_card_invoice" | "unknown";
-export type PdfIssuerProfile = "inter_statement" | "inter_invoice" | "mercado_pago_invoice" | "unknown";
+export type PdfIssuerProfile =
+  | "inter_statement"
+  | "inter_invoice"
+  | "mercado_pago_invoice"
+  | "mercado_pago_statement"
+  | "nubank_invoice"
+  | "unknown";
 export const SUPPORTED_PDF_ISSUER_PROFILES: PdfIssuerProfile[] = [
   "inter_statement",
   "inter_invoice",
-  "mercado_pago_invoice"
+  "mercado_pago_invoice",
+  "mercado_pago_statement",
+  "nubank_invoice"
 ];
 export type PdfImportErrorCode =
   | "password_required"
@@ -87,14 +91,9 @@ export class PdfImportError extends Error {
   }
 }
 
-const dateRegex = /\b(\d{2}\/\d{2}\/\d{2,4}|\d{4}-\d{2}-\d{2})\b/;
-const amountTokenPattern = String.raw`[+-]?\s*(?:R\$\s*)?(?:\d{1,3}(?:[.,]\d{3})+|\d+)(?:[.,]\d{2})(?:\s*[CD])?`;
-const amountWithCurrencyPattern = /[-+]?\s*R\$\s*\d{1,3}(?:\.\d{3})*,\d{2}/gi;
+const amountWithCurrencyPattern =
+  /(?:[-+]?\s*R\$\s*|R\$\s*[-+]?\s*)(?:\d{1,3}(?:\.\d{3})*|\d+),\d{2}/gi;
 const ignoreDescriptionRegex = /\b(SALDO\s+ANTERIOR|SALDO\s+FINAL|SALDO\s+DISPON[IÍ]VEL|SALDO\s+DO\s+DIA)\b/i;
-const PDFJS_WORKER_MODULE_SPECIFIER = "pdfjs-dist/legacy/build/pdf.worker.mjs";
-
-let pdfWorkerConfigured = false;
-
 const portugueseMonthMap: Record<string, number> = {
   janeiro: 1,
   jan: 1,
@@ -122,6 +121,8 @@ const portugueseMonthMap: Record<string, number> = {
   dez: 12
 };
 
+const localRequire = createRequire(import.meta.url);
+
 function normalizeLine(line: string): string {
   return normalizeImportText(fixCommonMojibake(line), {
     uppercase: false,
@@ -135,17 +136,6 @@ function normalizeLine(line: string): string {
 
 function normalizeText(value: string): string {
   return normalizeImportTextForMatch(value);
-}
-
-function normalizeShortDate(value: string): string {
-  if (!/^\d{2}\/\d{2}\/\d{2}$/.test(value)) {
-    return value;
-  }
-
-  const [dd, mm, yy] = value.split("/");
-  const year = Number(yy);
-  const fullYear = year >= 70 ? `19${yy}` : `20${yy}`;
-  return `${dd}/${mm}/${fullYear}`;
 }
 
 function parsePortugueseMonthToken(monthToken: string): number | null {
@@ -170,101 +160,6 @@ function parsePortugueseWordDate(day: number, monthToken: string, year: number):
   return parseFlexibleDate(`${dayText}/${monthText}/${year}`);
 }
 
-function resolveSignedAmount(amountText: string, line: string): number {
-  const normalizedText = amountText.toUpperCase();
-  const raw = parseMoneyInput(normalizedText.replace(/[CD]$/i, "").trim());
-
-  const hasNegativeMarker = normalizedText.includes("-") || /\bD\b$/i.test(normalizedText);
-  const hasPositiveMarker = normalizedText.includes("+") || /\bC\b$/i.test(normalizedText);
-
-  if (hasNegativeMarker) return raw > 0 ? -raw : raw;
-  if (hasPositiveMarker) return raw < 0 ? Math.abs(raw) : raw;
-
-  const lowered = line.toLowerCase();
-  if (/\b(debito|d[ée]bito|sa[ií]da|compra|pagamento|tarifa|pix enviado)\b/.test(lowered)) {
-    return raw > 0 ? -raw : raw;
-  }
-  if (/\b(credito|cr[ée]dito|entrada|dep[oó]sito|pix recebido)\b/.test(lowered)) {
-    return raw < 0 ? Math.abs(raw) : raw;
-  }
-
-  return raw;
-}
-
-function pickAmountToken(line: string): string | null {
-  const matches = [...line.matchAll(new RegExp(amountTokenPattern, "gi"))]
-    .map((match) => match[0]?.trim())
-    .filter(Boolean) as string[];
-  if (matches.length === 0) return null;
-  if (matches.length === 1) return matches[0];
-
-  const explicit = matches.find((token) => /[+-]/.test(token) || /\b[CD]\b$/i.test(token));
-  if (explicit) return explicit;
-
-  return matches[0];
-}
-
-function parseLineToTransaction(line: string): ParsedLine | null {
-  const dateMatch = line.match(dateRegex);
-  if (!dateMatch?.[1]) return null;
-
-  const amountText = pickAmountToken(line);
-  if (!amountText) return null;
-
-  const normalizedDateText = normalizeShortDate(dateMatch[1]);
-  const date = parseFlexibleDate(normalizedDateText);
-  const amount = resolveSignedAmount(amountText, line);
-  if (!Number.isFinite(amount) || Math.abs(amount) < 0.01) return null;
-
-  const description = normalizeLine(
-    line
-      .replace(dateMatch[1], " ")
-      .replace(new RegExp(amountTokenPattern, "gi"), " ")
-      .replace(/\b[CD]\b$/i, " ")
-  );
-
-  if (!description || ignoreDescriptionRegex.test(description)) {
-    return null;
-  }
-
-  return {
-    date,
-    description,
-    amount,
-    type: amount >= 0 ? "income" : "expense",
-    dateText: normalizedDateText,
-    amountText
-  };
-}
-
-function collectCandidateLines(text: string): string[] {
-  const lines = text.split(/\r?\n/).map(normalizeLine).filter((line) => line.length > 0);
-  const candidates: string[] = [];
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (!dateRegex.test(line)) {
-      continue;
-    }
-
-    if (new RegExp(amountTokenPattern, "i").test(line)) {
-      candidates.push(line);
-      continue;
-    }
-
-    const nextLine = lines[index + 1];
-    if (nextLine) {
-      const combined = `${line} ${nextLine}`;
-      if (new RegExp(amountTokenPattern, "i").test(combined)) {
-        candidates.push(combined);
-        index += 1;
-      }
-    }
-  }
-
-  return candidates;
-}
-
 export function classifyPdfText(text: string): {
   documentType: PdfDocumentType;
   issuerProfile: PdfIssuerProfile;
@@ -272,8 +167,13 @@ export function classifyPdfText(text: string): {
   const normalized = normalizeText(text);
   const hasInter = normalized.includes("BANCO INTER");
   const hasMercadoPago = normalized.includes("MERCADO PAGO");
+  const hasNubank = normalized.includes("NUBANK") || normalized.includes(" APP DO NU");
   const hasInvoiceHints = normalized.includes("FATURA") && normalized.includes("VENCIMENTO");
   const hasStatementHints = normalized.includes("SALDO DO DIA") || normalized.includes("EXTRATO CONTA CORRENTE");
+  const hasMercadoPagoStatementHints =
+    normalized.includes("EXTRATO DE CONTA") &&
+    normalized.includes("DETALHE DOS MOVIMENTOS") &&
+    normalized.includes("ID DA OPERACAO");
 
   if (hasInter && normalized.includes("DESPESAS DA FATURA")) {
     return {
@@ -293,6 +193,20 @@ export function classifyPdfText(text: string): {
     return {
       documentType: "credit_card_invoice",
       issuerProfile: "mercado_pago_invoice"
+    };
+  }
+
+  if (hasMercadoPago && hasMercadoPagoStatementHints) {
+    return {
+      documentType: "bank_statement",
+      issuerProfile: "mercado_pago_statement"
+    };
+  }
+
+  if (hasNubank && hasInvoiceHints) {
+    return {
+      documentType: "credit_card_invoice",
+      issuerProfile: "nubank_invoice"
     };
   }
 
@@ -519,6 +433,240 @@ function parseMercadoPagoInvoiceTransactions(
   return rows;
 }
 
+function normalizeMoneyTokenForParse(value: string): string {
+  return value.replace(/−/g, "-").replace(/\s+/g, " ").trim();
+}
+
+function shouldIgnoreMercadoPagoStatementLine(line: string): boolean {
+  if (!line) return true;
+  if (/^--\s*\d+\s*of\s*\d+\s*--$/i.test(line)) return true;
+  if (/^Data de gera[cç][aã]o:/i.test(line)) return true;
+  if (/^EXTRATO DE CONTA$/i.test(normalizeText(line))) return true;
+  if (/^DETALHE DOS MOVIMENTOS$/i.test(normalizeText(line))) return true;
+  if (/^Data Descri[cç][aã]o ID da opera[cç][aã]o Valor Saldo$/i.test(line)) return true;
+  if (/^Saldo (inicial|final):/i.test(line)) return true;
+  if (/^CPF\/CNPJ:/i.test(line)) return true;
+  if (/^Ag[eê]ncia:/i.test(line)) return true;
+  if (/^Periodo:/i.test(line)) return true;
+  if (/^Entradas:/i.test(line)) return true;
+  if (/^Sa[ií]das:/i.test(line)) return true;
+  if (/^Voc[eê]\s+tem\s+alguma\s+d[uú]vida/i.test(line)) return true;
+  if (/^Mercado Pago Institui[cç][aã]o de Pagamento/i.test(line)) return true;
+  return false;
+}
+
+function parseMercadoPagoStatementEntry(entry: string): ParsedPdfCandidate | null {
+  const dateMatch = entry.match(/^(\d{2}-\d{2}-\d{4})\s+/);
+  if (!dateMatch?.[1]) return null;
+
+  const amountMatches = [...entry.matchAll(amountWithCurrencyPattern)];
+  if (amountMatches.length < 2) {
+    return null;
+  }
+
+  const amountText = amountMatches[0][0];
+  const balanceText = amountMatches[1][0];
+  const amountIndex = entry.indexOf(amountText);
+  if (amountIndex <= 0) {
+    return null;
+  }
+
+  const afterDate = entry.slice(dateMatch[0].length, amountIndex).trim();
+  const idMatch = afterDate.match(/(\d{6,})\s*$/);
+  const description = (idMatch ? afterDate.slice(0, idMatch.index) : afterDate).trim();
+
+  if (!description) return null;
+  if (/^Data\s+Descri[cç][aã]o/i.test(description)) return null;
+
+  const amount = parseMoneyInput(normalizeMoneyTokenForParse(amountText));
+  if (!Number.isFinite(amount) || Math.abs(amount) < 0.01) {
+    return null;
+  }
+
+  const balanceAfter = parseMoneyInput(normalizeMoneyTokenForParse(balanceText));
+  const date = parseFlexibleDate(dateMatch[1].replace(/-/g, "/"));
+  const operationId = idMatch?.[1] ?? null;
+
+  return {
+    date,
+    balanceAfter,
+    description,
+    amount,
+    type: amount >= 0 ? "income" : "expense",
+    externalId: operationId ?? undefined,
+    raw: {
+      line: entry,
+      dateText: dateMatch[1],
+      amountText,
+      balanceText,
+      operationId
+    }
+  };
+}
+
+function parseMercadoPagoStatementTransactions(text: string): ParsedPdfCandidate[] {
+  const lines = text.split(/\r?\n/).map(normalizeLine).filter(Boolean);
+  const rows: ParsedPdfCandidate[] = [];
+  const seen = new Set<string>();
+  let pendingParts: string[] = [];
+
+  const flushPending = (): void => {
+    if (pendingParts.length === 0) return;
+    const entry = pendingParts.join(" ").replace(/\s+/g, " ").trim();
+    pendingParts = [];
+    if (!entry) return;
+
+    const parsed = parseMercadoPagoStatementEntry(entry);
+    if (!parsed) return;
+
+    const operationId =
+      typeof parsed.raw.operationId === "string" ? parsed.raw.operationId : "";
+    const fallbackDescription = normalizeText(parsed.description);
+    const dedupeKey = `${parsed.raw.dateText}|${operationId || fallbackDescription}|${parsed.raw.amountText}`;
+    if (seen.has(dedupeKey)) {
+      return;
+    }
+    seen.add(dedupeKey);
+    rows.push(parsed);
+  };
+
+  for (const line of lines) {
+    if (shouldIgnoreMercadoPagoStatementLine(line)) {
+      flushPending();
+      continue;
+    }
+
+    if (/^\d{2}-\d{2}-\d{4}\b/.test(line)) {
+      flushPending();
+      pendingParts = [line];
+      continue;
+    }
+
+    if (pendingParts.length > 0) {
+      pendingParts.push(line);
+    }
+  }
+
+  flushPending();
+
+  return rows;
+}
+
+function isNubankMonthLine(value: string): RegExpMatchArray | null {
+  return value.match(/^(\d{2})\s+([A-Za-zÀ-ÿ.]{3,10})\s+(.+)$/i);
+}
+
+function resolveInvoiceYearForMonth(
+  month: number,
+  dueDate: Date | null
+): number {
+  const dueMonth = dueDate ? dueDate.getMonth() + 1 : null;
+  const dueYear = dueDate ? dueDate.getFullYear() : new Date().getFullYear();
+
+  if (dueMonth && month > dueMonth) {
+    return dueYear - 1;
+  }
+
+  return dueYear;
+}
+
+function parseNubankInvoiceTransactions(text: string, dueDate: Date | null): ParsedPdfCandidate[] {
+  const lines = text.split(/\r?\n/).map(normalizeLine).filter(Boolean);
+  const rows: ParsedPdfCandidate[] = [];
+  let pending:
+    | {
+        day: number;
+        monthToken: string;
+        description: string;
+        line: string;
+      }
+    | null = null;
+
+  const flushPending = (amountText: string): void => {
+    if (!pending) return;
+
+    const day = pending.day;
+    const month = parsePortugueseMonthToken(pending.monthToken);
+    if (!month) {
+      pending = null;
+      return;
+    }
+
+    const year = resolveInvoiceYearForMonth(month, dueDate);
+    const date = parseFlexibleDate(
+      `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`
+    );
+    const normalizedDescription = normalizeText(pending.description);
+    const isPaymentLine =
+      /\bPAGAMENTO\s+EM\b/.test(normalizedDescription) ||
+      /\bPAGAMENTO\s+RECEBIDO\b/.test(normalizedDescription);
+    const isCreditLine = /\b(ESTORNO|CREDITO|DEVOLUCAO|AJUSTE A FAVOR)\b/.test(normalizedDescription);
+    const absolute = Math.abs(parseMoneyInput(normalizeMoneyTokenForParse(amountText)));
+
+    if (!Number.isFinite(absolute) || Math.abs(absolute) < 0.01) {
+      pending = null;
+      return;
+    }
+
+    const amount = isPaymentLine || isCreditLine ? absolute : -absolute;
+    rows.push({
+      date,
+      description: pending.description,
+      amount,
+      type: amount >= 0 ? "income" : "expense",
+      raw: {
+        line: pending.line,
+        dateText: `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`,
+        amountText
+      }
+    });
+
+    pending = null;
+  };
+
+  for (const line of lines) {
+    if (/^--\s*\d+\s*of\s*\d+\s*--$/i.test(line)) continue;
+    if (/^\d+\s+de\s+\d+$/i.test(normalizeText(line))) continue;
+    if (/^(FATURA|RESUMO DA FATURA|PROXIMAS FATURAS|LIMITES DISPONIVEIS|VALOR MAXIMO)/i.test(normalizeText(line))) {
+      continue;
+    }
+    if (/^TRANSA(C|Ç)OES?\s+DE\s+/i.test(normalizeText(line))) continue;
+    if (/^Total a pagar:/i.test(line)) continue;
+
+    if (pending && /^[−-]?\s*R\$\s*[\d.,]+$/i.test(line)) {
+      flushPending(line);
+      continue;
+    }
+
+    const inline = line.match(
+      /^(\d{2})\s+([A-Za-zÀ-ÿ.]{3,10})\s+(.+?)\s+([−-]?\s*R\$\s*[\d.,]+)$/i
+    );
+    if (inline) {
+      pending = {
+        day: Number(inline[1]),
+        monthToken: inline[2],
+        description: inline[3].trim(),
+        line
+      };
+      flushPending(inline[4]);
+      continue;
+    }
+
+    const monthLine = isNubankMonthLine(line);
+    if (monthLine) {
+      pending = {
+        day: Number(monthLine[1]),
+        monthToken: monthLine[2],
+        description: monthLine[3].trim(),
+        line
+      };
+      continue;
+    }
+  }
+
+  return rows;
+}
+
 function extractPeriodMetadata(text: string): { from: string; to: string } | null {
   const match = text.match(/Per[ií]odo:\s*(\d{2}\/\d{2}\/\d{4})\s+a\s+(\d{2}\/\d{2}\/\d{4})/i);
   if (!match) return null;
@@ -530,9 +678,31 @@ function extractPeriodMetadata(text: string): { from: string; to: string } | nul
 
 function extractDueDateMetadata(text: string): Date | null {
   const match = text.match(/Vencimento:\s*(\d{2}\/\d{2}\/\d{4})/i);
-  if (!match?.[1]) return null;
+  if (match?.[1]) {
+    try {
+      return parseFlexibleDate(match[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  const monthTextMatch = text.match(/Data de vencimento:\s*(\d{2})\s+([A-Za-zÀ-ÿ.]{3,10})\s+(\d{4})/i);
+  if (!monthTextMatch?.[1] || !monthTextMatch[2] || !monthTextMatch[3]) {
+    return null;
+  }
+
+  const day = Number(monthTextMatch[1]);
+  const month = parsePortugueseMonthToken(monthTextMatch[2]);
+  const year = Number(monthTextMatch[3]);
+
+  if (!month) {
+    return null;
+  }
+
   try {
-    return parseFlexibleDate(match[1]);
+    return parseFlexibleDate(
+      `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`
+    );
   } catch {
     return null;
   }
@@ -654,79 +824,109 @@ function extractTextFromSimplePdfBuffer(buffer: Buffer): string | null {
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
-export function parseTransactionsFromPdfText(text: string): ParsedPdfCandidate[] {
-  const rows: ParsedPdfCandidate[] = [];
-  const candidates = collectCandidateLines(text);
-
-  for (const line of candidates) {
-    const parsed = parseLineToTransaction(line);
-    if (!parsed) {
-      continue;
-    }
-
-    rows.push({
-      date: parsed.date,
-      description: parsed.description,
-      amount: parsed.amount,
-      type: parsed.type,
-      raw: {
-        line,
-        dateText: parsed.dateText,
-        amountText: parsed.amountText
-      }
-    });
-  }
-
-  return rows;
-}
-
-async function loadPdfParseCtor(): Promise<new (params: { data: Buffer; password?: string }) => {
-  getText: (params: { lineEnforce: boolean }) => Promise<{ text: string }>;
+type PdfParseClassInstance = {
+  getText: (params: { lineEnforce: boolean }) => Promise<{ text?: string }>;
   destroy: () => Promise<void>;
-}> {
-  const imported = (await import("pdf-parse")) as Record<string, unknown>;
+};
 
-  const candidate =
-    (typeof imported.PDFParse === "function" ? imported.PDFParse : null) ??
-    (typeof (imported.default as Record<string, unknown> | undefined)?.PDFParse === "function"
-      ? (imported.default as Record<string, unknown>).PDFParse
-      : null) ??
-    (typeof imported.default === "function" ? imported.default : null);
+type PdfParseClassCtor = new (params: { data: Buffer; password?: string }) => PdfParseClassInstance;
 
-  if (!candidate) {
-    throw new PdfImportError("parser_unavailable", "Modulo pdf-parse indisponivel neste ambiente.");
+type PdfParseFunctionResult = {
+  text?: string;
+};
+
+type PdfParseFunction = (
+  data: Buffer,
+  options?: {
+    password?: string;
+  }
+) => Promise<PdfParseFunctionResult> | PdfParseFunctionResult;
+
+function isPdfParseClassCtor(value: unknown): value is PdfParseClassCtor {
+  if (typeof value !== "function") {
+    return false;
   }
 
-  return candidate as new (params: { data: Buffer; password?: string }) => {
-    getText: (params: { lineEnforce: boolean }) => Promise<{ text: string }>;
-    destroy: () => Promise<void>;
-  };
+  const maybePrototype = (value as { prototype?: { getText?: unknown } }).prototype;
+  return typeof maybePrototype?.getText === "function";
 }
 
-function configurePdfWorker(
-  PDFParseCtor: new (params: { data: Buffer; password?: string }) => {
-    getText: (params: { lineEnforce: boolean }) => Promise<{ text: string }>;
-    destroy: () => Promise<void>;
-  }
-): void {
-  if (pdfWorkerConfigured) {
-    return;
+function resolvePdfParseClassCtor(imported: Record<string, unknown>): PdfParseClassCtor | null {
+  const defaultExport = imported.default as Record<string, unknown> | undefined;
+  const candidates: unknown[] = [imported.PDFParse, defaultExport?.PDFParse];
+
+  for (const candidate of candidates) {
+    if (isPdfParseClassCtor(candidate)) {
+      return candidate;
+    }
   }
 
-  const withSetWorker = PDFParseCtor as unknown as {
-    setWorker?: (workerSrc?: string) => string;
-  };
+  return null;
+}
 
-  if (typeof withSetWorker.setWorker !== "function") {
-    return;
+function resolvePdfParseFunction(imported: Record<string, unknown>): PdfParseFunction | null {
+  if (typeof imported.default === "function") {
+    return imported.default as PdfParseFunction;
   }
+
+  if (typeof imported.pdf === "function") {
+    return imported.pdf as PdfParseFunction;
+  }
+
+  if (typeof imported.parse === "function") {
+    return imported.parse as PdfParseFunction;
+  }
+
+  return null;
+}
+
+async function extractTextWithPdfParse(buffer: Buffer, options: PdfParseOptions): Promise<string> {
+  let imported: Record<string, unknown> | null = null;
 
   try {
-    withSetWorker.setWorker(PDFJS_WORKER_MODULE_SPECIFIER);
-    pdfWorkerConfigured = true;
+    const resolved = localRequire.resolve("pdf-parse");
+    imported = localRequire(resolved) as Record<string, unknown>;
   } catch {
-    // Keep default behavior if this runtime cannot override the worker source.
+    imported = null;
   }
+
+  if (!imported) {
+    imported = (await import("pdf-parse")) as Record<string, unknown>;
+  }
+
+  const classCtor = resolvePdfParseClassCtor(imported);
+  if (classCtor) {
+    let parser: PdfParseClassInstance | null = null;
+    try {
+      parser = new classCtor({
+        data: buffer,
+        password: options.password
+      });
+
+      const textResult = await parser.getText({
+        lineEnforce: true
+      });
+      return fixCommonMojibake(textResult.text ?? "");
+    } finally {
+      await parser?.destroy().catch(() => undefined);
+    }
+  }
+
+  const parseFn = resolvePdfParseFunction(imported);
+  if (parseFn) {
+    const result = await parseFn(
+      buffer,
+      options.password
+        ? {
+            password: options.password
+          }
+        : undefined
+    );
+    const text = typeof result?.text === "string" ? result.text : "";
+    return fixCommonMojibake(text);
+  }
+
+  throw new PdfImportError("parser_unavailable", "Modulo pdf-parse indisponivel neste ambiente.");
 }
 
 export async function parsePdfImport(
@@ -734,25 +934,9 @@ export async function parsePdfImport(
   options: PdfParseOptions = {}
 ): Promise<PdfImportResult> {
   let text = "";
-  let parser:
-    | {
-        getText: (params: { lineEnforce: boolean }) => Promise<{ text: string }>;
-        destroy: () => Promise<void>;
-      }
-    | null = null;
 
   try {
-    const PDFParseCtor = await loadPdfParseCtor();
-    configurePdfWorker(PDFParseCtor);
-    parser = new PDFParseCtor({
-      data: buffer,
-      password: options.password
-    });
-
-    const textResult = await parser.getText({
-      lineEnforce: true
-    });
-    text = fixCommonMojibake(textResult.text ?? "");
+    text = await extractTextWithPdfParse(buffer, options);
   } catch (error) {
     const mapped = mapPdfError(error);
     const fallbackText = mapped.code === "parser_unavailable" ? extractTextFromSimplePdfBuffer(buffer) : null;
@@ -762,8 +946,6 @@ export async function parsePdfImport(
     }
 
     text = fixCommonMojibake(fallbackText);
-  } finally {
-    await parser?.destroy().catch(() => undefined);
   }
 
   const classification = classifyPdfText(text);
@@ -778,6 +960,10 @@ export async function parsePdfImport(
     parsedTransactions = parseInterInvoiceTransactions(text);
   } else if (classification.issuerProfile === "mercado_pago_invoice") {
     parsedTransactions = parseMercadoPagoInvoiceTransactions(text, dueDate);
+  } else if (classification.issuerProfile === "mercado_pago_statement") {
+    parsedTransactions = parseMercadoPagoStatementTransactions(text);
+  } else if (classification.issuerProfile === "nubank_invoice") {
+    parsedTransactions = parseNubankInvoiceTransactions(text, dueDate);
   } else {
     throw new PdfImportError(
       "unsupported_issuer_profile",
@@ -802,10 +988,13 @@ export async function parsePdfImport(
     const canonical = toCanonicalImportRow({
       date: row.date,
       amount: row.amount,
+      balanceAfter: row.balanceAfter,
       type: row.type,
       sourceType: "pdf",
       documentType: classification.documentType,
       description: row.description,
+      externalId: row.externalId,
+      accountHint: row.accountHint,
       raw: row.raw
     });
 
@@ -822,9 +1011,4 @@ export async function parsePdfImport(
     issuerProfile: classification.issuerProfile,
     metadata
   };
-}
-
-export async function parsePdfBuffer(buffer: Buffer, options: PdfParseOptions = {}): Promise<ParsedPdfRow[]> {
-  const parsed = await parsePdfImport(buffer, options);
-  return parsed.transactions;
 }

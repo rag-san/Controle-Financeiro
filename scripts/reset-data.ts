@@ -33,17 +33,20 @@ async function listResettableTables(): Promise<string[]> {
 
 type ResetMode = "soft" | "full";
 type UserRow = { id: string };
+type ResetOptions = {
+  mode: ResetMode;
+  purgeConfig: boolean;
+};
 
-function resolveResetMode(argv: string[]): ResetMode {
-  if (argv.includes("--full")) {
-    return "full";
-  }
-
-  return "soft";
+function resolveResetOptions(argv: string[]): ResetOptions {
+  return {
+    mode: argv.includes("--full") ? "full" : "soft",
+    purgeConfig: argv.includes("--purge-config")
+  };
 }
 
-function selectTablesForReset(allTables: string[], mode: ResetMode): string[] {
-  if (mode === "full") {
+function selectTablesForReset(allTables: string[], options: ResetOptions): string[] {
+  if (options.purgeConfig) {
     return allTables;
   }
 
@@ -79,17 +82,18 @@ async function ensureDefaultCategoriesForExistingUsers(): Promise<{
 }
 
 async function run(): Promise<void> {
-  const mode = resolveResetMode(process.argv.slice(2));
-  const tables = selectTablesForReset(await listResettableTables(), mode);
+  const options = resolveResetOptions(process.argv.slice(2));
+  const tables = selectTablesForReset(await listResettableTables(), options);
   await resetPostgres(tables);
 
   const defaultCategoriesRestore =
-    mode === "soft"
+    !options.purgeConfig
       ? await ensureDefaultCategoriesForExistingUsers()
       : { usersScanned: 0, categoriesCreated: 0, rulesCreated: 0 };
 
   console.log(`[reset:data] dialect=${db.dialect}`);
-  console.log(`[reset:data] mode=${mode}`);
+  console.log(`[reset:data] mode=${options.mode}`);
+  console.log(`[reset:data] purge_config=${options.purgeConfig}`);
   console.log(`[reset:data] tables_reset=${tables.length}`);
   console.log(`[reset:data] tables=${tables.join(", ") || "(none)"}`);
   console.log(

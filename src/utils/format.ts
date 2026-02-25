@@ -154,10 +154,6 @@ export function formatDateRange(start: Date, end: Date): string {
   return `${dateRangeFormatter.format(start)} - ${dateRangeFormatter.format(end)}`;
 }
 
-export function formatDateRangeLabel(from: Date, to: Date): string {
-  return formatDateRange(from, to);
-}
-
 export function formatShortDate(date: string): string {
   const parsed = parseDateInput(date);
   if (!parsed) {
