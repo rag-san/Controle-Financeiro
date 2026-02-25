@@ -30,33 +30,23 @@ function assert(condition: boolean, message: string): void {
 }
 
 async function tableColumns(table: string): Promise<string[]> {
-  if (db.dialect === "postgres") {
-    const result = await db.query<{ column_name: string }>(
-      `SELECT column_name
-       FROM information_schema.columns
-       WHERE table_schema = 'public' AND table_name = ?`,
-      [table]
-    );
-    return result.rows.map((row) => row.column_name);
-  }
-
-  const rows = (await db.prepare(`PRAGMA table_info(${table})`).all()) as Array<{ name: string }>;
-  return rows.map((row) => row.name);
+  const result = await db.query<{ column_name: string }>(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = ?`,
+    [table]
+  );
+  return result.rows.map((row) => row.column_name);
 }
 
 async function tableIndexes(table: string): Promise<string[]> {
-  if (db.dialect === "postgres") {
-    const result = await db.query<{ indexname: string }>(
-      `SELECT indexname
-       FROM pg_indexes
-       WHERE schemaname = 'public' AND tablename = ?`,
-      [table]
-    );
-    return result.rows.map((row) => row.indexname);
-  }
-
-  const rows = (await db.prepare(`PRAGMA index_list(${table})`).all()) as Array<{ name: string }>;
-  return rows.map((row) => row.name);
+  const result = await db.query<{ indexname: string }>(
+    `SELECT indexname
+     FROM pg_indexes
+     WHERE schemaname = 'public' AND tablename = ?`,
+    [table]
+  );
+  return result.rows.map((row) => row.indexname);
 }
 
 function toDate(value: string | Date): Date {

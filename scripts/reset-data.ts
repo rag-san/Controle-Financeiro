@@ -1,4 +1,4 @@
-import { DB_FILE_PATH, db } from "../lib/db";
+import { db } from "../lib/db";
 import { restoreDefaultCategoriesForUser } from "../lib/server/default-categories.service";
 
 const EXCLUDED_TABLES = new Set(["_prisma_migrations"]);
@@ -18,29 +18,15 @@ function sortTableNames(tables: string[]): string[] {
 }
 
 async function listResettableTables(): Promise<string[]> {
-  if (db.dialect === "postgres") {
-    const result = await db.query<TableNameRow>(
-      `SELECT table_name
-       FROM information_schema.tables
-       WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
-    );
-
-    return sortTableNames(
-      result.rows
-        .map((row) => row.table_name ?? "")
-        .filter((name) => Boolean(name) && !EXCLUDED_TABLES.has(name))
-    );
-  }
-
-  const rows = (await db.prepare(
-    `SELECT name
-     FROM sqlite_master
-     WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`
-  ).all()) as TableNameRow[];
+  const result = await db.query<TableNameRow>(
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+  );
 
   return sortTableNames(
-    rows
-      .map((row) => row.name ?? "")
+    result.rows
+      .map((row) => row.table_name ?? "")
       .filter((name) => Boolean(name) && !EXCLUDED_TABLES.has(name))
   );
 }
@@ -70,30 +56,6 @@ async function resetPostgres(tables: string[]): Promise<void> {
   await db.exec(`TRUNCATE TABLE ${quotedTables} RESTART IDENTITY CASCADE`);
 }
 
-async function resetSqlite(tables: string[]): Promise<void> {
-  await db.exec("PRAGMA foreign_keys = OFF;");
-  try {
-    for (const table of tables) {
-      await db.exec(`DELETE FROM ${quoteIdentifier(table)};`);
-    }
-
-    const hasSqliteSequence = (await db.prepare(
-      `SELECT name
-       FROM sqlite_master
-       WHERE type = 'table' AND name = 'sqlite_sequence'
-       LIMIT 1`
-    ).get()) as TableNameRow | undefined;
-
-    if (hasSqliteSequence?.name === "sqlite_sequence") {
-      await db.exec("DELETE FROM sqlite_sequence;");
-    }
-
-    await db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-  } finally {
-    await db.exec("PRAGMA foreign_keys = ON;");
-  }
-}
-
 async function ensureDefaultCategoriesForExistingUsers(): Promise<{
   usersScanned: number;
   categoriesCreated: number;
@@ -119,12 +81,7 @@ async function ensureDefaultCategoriesForExistingUsers(): Promise<{
 async function run(): Promise<void> {
   const mode = resolveResetMode(process.argv.slice(2));
   const tables = selectTablesForReset(await listResettableTables(), mode);
-
-  if (db.dialect === "postgres") {
-    await resetPostgres(tables);
-  } else {
-    await resetSqlite(tables);
-  }
+  await resetPostgres(tables);
 
   const defaultCategoriesRestore =
     mode === "soft"
@@ -133,9 +90,6 @@ async function run(): Promise<void> {
 
   console.log(`[reset:data] dialect=${db.dialect}`);
   console.log(`[reset:data] mode=${mode}`);
-  if (db.dialect === "sqlite" && DB_FILE_PATH) {
-    console.log(`[reset:data] sqlite_file=${DB_FILE_PATH}`);
-  }
   console.log(`[reset:data] tables_reset=${tables.length}`);
   console.log(`[reset:data] tables=${tables.join(", ") || "(none)"}`);
   console.log(

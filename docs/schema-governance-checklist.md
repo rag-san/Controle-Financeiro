@@ -1,4 +1,4 @@
-# Checklist de Governanca de Schema (SQLite)
+# Checklist de Governanca de Schema (PostgreSQL)
 
 ## Objetivo
 

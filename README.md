@@ -122,21 +122,10 @@ Arquivo de referencia: `.env.example`
 - Em ambientes serverless, mantenha `PG_POOL_MAX` baixo (ex.: `1` a `3`) para evitar excesso de conexoes.
 - Recomenda-se configurar `NEXTAUTH_SECRET` (ou `AUTH_SECRET`) em Production e Preview.
 
-### Migrar dados do SQLite para PostgreSQL
+### Observacao
 
-1. Configure `DATABASE_URL` no `.env`.
-2. Opcional: aponte o arquivo origem com `SOURCE_SQLITE_PATH` (padrao: `data/finance.db`).
-3. Rode:
-
-```bash
-npm run db:migrate:sqlite-to-postgres
-```
-
-Opcional para sobrescrever o destino antes da carga:
-
-```bash
-RESET_TARGET=1 npm run db:migrate:sqlite-to-postgres
-```
+- O projeto nao utiliza mais SQLite em runtime nem em scripts oficiais.
+- Todo ambiente (local, preview e production) deve apontar para PostgreSQL.
 
 ## Testes e validacao
 

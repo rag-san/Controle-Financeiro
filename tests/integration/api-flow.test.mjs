@@ -16,8 +16,10 @@ const fixturePath = path.join(repoRoot, "tests", "fixtures", "import-transaction
 const fixtureIrregularLatin1Path = path.join(repoRoot, "tests", "fixtures", "import-irregular-latin1.csv");
 const fixtureMixedInvalidPath = path.join(repoRoot, "tests", "fixtures", "import-mixed-invalid.csv");
 const fixtureHistoricoDescricaoPath = path.join(repoRoot, "tests", "fixtures", "import-historico-descricao.csv");
-const testDbRelativePath = path.join("data", "finance.integration.db");
-const testDbPath = path.join(repoRoot, testDbRelativePath);
+const integrationDatabaseUrl =
+  process.env.DATABASE_URL?.trim() ||
+  process.env.POSTGRES_URL?.trim() ||
+  "postgresql://postgres:postgres@127.0.0.1:55432/finance_test";
 const serverBootTimeoutMs = 120_000;
 const pollIntervalMs = 750;
 
@@ -191,15 +193,6 @@ async function apiRequest(routePath, options = {}) {
   };
 }
 
-async function removeTestDbFiles() {
-  const suffixes = ["", "-shm", "-wal"];
-
-  for (const suffix of suffixes) {
-    const filePath = `${testDbPath}${suffix}`;
-    await fs.rm(filePath, { force: true }).catch(() => undefined);
-  }
-}
-
 async function waitForServerReady() {
   const startedAt = Date.now();
 
@@ -220,8 +213,6 @@ async function waitForServerReady() {
 }
 
 before(async () => {
-  await removeTestDbFiles();
-
   const isWindows = process.platform === "win32";
   const npmCommand = isWindows ? "cmd.exe" : "npm";
   const npmArgs = isWindows
@@ -231,7 +222,8 @@ before(async () => {
     ...process.env,
     NEXTAUTH_URL: baseUrl,
     NEXTAUTH_SECRET: "integration-test-secret-change-me",
-    FINANCE_DB_PATH: testDbRelativePath,
+    DATABASE_URL: integrationDatabaseUrl,
+    POSTGRES_URL: process.env.POSTGRES_URL ?? integrationDatabaseUrl,
     API_PROFILING: "0"
   };
 
@@ -263,8 +255,6 @@ after(async () => {
       await once(serverProcess, "exit").catch(() => undefined);
     }
   }
-
-  await removeTestDbFiles();
 });
 
 test("critical backend flow via API", async () => {

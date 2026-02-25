@@ -40,5 +40,5 @@ npm run validate
 ## Test data and isolation
 
 - Integration tests use fixture file: `tests/fixtures/import-transactions.csv`
-- Test server uses isolated DB file via `FINANCE_DB_PATH=data/finance.integration.db`
-- The integration test runner removes test DB files before and after execution
+- Integration tests require PostgreSQL via `DATABASE_URL` (or `POSTGRES_URL`)
+- If omitted, tests default to: `postgresql://postgres:postgres@127.0.0.1:55432/finance_test`

@@ -54,13 +54,13 @@ function normalizeInternalTransferFlag(
   return type === "transfer";
 }
 
-function toDbBoolean(value: boolean): number | boolean {
-  return db.dialect === "postgres" ? value : value ? 1 : 0;
+function toDbBoolean(value: boolean): boolean {
+  return value;
 }
 
-const TX_TYPE_PARAM_SQL = db.dialect === "postgres" ? "?::transaction_type" : "?";
-const TX_DIRECTION_PARAM_SQL = db.dialect === "postgres" ? "?::transaction_direction" : "?";
-const TX_TRANSFER_LITERAL_SQL = db.dialect === "postgres" ? "'transfer'::transaction_type" : "'transfer'";
+const TX_TYPE_PARAM_SQL = "?::transaction_type";
+const TX_DIRECTION_PARAM_SQL = "?::transaction_direction";
+const TX_TRANSFER_LITERAL_SQL = "'transfer'::transaction_type";
 
 type TransactionJoinedRow = TransactionRow & {
   account_name?: string | null;
@@ -159,7 +159,7 @@ function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[]
     params.push(filter.categoryId);
   }
   if (filter.type) {
-    clauses.push(db.dialect === "postgres" ? "t.type = ?::transaction_type" : "t.type = ?");
+    clauses.push("t.type = ?::transaction_type");
     params.push(filter.type);
   }
   if (filter.normalizedQuery) {
