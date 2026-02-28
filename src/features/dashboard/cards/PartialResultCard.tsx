@@ -70,11 +70,11 @@ export function PartialResultCard({
 
         <div className="grid grid-cols-1 gap-4 border-t border-slate-200/80 pt-4 text-sm sm:grid-cols-3 dark:border-slate-800">
           <div className="space-y-1">
-            <p className="text-slate-500 dark:text-slate-400">Receita</p>
+            <p className="text-slate-500 dark:text-slate-400">Entrada caixa</p>
             <p className="text-xl font-semibold text-emerald-700 dark:text-emerald-300">{formatBRL(receita)}</p>
           </div>
           <div className="space-y-1">
-            <p className="text-slate-500 dark:text-slate-400">Gasto</p>
+            <p className="text-slate-500 dark:text-slate-400">Saida caixa</p>
             <p className="text-xl font-semibold text-rose-700 dark:text-rose-300">{formatBRL(gasto)}</p>
           </div>
           <div className="space-y-1">

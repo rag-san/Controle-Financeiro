@@ -34,6 +34,9 @@ type DashboardSummaryPayload = {
   totalIncome: number;
   totalExpense: number;
   net: number;
+  cashInflow?: number;
+  cashOutflow?: number;
+  cashNet?: number;
   excludedTotal: number;
   previousPeriodComparison: {
     delta: number;
@@ -41,6 +44,9 @@ type DashboardSummaryPayload = {
     previousNet: number;
     previousIncome: number;
     previousExpense: number;
+    previousCashInflow?: number;
+    previousCashOutflow?: number;
+    previousCashNet?: number;
     previousExcludedTotal: number;
   };
 };
@@ -305,7 +311,13 @@ export function DashboardPage(): React.JSX.Element {
     const patrimonyCurrent = patrimonySeries[patrimonySeries.length - 1]?.value ?? 0;
     const patrimonyVariation =
       patrimonySeries.length >= 2 ? patrimonyCurrent - (patrimonySeries[0]?.value ?? 0) : 0;
-    const resultProgress = clamp((summary.totalExpense / Math.max(summary.totalIncome, 1)) * 100);
+    const resultIncome = summary.cashInflow ?? summary.totalIncome;
+    const resultExpense = summary.cashOutflow ?? summary.totalExpense;
+    const resultCurrent = summary.cashNet ?? summary.net;
+    const resultPrevious =
+      summary.previousPeriodComparison.previousCashNet ?? summary.previousPeriodComparison.previousNet;
+    const resultVariation = safeVariationPercent(resultCurrent, resultPrevious);
+    const resultProgress = clamp((resultExpense / Math.max(resultIncome, 1)) * 100);
     const periodDescription = isMonthFilterActive
       ? `${formatRangeLabel(selectedFrom, selectedTo)}`
       : "mes atual";
@@ -319,12 +331,12 @@ export function DashboardPage(): React.JSX.Element {
         chartData: spendingTrend
       },
       result: {
-        current: summary.net,
-        variation: summary.previousPeriodComparison.percent,
-        previous: summary.previousPeriodComparison.previousNet,
+        current: resultCurrent,
+        variation: resultVariation,
+        previous: resultPrevious,
         progress: resultProgress,
-        income: summary.totalIncome,
-        expense: summary.totalExpense,
+        income: resultIncome,
+        expense: resultExpense,
         excluded: summary.excludedTotal
       },
       patrimony: {

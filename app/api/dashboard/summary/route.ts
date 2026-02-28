@@ -106,6 +106,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         previousNet,
         previousIncome,
         previousExpense: previousSpending,
+        previousCashInflow: legacySummary.previousPeriodComparison.previousCashInflow,
+        previousCashOutflow: legacySummary.previousPeriodComparison.previousCashOutflow,
+        previousCashNet: legacySummary.previousPeriodComparison.previousCashNet,
         previousExcludedTotal: hasLedgerData ? 0 : legacySummary.previousPeriodComparison.previousExcludedTotal
       },
       cashBalance,

@@ -29,6 +29,9 @@ export type DashboardSummary = {
   totalIncome: number;
   totalExpense: number;
   net: number;
+  cashInflow: number;
+  cashOutflow: number;
+  cashNet: number;
   excludedTotal: number;
   previousPeriodComparison: {
     delta: number;
@@ -36,6 +39,9 @@ export type DashboardSummary = {
     previousNet: number;
     previousIncome: number;
     previousExpense: number;
+    previousCashInflow: number;
+    previousCashOutflow: number;
+    previousCashNet: number;
     previousExcludedTotal: number;
   };
 };
@@ -67,6 +73,13 @@ type TotalsRow = {
   income_cents: number | string | null;
   expense_cents: number | string | null;
   excluded_cents: number | string | null;
+};
+
+type CashTotalsRow = {
+  period: "current" | "previous";
+  inflow_cents: number | string | null;
+  outflow_cents: number | string | null;
+  net_cents: number | string | null;
 };
 
 type CategoriesRow = {
@@ -206,6 +219,23 @@ function buildDashboardFilterSql(
   };
 }
 
+function buildTransactionsExcludedClause(alias: string, excluded: boolean): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+
+  if (excluded) {
+    return `${scoped}excluded = TRUE`;
+  }
+
+  return `(
+    ${scoped}excluded = FALSE
+    OR (
+      ${scoped}excluded = TRUE
+      AND ${scoped}raw_json IS NOT NULL
+      AND ${scoped}raw_json LIKE '%"openingBalanceAdjustment":true%'
+    )
+  )`;
+}
+
 function buildBucketSeries(fromDate: Date, toDate: Date, granularity: DashboardGranularity): string[] {
   const buckets: string[] = [];
   const end = floorBucket(toDate, granularity);
@@ -338,6 +368,74 @@ async function aggregateIncomeExpenseTotals(input: {
   return { current, previous };
 }
 
+async function aggregateCashFlowTotals(input: {
+  userId: string;
+  currentFrom: Date;
+  currentTo: Date;
+  previousFrom: Date;
+  previousTo: Date;
+  filters?: DashboardMetricsFilters;
+}): Promise<{
+  current: { inflow: number; outflow: number; net: number };
+  previous: { inflow: number; outflow: number; net: number };
+}> {
+  const resolvedFilters = resolveDashboardFilters(input.filters);
+  const filterClause = buildDashboardFilterSql("t", resolvedFilters);
+  const excludedClause = buildTransactionsExcludedClause("t", resolvedFilters.excluded);
+
+  const rows = (await db
+    .prepare(
+      `SELECT
+         period,
+         COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents ELSE 0 END), 0) AS inflow_cents,
+         COALESCE(SUM(CASE WHEN amount_cents < 0 THEN ABS(amount_cents) ELSE 0 END), 0) AS outflow_cents,
+         COALESCE(SUM(amount_cents), 0) AS net_cents
+       FROM (
+         SELECT
+           CASE
+             WHEN t.posted_at >= ? AND t.posted_at <= ? THEN 'current'
+             WHEN t.posted_at >= ? AND t.posted_at <= ? THEN 'previous'
+             ELSE NULL
+           END AS period,
+           t.amount_cents
+         FROM transactions t
+         JOIN accounts a
+           ON a.id = t.account_id
+          AND a.user_id = t.user_id
+         WHERE t.user_id = ?
+           AND t.posted_at >= ?
+           AND t.posted_at <= ?
+           AND a.type IN ('checking', 'cash')
+           AND ${excludedClause}
+           ${filterClause.sql}
+       ) period_rows
+       WHERE period IS NOT NULL
+       GROUP BY period`
+    )
+    .all(
+      input.currentFrom.toISOString(),
+      input.currentTo.toISOString(),
+      input.previousFrom.toISOString(),
+      input.previousTo.toISOString(),
+      input.userId,
+      input.previousFrom.toISOString(),
+      input.currentTo.toISOString(),
+      ...filterClause.params
+    )) as CashTotalsRow[];
+
+  const current = { inflow: 0, outflow: 0, net: 0 };
+  const previous = { inflow: 0, outflow: 0, net: 0 };
+
+  for (const row of rows) {
+    const target = row.period === "current" ? current : previous;
+    target.inflow = toAmount(row.inflow_cents);
+    target.outflow = toAmount(row.outflow_cents);
+    target.net = toAmount(row.net_cents);
+  }
+
+  return { current, previous };
+}
+
 async function aggregateTrendsRaw(input: {
   userId: string;
   fromDate: Date;
@@ -347,6 +445,7 @@ async function aggregateTrendsRaw(input: {
 }): Promise<Map<string, { income: number; expense: number }>> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
   const filterClause = buildDashboardFilterSql("", resolvedFilters);
+  const excludedClause = buildTransactionsExcludedClause("", resolvedFilters.excluded);
   const rows = (await db
     .prepare(
       `SELECT
@@ -358,7 +457,7 @@ async function aggregateTrendsRaw(input: {
          AND posted_at >= ?
          AND posted_at <= ?
          AND type IN ('income'::transaction_type, 'expense'::transaction_type)
-         AND excluded = ?
+         AND ${excludedClause}
          ${filterClause.sql}
        GROUP BY bucket_date
        ORDER BY bucket_date ASC`
@@ -368,7 +467,6 @@ async function aggregateTrendsRaw(input: {
       input.userId,
       input.fromDate.toISOString(),
       input.toDate.toISOString(),
-      resolvedFilters.excluded,
       ...filterClause.params
     )) as TrendRow[];
 
@@ -389,27 +487,26 @@ async function getPatrimonyBaselineCents(input: {
   filters?: DashboardMetricsFilters;
 }): Promise<number> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
-  const filterClause = buildDashboardFilterSql("", resolvedFilters);
+  const filterClause = buildDashboardFilterSql("t", resolvedFilters);
+  const excludedClause = buildTransactionsExcludedClause("t", resolvedFilters.excluded);
   const row = (await db
     .prepare(
       `SELECT
          COALESCE(
-           SUM(
-             CASE
-               WHEN type = 'income'::transaction_type THEN ABS(amount_cents)
-               WHEN type = 'expense'::transaction_type THEN -ABS(amount_cents)
-               ELSE amount_cents
-             END
-           ),
+           SUM(t.amount_cents),
            0
          ) AS baseline_cents
-       FROM transactions
-       WHERE user_id = ?
-         AND posted_at < ?
-         AND excluded = ?
+       FROM transactions t
+       JOIN accounts a
+         ON a.id = t.account_id
+        AND a.user_id = t.user_id
+       WHERE t.user_id = ?
+         AND t.posted_at < ?
+         AND a.type IN ('checking', 'cash')
+         AND ${excludedClause}
          ${filterClause.sql}`
     )
-    .get(input.userId, input.before.toISOString(), resolvedFilters.excluded, ...filterClause.params)) as
+    .get(input.userId, input.before.toISOString(), ...filterClause.params)) as
     | { baseline_cents: number | string | null }
     | undefined;
 
@@ -424,26 +521,25 @@ async function getPatrimonyDeltasByBucket(input: {
   filters?: DashboardMetricsFilters;
 }): Promise<Map<string, number>> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
-  const filterClause = buildDashboardFilterSql("", resolvedFilters);
+  const filterClause = buildDashboardFilterSql("t", resolvedFilters);
+  const excludedClause = buildTransactionsExcludedClause("t", resolvedFilters.excluded);
   const rows = (await db
     .prepare(
       `SELECT
-         DATE_TRUNC(?, posted_at::timestamptz AT TIME ZONE 'UTC')::date::text AS bucket_date,
+         DATE_TRUNC(?, t.posted_at::timestamptz AT TIME ZONE 'UTC')::date::text AS bucket_date,
          COALESCE(
-           SUM(
-             CASE
-               WHEN type = 'income'::transaction_type THEN ABS(amount_cents)
-               WHEN type = 'expense'::transaction_type THEN -ABS(amount_cents)
-               ELSE amount_cents
-             END
-           ),
+           SUM(t.amount_cents),
            0
          ) AS delta_cents
-       FROM transactions
-       WHERE user_id = ?
-         AND posted_at >= ?
-         AND posted_at <= ?
-         AND excluded = ?
+       FROM transactions t
+       JOIN accounts a
+         ON a.id = t.account_id
+        AND a.user_id = t.user_id
+       WHERE t.user_id = ?
+         AND t.posted_at >= ?
+         AND t.posted_at <= ?
+         AND a.type IN ('checking', 'cash')
+         AND ${excludedClause}
          ${filterClause.sql}
        GROUP BY bucket_date
        ORDER BY bucket_date ASC`
@@ -453,7 +549,6 @@ async function getPatrimonyDeltasByBucket(input: {
       input.userId,
       input.fromDate.toISOString(),
       input.toDate.toISOString(),
-      resolvedFilters.excluded,
       ...filterClause.params
     )) as PatrimonyDeltaRow[];
 
@@ -741,6 +836,14 @@ export const dashboardMetricsRepo = {
           previousTo: input.range.previousToDate,
           filters: input.filters
         });
+    const cashTotals = await aggregateCashFlowTotals({
+      userId: input.userId,
+      currentFrom: input.range.fromDate,
+      currentTo: input.range.toDate,
+      previousFrom: input.range.previousFromDate,
+      previousTo: input.range.previousToDate,
+      filters: input.filters
+    });
 
     const currentNet = Number((totals.current.income - totals.current.expense).toFixed(2));
     const previousNet = Number((totals.previous.income - totals.previous.expense).toFixed(2));
@@ -752,6 +855,9 @@ export const dashboardMetricsRepo = {
       totalIncome: totals.current.income,
       totalExpense: totals.current.expense,
       net: currentNet,
+      cashInflow: cashTotals.current.inflow,
+      cashOutflow: cashTotals.current.outflow,
+      cashNet: cashTotals.current.net,
       excludedTotal: totals.current.excluded,
       previousPeriodComparison: {
         delta,
@@ -759,6 +865,9 @@ export const dashboardMetricsRepo = {
         previousNet,
         previousIncome: totals.previous.income,
         previousExpense: totals.previous.expense,
+        previousCashInflow: cashTotals.previous.inflow,
+        previousCashOutflow: cashTotals.previous.outflow,
+        previousCashNet: cashTotals.previous.net,
         previousExcludedTotal: totals.previous.excluded
       }
     };
