@@ -134,10 +134,7 @@ export async function listTransactionsForUser(userId: string, params: Transactio
   const totalCount = await transactionsRepo.count(filter);
   const totalsByType = await transactionsRepo.sumByType(filter);
   const totals = totalsFromGroupedTypes(totalsByType);
-  const periodCashFlow = await transactionsRepo.sumSignedAmount({
-    ...filter,
-    accountTypes: ["checking", "cash"]
-  });
+  const periodCashFlow = await transactionsRepo.sumCashFlow(filter);
   const accountsWithBalance = await accountsRepo.listByUserWithBalance(userId);
   const filteredAccounts = params.accountId
     ? accountsWithBalance.filter((account) => account.id === params.accountId)
@@ -157,7 +154,9 @@ export async function listTransactionsForUser(userId: string, params: Transactio
       income: totals.income,
       expense: totals.expense,
       balance: totals.net,
-      periodCashFlow,
+      periodCashInflow: periodCashFlow.inflow,
+      periodCashOutflow: periodCashFlow.outflow,
+      periodCashFlow: periodCashFlow.net,
       cashBalance
     },
     pagination: {

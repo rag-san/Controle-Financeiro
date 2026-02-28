@@ -304,6 +304,34 @@ export const transactionsRepo = {
     return fromCents(row?.total_cents);
   },
 
+  async sumCashFlow(filter: FilterInput): Promise<{ inflow: number; outflow: number; net: number }> {
+    const { sql, params } = buildFilterWhere(filter);
+    const row = (await db
+      .prepare(
+        `SELECT
+           COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents ELSE 0 END), 0) AS inflow_cents,
+           COALESCE(SUM(CASE WHEN t.amount_cents < 0 THEN ABS(t.amount_cents) ELSE 0 END), 0) AS outflow_cents,
+           COALESCE(SUM(t.amount_cents), 0) AS net_cents
+         FROM transactions t
+         JOIN accounts a ON a.id = t.account_id AND a.user_id = t.user_id
+         WHERE ${sql}
+           AND a.type IN ('checking', 'cash')`
+      )
+      .get(...params)) as
+      | {
+          inflow_cents: number | null;
+          outflow_cents: number | null;
+          net_cents: number | null;
+        }
+      | undefined;
+
+    return {
+      inflow: fromCents(row?.inflow_cents),
+      outflow: fromCents(row?.outflow_cents),
+      net: fromCents(row?.net_cents)
+    };
+  },
+
   async findByIdForUser(id: string, userId: string) {
     const row = (await db
       .prepare(

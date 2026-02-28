@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 type TransactionsKpiCardsProps = {
   income: number;
   expense: number;
+  cashOutflow?: number;
   periodBalance: number;
   cashBalance: number;
   periodLabel: string;
@@ -86,12 +87,14 @@ function KpiCard({
 export function TransactionsKpiCards({
   income,
   expense,
+  cashOutflow,
   periodBalance,
   cashBalance,
   periodLabel
 }: TransactionsKpiCardsProps): React.JSX.Element {
   const periodBalanceHint = `${periodBalance >= 0 ? "+" : "-"} ${formatMoney(Math.abs(periodBalance))}`;
   const normalizedPeriodLabel = periodLabel.trim().length > 0 ? periodLabel : "período selecionado";
+  const outflowValue = cashOutflow ?? expense;
 
   const sharedProps = { periodLabel };
 
@@ -122,9 +125,9 @@ export function TransactionsKpiCards({
 
       <KpiCard
         {...sharedProps}
-        title="Despesas"
-        value={formatMoney(expense)}
-        valueHint="Saídas classificadas (sem fatura/transferências)"
+        title="Saída real de caixa"
+        value={formatMoney(outflowValue)}
+        valueHint={`Despesas classificadas: ${formatMoney(expense)}`}
         icon={<ArrowUpRight className="h-4 w-4" />}
         tone={{
           borderClassName: "border-rose-200/80 dark:border-rose-900/60",

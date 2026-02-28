@@ -202,6 +202,8 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(all.summary.income, 3000);
   assert.equal(all.summary.expense, 1400);
   assert.equal(all.summary.balance, 1600);
+  assert.equal(all.summary.periodCashInflow, 3500);
+  assert.equal(all.summary.periodCashOutflow, 1900);
   assert.equal(all.summary.periodCashFlow, 1600);
   assert.equal(all.summary.cashBalance, 1550);
   assert.ok((all.meta?.accounts?.length ?? 0) >= 2);
@@ -219,6 +221,8 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(includedOnly.summary.income, 3000);
   assert.equal(includedOnly.summary.expense, 1400);
   assert.equal(includedOnly.summary.balance, 1600);
+  assert.equal(includedOnly.summary.periodCashInflow, 3500);
+  assert.equal(includedOnly.summary.periodCashOutflow, 1900);
   assert.equal(includedOnly.summary.periodCashFlow, 1600);
   assert.equal(includedOnly.summary.cashBalance, 1550);
 
@@ -234,6 +238,8 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(excludedOnly.summary.income, 0);
   assert.equal(excludedOnly.summary.expense, 50);
   assert.equal(excludedOnly.summary.balance, -50);
+  assert.equal(excludedOnly.summary.periodCashInflow, 0);
+  assert.equal(excludedOnly.summary.periodCashOutflow, 50);
   assert.equal(excludedOnly.summary.periodCashFlow, -50);
   assert.equal(excludedOnly.summary.cashBalance, 1550);
 
@@ -261,6 +267,8 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(transfersOnly.summary.income, 0);
   assert.equal(transfersOnly.summary.expense, 0);
   assert.equal(transfersOnly.summary.balance, 0);
+  assert.equal(transfersOnly.summary.periodCashInflow, 500);
+  assert.equal(transfersOnly.summary.periodCashOutflow, 500);
   assert.equal(transfersOnly.summary.periodCashFlow, 0);
 
   const amountSorted = await deps.listTransactionsForUser(fixture.userId, {
@@ -295,6 +303,8 @@ test("listTransactionsForUser returns stable empty state", async (t) => {
   assert.equal(response.summary.income, 0);
   assert.equal(response.summary.expense, 0);
   assert.equal(response.summary.balance, 0);
+  assert.equal(response.summary.periodCashInflow, 0);
+  assert.equal(response.summary.periodCashOutflow, 0);
   assert.equal(response.summary.periodCashFlow, 0);
   assert.equal(response.summary.cashBalance, 0);
   assert.equal(response.pagination.totalCount, 0);
@@ -349,6 +359,8 @@ test("listTransactionsForUser hides mirrored credit inflow from card payment tra
   assert.equal(defaultResponse.summary.income, 0);
   assert.equal(defaultResponse.summary.expense, 0);
   assert.equal(defaultResponse.summary.balance, 0);
+  assert.equal(defaultResponse.summary.periodCashInflow, 0);
+  assert.equal(defaultResponse.summary.periodCashOutflow, 676.27);
   assert.equal(defaultResponse.summary.periodCashFlow, -676.27);
   assert.equal(defaultResponse.summary.cashBalance, -676.27);
 
@@ -362,6 +374,8 @@ test("listTransactionsForUser hides mirrored credit inflow from card payment tra
   });
   assert.equal(withMirrorVisible.pagination.totalCount, 2);
   assert.equal(withMirrorVisible.items.some((item) => item.direction === "in"), true);
+  assert.equal(withMirrorVisible.summary.periodCashInflow, 0);
+  assert.equal(withMirrorVisible.summary.periodCashOutflow, 676.27);
   assert.equal(withMirrorVisible.summary.periodCashFlow, -676.27);
 });
 

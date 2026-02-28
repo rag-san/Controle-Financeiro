@@ -51,6 +51,8 @@ type TransactionResponse = {
     income: number;
     expense: number;
     balance: number;
+    periodCashInflow?: number;
+    periodCashOutflow?: number;
     periodCashFlow?: number;
     cashBalance?: number;
   };
@@ -283,6 +285,8 @@ export function TransactionsPage(): React.JSX.Element {
     income: 0,
     expense: 0,
     balance: 0,
+    periodCashInflow: 0,
+    periodCashOutflow: 0,
     periodCashFlow: 0,
     cashBalance: 0
   });
@@ -539,6 +543,8 @@ export function TransactionsPage(): React.JSX.Element {
       income: transactionsResponse.summary.income,
       expense: transactionsResponse.summary.expense,
       balance: transactionsResponse.summary.balance,
+      periodCashInflow: transactionsResponse.summary.periodCashInflow ?? transactionsResponse.summary.income,
+      periodCashOutflow: transactionsResponse.summary.periodCashOutflow ?? transactionsResponse.summary.expense,
       periodCashFlow: transactionsResponse.summary.periodCashFlow ?? transactionsResponse.summary.balance,
       cashBalance: transactionsResponse.summary.cashBalance ?? transactionsResponse.summary.balance
     });
@@ -1243,6 +1249,7 @@ export function TransactionsPage(): React.JSX.Element {
         <TransactionsKpiCards
           income={summary.income}
           expense={summary.expense}
+          cashOutflow={summary.periodCashOutflow}
           periodBalance={summary.periodCashFlow}
           cashBalance={summary.cashBalance}
           periodLabel={periodLabel}
