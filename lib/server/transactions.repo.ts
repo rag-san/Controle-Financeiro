@@ -955,6 +955,20 @@ export const transactionsRepo = {
     return row.count;
   },
 
+  async countByAccountBeforeDate(userId: string, accountId: string, beforeDate: Date): Promise<number> {
+    const row = (await db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM transactions
+         WHERE user_id = ?
+           AND account_id = ?
+           AND posted_at < ?`
+      )
+      .get(userId, accountId, beforeDate.toISOString())) as { count: number };
+
+    return row.count;
+  },
+
   async listByImportBatch(userId: string, importBatchId: string) {
     const rows = (await db
       .prepare(

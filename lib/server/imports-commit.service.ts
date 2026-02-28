@@ -20,7 +20,8 @@ const CARD_PAYMENT_INVOICE_SKIP_PATTERN =
   /\b(?:PAGAMENTO\s+RECEBIDO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
 const INTERNAL_TRANSFER_KEYWORD_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER)\b/i;
 const INTERNAL_TRANSFER_DESCRIPTION_HINT_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER|ENVIO|RECEBIDO)\b/i;
-const INTERNAL_TRANSFER_MAX_DATE_DIFF_MS = 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const INTERNAL_TRANSFER_MAX_DATE_DIFF_MS = ONE_DAY_MS;
 const INTERNAL_TRANSFER_SCORE_WEIGHTS = {
   amount: 0.5,
   date: 0.3,
@@ -30,6 +31,9 @@ const INTERNAL_TRANSFER_MIN_DESCRIPTION_SCORE = 0.35;
 const INTERNAL_TRANSFER_MIN_TOTAL_SCORE = 0.75;
 const INTERNAL_TRANSFER_REVIEW_MIN_TOTAL_SCORE = 0.55;
 const MAX_TRANSFER_REVIEW_SUGGESTIONS = 20;
+const MIN_OPENING_BALANCE_ADJUSTMENT = 0.01;
+const OPENING_BALANCE_EXTERNAL_ID_PREFIX = "OPENING_BALANCE";
+const OPENING_BALANCE_DESCRIPTION_PREFIX = "Saldo inicial importado";
 
 const INTERNAL_TRANSFER_STOPWORDS = new Set([
   "PIX",
@@ -484,6 +488,7 @@ type ImportDraftRow = {
   transferFromAccountId?: string | null;
   transferToAccountId?: string | null;
   status: "posted";
+  excluded?: boolean;
   externalId?: string | null;
   importedHash: string;
   raw: Record<string, unknown>;
@@ -507,12 +512,77 @@ type InternalTransferReviewSuggestion = {
   counterpartDescription: string;
 };
 
+type OpeningBalanceCandidate = {
+  accountId: string;
+  date: Date;
+  amount: number;
+  balanceAfter: number;
+  sourceType: ImportCommitPayload["sourceType"];
+};
+
 function directionFromAmount(amount: number): "in" | "out" {
   return amount >= 0 ? "in" : "out";
 }
 
 function toAbsoluteCents(amount: number): number {
   return Math.round(Math.abs(amount) * 100);
+}
+
+function truncateToDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function dayBefore(date: Date): Date {
+  return new Date(date.getTime() - ONE_DAY_MS);
+}
+
+function tryTrackOpeningBalanceCandidate(
+  target: Map<string, OpeningBalanceCandidate>,
+  input: {
+    account: UserAccount;
+    date: Date;
+    amount: number;
+    balanceAfter: number | null | undefined;
+    sourceType: ImportCommitPayload["sourceType"];
+  }
+) {
+  if (!isCheckingLikeAccount(input.account.type)) {
+    return;
+  }
+  if (!Number.isFinite(input.balanceAfter) || !Number.isFinite(input.amount)) {
+    return;
+  }
+
+  const candidateDate = truncateToDay(input.date);
+  const nextCandidate: OpeningBalanceCandidate = {
+    accountId: input.account.id,
+    date: candidateDate,
+    amount: Number(input.amount),
+    balanceAfter: Number(input.balanceAfter),
+    sourceType: input.sourceType
+  };
+  const existing = target.get(input.account.id);
+
+  if (!existing) {
+    target.set(input.account.id, nextCandidate);
+    return;
+  }
+
+  if (candidateDate.getTime() < existing.date.getTime()) {
+    target.set(input.account.id, nextCandidate);
+  }
+}
+
+function inferOpeningBalanceAmount(candidate: OpeningBalanceCandidate): number {
+  return Number((candidate.balanceAfter - candidate.amount).toFixed(2));
+}
+
+function buildOpeningBalanceExternalId(accountId: string, firstDate: Date): string {
+  return `${OPENING_BALANCE_EXTERNAL_ID_PREFIX}:${accountId}:${firstDate.toISOString().slice(0, 10)}`;
+}
+
+function buildOpeningBalanceDescription(accountName: string): string {
+  return `${OPENING_BALANCE_DESCRIPTION_PREFIX} (${accountName})`;
 }
 
 function normalizeExternalIdentity(value: string | null | undefined): string | null {
@@ -642,9 +712,11 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   let totalCardPaymentsNotConverted = 0;
   let totalTransfersCreated = 0;
   let totalInternalTransfersAutoMatched = 0;
+  let openingBalanceAdjustmentsCreated = 0;
   const warnings: string[] = [];
   let cardPaymentNotConvertedWarnings = 0;
   const autoCreatedCreditByParentId = new Map<string, string>();
+  const openingBalanceCandidateByAccountId = new Map<string, OpeningBalanceCandidate>();
 
   const importRows: ImportDraftRow[] = [];
   const transferRows: Array<{
@@ -824,6 +896,14 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           continue;
         }
 
+        tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
+          account: fromAccount,
+          date: canonical.date,
+          amount: normalizedCardPaymentAmount,
+          balanceAfter: canonical.balanceAfter,
+          sourceType: payload.sourceType
+        });
+
         const transferHashBase = createTransferKeyHash({
           userId,
           date: canonical.date,
@@ -871,6 +951,14 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       }
 
       if (detectedCardPayment) {
+        tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
+          account: fromAccount,
+          date: canonical.date,
+          amount: normalizedCardPaymentAmount,
+          balanceAfter: canonical.balanceAfter,
+          sourceType: payload.sourceType
+        });
+
         const importedHash = createImportedHash({
           userId,
           sourceType: payload.sourceType,
@@ -925,6 +1013,14 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
             type: "expense" as const
           }
         : canonical;
+
+    tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
+      account: resolvedAccount,
+      date: canonicalForClassification.date,
+      amount: canonicalForClassification.amount,
+      balanceAfter: canonicalForClassification.balanceAfter,
+      sourceType: payload.sourceType
+    });
 
     const canonicalType =
       canonicalForClassification.type === "transfer"
@@ -1152,6 +1248,71 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     }
   }
 
+  if (openingBalanceCandidateByAccountId.size > 0) {
+    const openingBalanceCandidates = [...openingBalanceCandidateByAccountId.values()].sort(
+      (left, right) => left.date.getTime() - right.date.getTime()
+    );
+
+    for (const candidate of openingBalanceCandidates) {
+      const openingAmount = inferOpeningBalanceAmount(candidate);
+      if (Math.abs(openingAmount) < MIN_OPENING_BALANCE_ADJUSTMENT) {
+        continue;
+      }
+
+      const hasHistoryBeforeWindow =
+        (await transactionsRepo.countByAccountBeforeDate(userId, candidate.accountId, candidate.date)) > 0;
+      if (hasHistoryBeforeWindow) {
+        continue;
+      }
+
+      const account = accountById.get(candidate.accountId);
+      if (!account) {
+        continue;
+      }
+
+      const openingDate = dayBefore(candidate.date);
+      const description = buildOpeningBalanceDescription(account.name);
+      const normalizedDescription = normalizeDescription(description);
+      const externalId = buildOpeningBalanceExternalId(candidate.accountId, candidate.date);
+      const importedHash = createImportedHash({
+        userId,
+        sourceType: candidate.sourceType,
+        date: openingDate,
+        amount: openingAmount,
+        normalizedDescription,
+        accountId: candidate.accountId,
+        externalId
+      });
+
+      importRows.push({
+        userId,
+        accountId: candidate.accountId,
+        categoryId: null,
+        date: openingDate,
+        description,
+        normalizedDescription,
+        amount: openingAmount,
+        type: openingAmount >= 0 ? "income" : "expense",
+        direction: directionFromAmount(openingAmount),
+        isInternalTransfer: false,
+        transferFromAccountId: null,
+        transferToAccountId: null,
+        status: "posted",
+        excluded: true,
+        externalId,
+        importedHash,
+        raw: {
+          sourceType: candidate.sourceType,
+          openingBalanceAdjustment: true,
+          openingBalanceFirstDate: candidate.date.toISOString().slice(0, 10),
+          openingBalanceAfterFirstRow: candidate.balanceAfter,
+          openingBalanceFirstAmount: candidate.amount
+        }
+      });
+      openingBalanceAdjustmentsCreated += 1;
+    }
+  }
+
   const batch = await importsRepo.createBatch({
     userId,
     sourceType: payload.sourceType,
@@ -1361,6 +1522,11 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     totalCardPaymentsDetected,
     totalCardPaymentsNotConverted,
     warnings: [
+      ...(openingBalanceAdjustmentsCreated > 0
+        ? [
+            `${openingBalanceAdjustmentsCreated} ajuste(s) de saldo inicial foram adicionados automaticamente como lançamento excluído.`
+          ]
+        : []),
       ...(cardPaymentNotConvertedWarnings > 0
         ? [
             `${cardPaymentNotConvertedWarnings} pagamento(s) de fatura foram registrados como transferencia sem conta destino definida.`
