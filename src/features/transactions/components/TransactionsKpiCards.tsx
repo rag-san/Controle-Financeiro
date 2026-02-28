@@ -141,7 +141,7 @@ export function TransactionsKpiCards({
         periodLabel="Saldo atual (todas as datas)"
         title="Saldo em conta"
         value={formatMoney(cashBalance)}
-        valueHint={`Fluxo em ${normalizedPeriodLabel}: ${periodBalanceHint}`}
+        valueHint={`Variação em ${normalizedPeriodLabel}: ${periodBalanceHint}`}
         icon={<Scale className="h-4 w-4" />}
         tone={{
           borderClassName:

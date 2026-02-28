@@ -146,6 +146,8 @@ type FilterInput = {
   hideCardPaymentMirrorInflow?: boolean;
 };
 
+type AccountType = "checking" | "credit" | "cash" | "investment";
+
 export type TransactionsSort = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
 
 function resolveOrderBy(sort: TransactionsSort): string {
@@ -273,6 +275,33 @@ export const transactionsRepo = {
       type: row.type,
       amount: fromCents(row.total_cents)
     }));
+  },
+
+  async sumSignedAmount(filter: FilterInput & { accountTypes?: AccountType[] }): Promise<number> {
+    const { sql, params } = buildFilterWhere(filter);
+    const accountTypes = [
+      ...new Set(
+        (filter.accountTypes ?? []).filter(
+          (value): value is AccountType =>
+            value === "checking" || value === "cash" || value === "credit" || value === "investment"
+        )
+      )
+    ];
+    const accountTypeClause =
+      accountTypes.length > 0
+        ? ` AND a.type IN (${accountTypes.map(() => "?").join(",")})`
+        : "";
+
+    const row = (await db
+      .prepare(
+        `SELECT COALESCE(SUM(t.amount_cents), 0) AS total_cents
+         FROM transactions t
+         JOIN accounts a ON a.id = t.account_id AND a.user_id = t.user_id
+         WHERE ${sql}${accountTypeClause}`
+      )
+      .get(...params, ...accountTypes)) as { total_cents: number | null } | undefined;
+
+    return fromCents(row?.total_cents);
   },
 
   async findByIdForUser(id: string, userId: string) {

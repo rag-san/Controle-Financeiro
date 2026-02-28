@@ -202,6 +202,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(all.summary.income, 3000);
   assert.equal(all.summary.expense, 1400);
   assert.equal(all.summary.balance, 1600);
+  assert.equal(all.summary.periodCashFlow, 1600);
   assert.equal(all.summary.cashBalance, 1550);
   assert.ok((all.meta?.accounts?.length ?? 0) >= 2);
   assert.ok((all.meta?.categories?.length ?? 0) >= 2);
@@ -218,6 +219,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(includedOnly.summary.income, 3000);
   assert.equal(includedOnly.summary.expense, 1400);
   assert.equal(includedOnly.summary.balance, 1600);
+  assert.equal(includedOnly.summary.periodCashFlow, 1600);
   assert.equal(includedOnly.summary.cashBalance, 1550);
 
   const excludedOnly = await deps.listTransactionsForUser(fixture.userId, {
@@ -232,6 +234,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(excludedOnly.summary.income, 0);
   assert.equal(excludedOnly.summary.expense, 50);
   assert.equal(excludedOnly.summary.balance, -50);
+  assert.equal(excludedOnly.summary.periodCashFlow, -50);
   assert.equal(excludedOnly.summary.cashBalance, 1550);
 
   const bySearch = await deps.listTransactionsForUser(fixture.userId, {
@@ -258,6 +261,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(transfersOnly.summary.income, 0);
   assert.equal(transfersOnly.summary.expense, 0);
   assert.equal(transfersOnly.summary.balance, 0);
+  assert.equal(transfersOnly.summary.periodCashFlow, 0);
 
   const amountSorted = await deps.listTransactionsForUser(fixture.userId, {
     period: "all",
@@ -291,6 +295,7 @@ test("listTransactionsForUser returns stable empty state", async (t) => {
   assert.equal(response.summary.income, 0);
   assert.equal(response.summary.expense, 0);
   assert.equal(response.summary.balance, 0);
+  assert.equal(response.summary.periodCashFlow, 0);
   assert.equal(response.summary.cashBalance, 0);
   assert.equal(response.pagination.totalCount, 0);
   assert.equal(response.pagination.totalPages, 1);
@@ -344,6 +349,7 @@ test("listTransactionsForUser hides mirrored credit inflow from card payment tra
   assert.equal(defaultResponse.summary.income, 0);
   assert.equal(defaultResponse.summary.expense, 0);
   assert.equal(defaultResponse.summary.balance, 0);
+  assert.equal(defaultResponse.summary.periodCashFlow, -676.27);
   assert.equal(defaultResponse.summary.cashBalance, -676.27);
 
   const withMirrorVisible = await deps.listTransactionsForUser(fixture.userId, {
@@ -356,6 +362,7 @@ test("listTransactionsForUser hides mirrored credit inflow from card payment tra
   });
   assert.equal(withMirrorVisible.pagination.totalCount, 2);
   assert.equal(withMirrorVisible.items.some((item) => item.direction === "in"), true);
+  assert.equal(withMirrorVisible.summary.periodCashFlow, -676.27);
 });
 
 test("createTransactionForUser rejects manual transactions on credit accounts", async (t) => {
