@@ -91,6 +91,7 @@ export function TransactionsKpiCards({
   periodLabel
 }: TransactionsKpiCardsProps): React.JSX.Element {
   const periodBalanceHint = `${periodBalance >= 0 ? "+" : "-"} ${formatMoney(Math.abs(periodBalance))}`;
+  const normalizedPeriodLabel = periodLabel.trim().length > 0 ? periodLabel : "período selecionado";
 
   const sharedProps = { periodLabel };
 
@@ -137,10 +138,10 @@ export function TransactionsKpiCards({
       />
 
       <KpiCard
-        periodLabel="Atual"
+        periodLabel="Saldo atual (todas as datas)"
         title="Saldo em conta"
         value={formatMoney(cashBalance)}
-        valueHint={`Fluxo no período: ${periodBalanceHint}`}
+        valueHint={`Fluxo em ${normalizedPeriodLabel}: ${periodBalanceHint}`}
         icon={<Scale className="h-4 w-4" />}
         tone={{
           borderClassName:
