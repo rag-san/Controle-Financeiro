@@ -106,7 +106,7 @@ export function TransactionsKpiCards({
         {...sharedProps}
         title="Receitas"
         value={formatMoney(income)}
-        valueHint="Entradas no período"
+        valueHint="Entradas classificadas (sem transferências)"
         icon={<ArrowDownLeft className="h-4 w-4" />}
         tone={{
           borderClassName: "border-emerald-200/80 dark:border-emerald-900/60",
@@ -124,7 +124,7 @@ export function TransactionsKpiCards({
         {...sharedProps}
         title="Despesas"
         value={formatMoney(expense)}
-        valueHint="Saídas no período"
+        valueHint="Saídas classificadas (sem fatura/transferências)"
         icon={<ArrowUpRight className="h-4 w-4" />}
         tone={{
           borderClassName: "border-rose-200/80 dark:border-rose-900/60",
@@ -141,7 +141,7 @@ export function TransactionsKpiCards({
         periodLabel="Saldo atual (todas as datas)"
         title="Saldo em conta"
         value={formatMoney(cashBalance)}
-        valueHint={`Variação em ${normalizedPeriodLabel}: ${periodBalanceHint}`}
+        valueHint={`Variação real em ${normalizedPeriodLabel}: ${periodBalanceHint}`}
         icon={<Scale className="h-4 w-4" />}
         tone={{
           borderClassName:
