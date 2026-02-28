@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 type TransactionsKpiCardsProps = {
   income: number;
   expense: number;
-  balance: number;
+  periodBalance: number;
+  cashBalance: number;
   periodLabel: string;
 };
 
@@ -85,9 +86,12 @@ function KpiCard({
 export function TransactionsKpiCards({
   income,
   expense,
-  balance,
+  periodBalance,
+  cashBalance,
   periodLabel
 }: TransactionsKpiCardsProps): React.JSX.Element {
+  const periodBalanceHint = `${periodBalance >= 0 ? "+" : "-"} ${formatMoney(Math.abs(periodBalance))}`;
+
   const sharedProps = { periodLabel };
 
   return (
@@ -133,28 +137,28 @@ export function TransactionsKpiCards({
       />
 
       <KpiCard
-        {...sharedProps}
-        title="Saldo"
-        value={formatMoney(balance)}
-        valueHint={balance >= 0 ? "Resultado positivo" : "Resultado negativo"}
+        periodLabel="Atual"
+        title="Saldo em conta"
+        value={formatMoney(cashBalance)}
+        valueHint={`Fluxo no período: ${periodBalanceHint}`}
         icon={<Scale className="h-4 w-4" />}
         tone={{
           borderClassName:
-            balance >= 0
+            cashBalance >= 0
               ? "border-sky-200/80 dark:border-sky-900/60"
               : "border-orange-200/80 dark:border-orange-900/60",
           glowClassName:
-            balance >= 0 ? "bg-sky-400/35 dark:bg-sky-500/25" : "bg-orange-400/35 dark:bg-orange-500/25",
+            cashBalance >= 0 ? "bg-sky-400/35 dark:bg-sky-500/25" : "bg-orange-400/35 dark:bg-orange-500/25",
           iconClassName:
-            balance >= 0 ? "text-sky-600 dark:text-sky-300" : "text-orange-600 dark:text-orange-300",
+            cashBalance >= 0 ? "text-sky-600 dark:text-sky-300" : "text-orange-600 dark:text-orange-300",
           iconContainerClassName:
-            balance >= 0
+            cashBalance >= 0
               ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300"
               : "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-300",
           valueClassName:
-            balance >= 0 ? "text-sky-700 dark:text-sky-300" : "text-orange-700 dark:text-orange-300",
+            cashBalance >= 0 ? "text-sky-700 dark:text-sky-300" : "text-orange-700 dark:text-orange-300",
           badgeClassName:
-            balance >= 0
+            cashBalance >= 0
               ? "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-200"
               : "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200"
         }}

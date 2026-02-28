@@ -134,6 +134,16 @@ export async function listTransactionsForUser(userId: string, params: Transactio
   const totalCount = await transactionsRepo.count(filter);
   const totalsByType = await transactionsRepo.sumByType(filter);
   const totals = totalsFromGroupedTypes(totalsByType);
+  const accountsWithBalance = await accountsRepo.listByUserWithBalance(userId);
+  const filteredAccounts = params.accountId
+    ? accountsWithBalance.filter((account) => account.id === params.accountId)
+    : accountsWithBalance;
+  const cashBalance = Number(
+    filteredAccounts
+      .filter((account) => account.type === "checking" || account.type === "cash")
+      .reduce((sum, account) => sum + (account.currentBalance ?? 0), 0)
+      .toFixed(2)
+  );
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -142,7 +152,8 @@ export async function listTransactionsForUser(userId: string, params: Transactio
     summary: {
       income: totals.income,
       expense: totals.expense,
-      balance: totals.net
+      balance: totals.net,
+      cashBalance
     },
     pagination: {
       page,
@@ -155,7 +166,7 @@ export async function listTransactionsForUser(userId: string, params: Transactio
     ...(includeMeta
       ? {
           meta: {
-            accounts: await accountsRepo.listByUser(userId),
+            accounts: accountsWithBalance,
             categories: await categoriesRepo.listByUser(userId)
           }
         }

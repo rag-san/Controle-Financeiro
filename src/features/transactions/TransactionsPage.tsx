@@ -51,6 +51,7 @@ type TransactionResponse = {
     income: number;
     expense: number;
     balance: number;
+    cashBalance?: number;
   };
   pagination: {
     page: number;
@@ -277,7 +278,7 @@ export function TransactionsPage(): React.JSX.Element {
   const [accounts, setAccounts] = useState<AccountDTO[]>([]);
   const [categories, setCategories] = useState<CategoryDTO[]>([]);
   const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
-  const [summary, setSummary] = useState({ income: 0, expense: 0, balance: 0 });
+  const [summary, setSummary] = useState({ income: 0, expense: 0, balance: 0, cashBalance: 0 });
   const [filters, setFilters] = useState<TransactionsFiltersState>({
     period: "this-month",
     accountId: "",
@@ -527,7 +528,12 @@ export function TransactionsPage(): React.JSX.Element {
     if (!transactionsResponse) return;
 
     setTransactions(transactionsResponse.items);
-    setSummary(transactionsResponse.summary);
+    setSummary({
+      income: transactionsResponse.summary.income,
+      expense: transactionsResponse.summary.expense,
+      balance: transactionsResponse.summary.balance,
+      cashBalance: transactionsResponse.summary.cashBalance ?? transactionsResponse.summary.balance
+    });
     setPagination(transactionsResponse.pagination);
 
     if (transactionsResponse.meta) {
@@ -1229,7 +1235,8 @@ export function TransactionsPage(): React.JSX.Element {
         <TransactionsKpiCards
           income={summary.income}
           expense={summary.expense}
-          balance={summary.balance}
+          periodBalance={summary.balance}
+          cashBalance={summary.cashBalance}
           periodLabel={periodLabel}
         />
 
