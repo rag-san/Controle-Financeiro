@@ -40,6 +40,7 @@ export function PartialResultCard({
   const badgeValue = useAbsoluteDeltaBadge
     ? `${deltaAbsoluto >= 0 ? "+" : "-"} ${formatBRL(Math.abs(deltaAbsoluto))}`
     : formatSignedPercent(porcentagemVariacao);
+  const monthResultLabel = resultadoAtual >= 0 ? "economia no mes" : "deficit no mes";
 
   return (
     <Card className="h-full border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-100/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70">
@@ -66,6 +67,7 @@ export function PartialResultCard({
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
             <Badge value={badgeValue} variant={badgeVariant} />
+            <span>{monthResultLabel}</span>
             <span>vs {formatBRL(resultadoMesAnterior)} mes anterior</span>
           </div>
         </div>
