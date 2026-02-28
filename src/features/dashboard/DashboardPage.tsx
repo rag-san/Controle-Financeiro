@@ -345,7 +345,7 @@ export function DashboardPage(): React.JSX.Element {
         hasData: patrimonySeries.length >= 2,
         series: patrimonySeries
       },
-      categories: categories.map((item) => ({
+      categories: categories.slice(0, 5).map((item) => ({
         categoryId: item.categoryId ?? "uncategorized",
         name: item.name,
         color: item.color,

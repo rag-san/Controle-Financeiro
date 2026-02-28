@@ -39,6 +39,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dashboardMetricsRepo.getTopCategories({
         userId: auth.userId,
         range: parsed.range,
+        limit: 5,
         filters: parsed.filters
       }),
       dashboardMetricsRepo.getTrends({

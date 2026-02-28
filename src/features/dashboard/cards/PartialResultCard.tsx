@@ -34,6 +34,13 @@ export function PartialResultCard({
   hrefFluxoDeCaixa = "/cashflow",
   periodDescription
 }: PartialResultCardProps): React.JSX.Element {
+  const deltaAbsoluto = Number((resultadoAtual - resultadoMesAnterior).toFixed(2));
+  const useAbsoluteDeltaBadge = Math.abs(resultadoMesAnterior) < 1;
+  const badgeVariant = resolveBadgeVariant(useAbsoluteDeltaBadge ? deltaAbsoluto : porcentagemVariacao);
+  const badgeValue = useAbsoluteDeltaBadge
+    ? `${deltaAbsoluto >= 0 ? "+" : "-"} ${formatBRL(Math.abs(deltaAbsoluto))}`
+    : formatSignedPercent(porcentagemVariacao);
+
   return (
     <Card className="h-full border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-100/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
@@ -58,10 +65,7 @@ export function PartialResultCard({
             {formatBRL(resultadoAtual)}
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-            <Badge
-              value={formatSignedPercent(porcentagemVariacao)}
-              variant={resolveBadgeVariant(porcentagemVariacao)}
-            />
+            <Badge value={badgeValue} variant={badgeVariant} />
             <span>vs {formatBRL(resultadoMesAnterior)} mes anterior</span>
           </div>
         </div>
