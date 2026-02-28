@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  Bar,
-  BarChart,
+  Area,
+  AreaChart,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip,
@@ -59,55 +59,59 @@ export function IncomeChart({
   const xAxisInterval = resolveXAxisInterval(data.length);
 
   if (loading) {
-    return <Skeleton className="h-[220px] rounded-xl" />;
+    return <Skeleton className="h-[230px] rounded-xl" />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-[230px] items-center justify-center text-sm text-muted-foreground">
         Sem dados de receitas no período selecionado.
       </div>
     );
   }
 
   return (
-    <div className="h-[220px] w-full">
+    <div className="h-[230px] w-full">
       <p className="sr-only">{a11ySummary}</p>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={data}
-          margin={{ top: 8, right: 4, left: 0, bottom: 0 }}
-          barCategoryGap="35%"
-          barGap={6}
-        >
-          <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.14} />
+        <AreaChart data={data} margin={{ top: 8, right: 5, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="cashflow-income-gradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0.03} />
+            </linearGradient>
+          </defs>
+
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(59,130,246,0.16)" />
           <XAxis
             dataKey="month"
             tickFormatter={formatMonthLabel}
             interval={xAxisInterval}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 10, fill: "#5f7aa3" }}
             tickLine={false}
             axisLine={false}
-            tickMargin={10}
+            tickMargin={8}
             minTickGap={12}
           />
           <YAxis
             tickFormatter={formatBRLCompact}
             domain={[0, yDomainUpper]}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 10, fill: "#5f7aa3" }}
             tickLine={false}
             axisLine={false}
-            width={84}
+            width={76}
           />
           <Tooltip content={<DefaultChartTooltip titleFormatter={formatTooltipMonth} />} />
-          <Bar
+          <Area
+            type="monotone"
             dataKey="income"
             name="Receitas"
-            fill="#5b7ddb"
-            radius={[8, 8, 0, 0]}
-            maxBarSize={38}
+            stroke="#10b981"
+            strokeWidth={2.1}
+            fill="url(#cashflow-income-gradient)"
+            dot={false}
           />
-        </BarChart>
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

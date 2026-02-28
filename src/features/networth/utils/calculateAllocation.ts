@@ -52,7 +52,7 @@ function hashString(value: string): number {
   return Math.abs(hash);
 }
 
-export function normalizeAllocationGroupName(rawName: string | null | undefined): string {
+function normalizeAllocationGroupName(rawName: string | null | undefined): string {
   const normalized = (rawName ?? "").trim().toLowerCase();
 
   if (!normalized) {

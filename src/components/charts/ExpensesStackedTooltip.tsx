@@ -51,12 +51,12 @@ export function ExpensesStackedTooltip({
   const title = typeof label === "string" ? formatMonthLabel(label) : String(label ?? "");
 
   return (
-    <div className="min-w-[14rem] rounded-xl border border-border bg-card p-3 text-sm shadow-xl">
-      <p className="mb-2 font-semibold text-foreground">{title}</p>
+    <div className="min-w-[14rem] rounded-xl border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-100 shadow-xl backdrop-blur">
+      <p className="mb-2 font-semibold text-slate-100">{title}</p>
       <ul className="space-y-1.5">
         {items.map((item) => (
           <li key={item.category} className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2 text-muted-foreground">
+            <span className="flex items-center gap-2 text-slate-300">
               <span
                 className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ backgroundColor: item.color }}
@@ -64,14 +64,14 @@ export function ExpensesStackedTooltip({
               />
               <span className="truncate">{item.category}</span>
             </span>
-            <span className="font-semibold text-foreground">{formatBRL(item.value)}</span>
+            <span className="font-semibold text-slate-100">{formatBRL(item.value)}</span>
           </li>
         ))}
       </ul>
-      <div className="mt-2 border-t border-border/80 pt-2">
+      <div className="mt-2 border-t border-slate-700/90 pt-2">
         <div className="flex items-center justify-between">
-          <span className="font-medium text-muted-foreground">Total</span>
-          <span className="font-semibold text-foreground">{formatBRL(total)}</span>
+          <span className="font-medium text-slate-300">Total</span>
+          <span className="font-semibold text-slate-100">{formatBRL(total)}</span>
         </div>
       </div>
     </div>

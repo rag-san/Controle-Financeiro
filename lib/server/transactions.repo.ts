@@ -19,6 +19,7 @@ type TransactionRow = {
   currency: string;
   type: "income" | "expense" | "transfer";
   direction: TransactionDirection;
+  excluded: number | boolean;
   is_internal_transfer: number | boolean;
   status: "posted" | "pending";
   account: string | null;
@@ -45,13 +46,17 @@ function normalizeDirection(direction: string | null | undefined, amountCents: n
   return amountCents >= 0 ? "in" : "out";
 }
 
+function normalizeBooleanFlag(value: number | boolean | null | undefined, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  return fallback;
+}
+
 function normalizeInternalTransferFlag(
   value: number | boolean | null | undefined,
   type: "income" | "expense" | "transfer"
 ): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value === 1;
-  return type === "transfer";
+  return normalizeBooleanFlag(value, type === "transfer");
 }
 
 function toDbBoolean(value: boolean): boolean {
@@ -88,6 +93,7 @@ function mapBase(row: TransactionRow) {
     currency: row.currency,
     type: row.type,
     direction: normalizeDirection(row.direction, row.amount_cents),
+    excluded: normalizeBooleanFlag(row.excluded, false),
     isInternalTransfer: normalizeInternalTransferFlag(row.is_internal_transfer, row.type),
     status: row.status,
     account: row.account,
@@ -135,8 +141,25 @@ type FilterInput = {
   accountId?: string;
   categoryId?: string;
   type?: "income" | "expense" | "transfer";
+  excluded?: boolean;
   normalizedQuery?: string;
+  hideCardPaymentMirrorInflow?: boolean;
 };
+
+export type TransactionsSort = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
+
+function resolveOrderBy(sort: TransactionsSort): string {
+  if (sort === "date_asc") {
+    return "t.posted_at ASC";
+  }
+  if (sort === "amount_desc") {
+    return "ABS(t.amount_cents) DESC, t.posted_at DESC";
+  }
+  if (sort === "amount_asc") {
+    return "ABS(t.amount_cents) ASC, t.posted_at DESC";
+  }
+  return "t.posted_at DESC";
+}
 
 function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[] } {
   const clauses = ["t.user_id = ?"];
@@ -162,9 +185,25 @@ function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[]
     clauses.push("t.type = ?::transaction_type");
     params.push(filter.type);
   }
+  if (filter.excluded !== undefined) {
+    clauses.push("t.excluded = ?");
+    params.push(filter.excluded);
+  }
   if (filter.normalizedQuery) {
     clauses.push("t.normalized_description LIKE ? ESCAPE '\\'");
     params.push(`%${escapeLike(filter.normalizedQuery)}%`);
+  }
+
+  if (filter.hideCardPaymentMirrorInflow) {
+    clauses.push(
+      `NOT (
+        t.type = 'transfer'::transaction_type
+        AND t.direction = 'in'::transaction_direction
+        AND t.is_internal_transfer = TRUE
+        AND t.raw_json IS NOT NULL
+        AND t.raw_json LIKE '%"transferDetectedFromCardPayment":true%'
+      )`
+    );
   }
 
   return {
@@ -182,16 +221,19 @@ export const transactionsRepo = {
 
   async listPaged(
     filter: FilterInput,
-    pagination: { page: number; pageSize: number }
+    pagination: { page: number; pageSize: number },
+    options?: { sort?: TransactionsSort }
   ) {
     const { sql, params } = buildFilterWhere(filter);
     const offset = (pagination.page - 1) * pagination.pageSize;
+    const orderBy = resolveOrderBy(options?.sort ?? "date_desc");
 
     const rows = (await db
       .prepare(
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
             t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.direction, t.is_internal_transfer, t.status,
+            t.excluded,
             t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.transfer_from_account_id, t.transfer_to_account_id, t.raw_json, t.created_at, t.updated_at,
             a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency, a.parent_account_id AS account_parent_account_id,
             c.name AS category_name, c.color AS category_color, c.icon AS category_icon, c.parent_id AS category_parent_id
@@ -199,7 +241,7 @@ export const transactionsRepo = {
          LEFT JOIN accounts a ON a.id = t.account_id
          LEFT JOIN categories c ON c.id = t.category_id
          WHERE ${sql}
-         ORDER BY t.posted_at DESC, t.created_at DESC
+         ORDER BY ${orderBy}, t.created_at DESC
          LIMIT ? OFFSET ?`
       )
       .all(...params, pagination.pageSize, offset)) as TransactionJoinedRow[];
@@ -211,9 +253,9 @@ export const transactionsRepo = {
     const { sql, params } = buildFilterWhere(filter);
     const row = (await db
       .prepare(`SELECT COUNT(*) AS count FROM transactions t WHERE ${sql}`)
-      .get(...params)) as { count: number };
+      .get(...params)) as { count: number | string | null };
 
-    return row.count;
+    return Number(row?.count ?? 0);
   },
 
   async sumByType(filter: FilterInput): Promise<Array<{ type: "income" | "expense" | "transfer"; amount: number }>> {
@@ -239,6 +281,7 @@ export const transactionsRepo = {
         `SELECT
             t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
             t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.direction, t.is_internal_transfer, t.status,
+            t.excluded,
             t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.transfer_from_account_id, t.transfer_to_account_id, t.raw_json, t.created_at, t.updated_at,
             a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency, a.parent_account_id AS account_parent_account_id,
             c.name AS category_name, c.color AS category_color, c.icon AS category_icon, c.parent_id AS category_parent_id
@@ -270,6 +313,7 @@ export const transactionsRepo = {
     transferFromAccountId?: string | null;
     transferToAccountId?: string | null;
     direction?: TransactionDirection;
+    excluded?: boolean;
     isInternalTransfer?: boolean;
     raw?: Record<string, unknown> | null;
   }) {
@@ -279,14 +323,15 @@ export const transactionsRepo = {
     const transferFromAccountId = input.type === "transfer" ? (input.transferFromAccountId ?? null) : null;
     const transferToAccountId = input.type === "transfer" ? (input.transferToAccountId ?? null) : null;
     const direction = input.direction ?? directionFromAmount(input.amount);
+    const excluded = input.excluded ?? false;
     const isInternalTransfer = input.type === "transfer" ? (input.isInternalTransfer ?? true) : false;
     const externalId = input.externalId?.trim() ? input.externalId.trim().toUpperCase() : null;
 
     await db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, direction, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, direction, excluded, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       input.userId,
@@ -299,6 +344,7 @@ export const transactionsRepo = {
       toCents(input.amount),
       input.type,
       direction,
+      toDbBoolean(excluded),
       toDbBoolean(isInternalTransfer),
       input.status,
       externalId,
@@ -334,6 +380,7 @@ export const transactionsRepo = {
       transferFromAccountId?: string | null;
       transferToAccountId?: string | null;
       direction?: TransactionDirection;
+      excluded?: boolean;
       isInternalTransfer?: boolean;
       raw?: Record<string, unknown> | null;
     }>
@@ -346,8 +393,8 @@ export const transactionsRepo = {
     const insert = db.prepare(
       `INSERT INTO transactions (
          id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-         amount_cents, currency, type, direction, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         amount_cents, currency, type, direction, excluded, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BRL', ${TX_TYPE_PARAM_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     const run = db.transaction(async () => {
@@ -357,6 +404,7 @@ export const transactionsRepo = {
         const transferFromAccountId = row.type === "transfer" ? (row.transferFromAccountId ?? null) : null;
         const transferToAccountId = row.type === "transfer" ? (row.transferToAccountId ?? null) : null;
         const direction = row.direction ?? directionFromAmount(row.amount);
+        const excluded = row.excluded ?? false;
         const isInternalTransfer = row.type === "transfer" ? (row.isInternalTransfer ?? true) : false;
         const externalId = row.externalId?.trim() ? row.externalId.trim().toUpperCase() : null;
         await insert.run(
@@ -371,6 +419,7 @@ export const transactionsRepo = {
           toCents(row.amount),
           row.type,
           direction,
+          toDbBoolean(excluded),
           toDbBoolean(isInternalTransfer),
           row.status,
           externalId,
@@ -512,8 +561,8 @@ export const transactionsRepo = {
         const insert = db.prepare(
           `INSERT INTO transactions (
              id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-             amount_cents, currency, type, direction, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
-           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', ${TX_TRANSFER_LITERAL_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
+             amount_cents, currency, type, direction, excluded, is_internal_transfer, status, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+           ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'BRL', ${TX_TRANSFER_LITERAL_SQL}, ${TX_DIRECTION_PARAM_SQL}, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`
         );
 
         await insert.run(
@@ -526,6 +575,7 @@ export const transactionsRepo = {
           input.normalizedDescription,
           toCents(-absoluteAmount),
           "out",
+          false,
           toDbBoolean(isInternalTransfer),
           input.status,
           outExternalId,
@@ -553,6 +603,7 @@ export const transactionsRepo = {
           input.normalizedDescription,
           toCents(absoluteAmount),
           "in",
+          false,
           toDbBoolean(isInternalTransfer),
           input.status,
           inExternalId,
@@ -613,6 +664,7 @@ export const transactionsRepo = {
     transferFromAccountId?: string | null;
     transferToAccountId?: string | null;
     direction?: TransactionDirection;
+    excluded?: boolean;
     isInternalTransfer?: boolean;
   }) {
     const existing = await this.findByIdForUser(input.id, input.userId);
@@ -642,6 +694,7 @@ export const transactionsRepo = {
           : existing.transferToAccountId
         : null;
     const nextDirection = input.direction ?? directionFromAmount(nextAmount);
+    const nextExcluded = input.excluded !== undefined ? input.excluded : existing.excluded;
     const nextIsInternalTransfer =
       nextType === "transfer"
         ? input.isInternalTransfer !== undefined
@@ -652,7 +705,7 @@ export const transactionsRepo = {
     await db.prepare(
       `UPDATE transactions
        SET account_id = ?, category_id = ?, posted_at = ?, description = ?, normalized_description = ?,
-           amount_cents = ?, type = ${TX_TYPE_PARAM_SQL}, direction = ${TX_DIRECTION_PARAM_SQL}, is_internal_transfer = ?, status = ?, transfer_from_account_id = ?, transfer_to_account_id = ?, updated_at = ?
+           amount_cents = ?, type = ${TX_TYPE_PARAM_SQL}, direction = ${TX_DIRECTION_PARAM_SQL}, excluded = ?, is_internal_transfer = ?, status = ?, transfer_from_account_id = ?, transfer_to_account_id = ?, updated_at = ?
        WHERE id = ? AND user_id = ?`
     ).run(
       input.accountId ?? existing.accountId,
@@ -663,6 +716,7 @@ export const transactionsRepo = {
       toCents(nextAmount),
       nextType,
       nextDirection,
+      toDbBoolean(nextExcluded),
       toDbBoolean(nextIsInternalTransfer),
       input.status ?? existing.status,
       nextTransferFromAccountId,
@@ -675,63 +729,22 @@ export const transactionsRepo = {
     return this.findByIdForUser(input.id, input.userId);
   },
 
-  async deleteByIdForUser(id: string, userId: string): Promise<number> {
-    const existing = (await db
-      .prepare(
-        `SELECT id, type, transfer_peer_tx_id, transfer_group_id
-         FROM transactions
-         WHERE id = ? AND user_id = ?`
-      )
-      .get(id, userId)) as
-      | {
-          id: string;
-          type: "income" | "expense" | "transfer";
-          transfer_peer_tx_id: string | null;
-          transfer_group_id: string | null;
-        }
-      | undefined;
-
-    if (!existing) {
-      return 0;
+  async resolveCascadeDeleteIdsForUser(ids: string[], userId: string): Promise<string[]> {
+    if (ids.length === 0) {
+      return [];
     }
 
-    const idsToDelete = new Set<string>([existing.id]);
-    if (existing.type === "transfer") {
-      if (existing.transfer_peer_tx_id) {
-        idsToDelete.add(existing.transfer_peer_tx_id);
-      }
-
-      if (existing.transfer_group_id) {
-        const groupedRows = (await db
-          .prepare(
-            `SELECT id
-             FROM transactions
-             WHERE user_id = ? AND transfer_group_id = ?`
-          )
-          .all(userId, existing.transfer_group_id)) as Array<{ id: string }>;
-
-        for (const row of groupedRows) {
-          idsToDelete.add(row.id);
-        }
-      }
+    const selectedIds = [
+      ...new Set(
+        ids
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      )
+    ];
+    if (selectedIds.length === 0) {
+      return [];
     }
 
-    const finalIds = [...idsToDelete];
-    const placeholders = finalIds.map(() => "?").join(",");
-    const result = await db
-      .prepare(
-        `DELETE FROM transactions
-         WHERE user_id = ? AND id IN (${placeholders})`
-      )
-      .run(userId, ...finalIds);
-
-    return result.changes;
-  },
-
-  async deleteManyByIdsForUser(ids: string[], userId: string): Promise<number> {
-    if (ids.length === 0) return 0;
-
-    const selectedIds = [...new Set(ids)];
     const selectedPlaceholders = selectedIds.map(() => "?").join(",");
     const selectedRows = (await db
       .prepare(
@@ -747,7 +760,7 @@ export const transactionsRepo = {
     }>;
 
     if (selectedRows.length === 0) {
-      return 0;
+      return [];
     }
 
     const idsToDelete = new Set<string>(selectedRows.map((row) => row.id));
@@ -778,7 +791,32 @@ export const transactionsRepo = {
       }
     }
 
-    const finalIds = [...idsToDelete];
+    return [...idsToDelete];
+  },
+
+  async deleteByIdForUser(id: string, userId: string): Promise<number> {
+    const finalIds = await this.resolveCascadeDeleteIdsForUser([id], userId);
+    if (finalIds.length === 0) {
+      return 0;
+    }
+
+    const placeholders = finalIds.map(() => "?").join(",");
+    const result = await db
+      .prepare(
+        `DELETE FROM transactions
+         WHERE user_id = ? AND id IN (${placeholders})`
+      )
+      .run(userId, ...finalIds);
+
+    return result.changes;
+  },
+
+  async deleteManyByIdsForUser(ids: string[], userId: string): Promise<number> {
+    const finalIds = await this.resolveCascadeDeleteIdsForUser(ids, userId);
+    if (finalIds.length === 0) {
+      return 0;
+    }
+
     const placeholders = finalIds.map(() => "?").join(",");
     const result = await db
       .prepare(
@@ -917,11 +955,44 @@ export const transactionsRepo = {
     return row.count;
   },
 
+  async listByImportBatch(userId: string, importBatchId: string) {
+    const rows = (await db
+      .prepare(
+        `SELECT
+            t.id, t.user_id, t.account_id, t.category_id, t.import_batch_id, t.posted_at,
+            t.description, t.normalized_description, t.amount_cents, t.currency, t.type, t.direction, t.is_internal_transfer, t.status,
+            t.excluded,
+            t.account, t.bank, t.external_id, t.imported_hash, t.transfer_group_id, t.transfer_peer_tx_id, t.transfer_from_account_id, t.transfer_to_account_id, t.raw_json, t.created_at, t.updated_at,
+            a.name AS account_name, a.type AS account_type, a.institution AS account_institution, a.currency AS account_currency, a.parent_account_id AS account_parent_account_id,
+            c.name AS category_name, c.color AS category_color, c.icon AS category_icon, c.parent_id AS category_parent_id
+         FROM transactions t
+         LEFT JOIN accounts a ON a.id = t.account_id
+         LEFT JOIN categories c ON c.id = t.category_id
+         WHERE t.user_id = ?
+           AND t.import_batch_id = ?
+         ORDER BY t.posted_at ASC, t.created_at ASC`
+      )
+      .all(userId, importBatchId)) as TransactionJoinedRow[];
+
+    return rows.map(mapWithRelations);
+  },
+
+  async deleteByAccount(userId: string, accountId: string): Promise<number> {
+    const result = await db
+      .prepare(
+        `DELETE FROM transactions
+         WHERE user_id = ? AND account_id = ?`
+      )
+      .run(userId, accountId);
+
+    return result.changes;
+  },
+
   async listByDateRange(userId: string, from: Date, to: Date, withCategory = false) {
     const rows = (await db
       .prepare(
         `SELECT id, user_id, account_id, category_id, import_batch_id, posted_at, description, normalized_description,
-                amount_cents, currency, type, direction, is_internal_transfer, status, account, bank, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
+                amount_cents, currency, type, direction, excluded, is_internal_transfer, status, account, bank, external_id, imported_hash, transfer_group_id, transfer_peer_tx_id, transfer_from_account_id, transfer_to_account_id, raw_json, created_at, updated_at
          FROM transactions
          WHERE user_id = ? AND posted_at >= ? AND posted_at <= ?
          ORDER BY posted_at ASC`

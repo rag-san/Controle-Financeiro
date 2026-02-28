@@ -2,7 +2,7 @@ import crypto from "crypto";
 
 type ImportSourceType = "csv" | "ofx" | "pdf" | "manual";
 
-export function toNormalizedUtcDateIso(date: Date): string {
+function toNormalizedUtcDateIso(date: Date): string {
   if (!Number.isFinite(date.getTime())) {
     throw new Error("Data invalida para assinatura de importacao");
   }

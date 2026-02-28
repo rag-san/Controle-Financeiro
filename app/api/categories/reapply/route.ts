@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/api-auth";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { resolveRuleCategory, type CategorizationRule } from "@/lib/categorizationRules";
 import { categoryRulesRepo } from "@/lib/server/category-rules.repo";
+import { syncLedgerForLegacyTransactions } from "@/lib/server/ledger-sync.service";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 const payloadSchema = z.object({
@@ -62,6 +63,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   if (updates.length > 0) {
     await transactionsRepo.bulkUpdateCategory(updates);
+    await syncLedgerForLegacyTransactions({
+      userId: auth.userId,
+      transactionIds: updates.map((item) => item.id)
+    });
   }
 
   invalidateFinanceCaches(auth.userId);
@@ -71,5 +76,4 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     totalUpdated: updates.length
   });
 }
-
 

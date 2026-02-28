@@ -23,7 +23,6 @@ function toSafeNumber(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Number(value.toFixed(2));
 }
-export { normalizeDateKey };
 
 export function buildHistorySeries(entries: NetWorthEntryDTO[]): NetWorthPoint[] {
   const groupedByDate = new Map<string, { assets: number; debts: number }>();
@@ -137,7 +136,6 @@ export function buildDerivedSeriesFromSnapshot(
   const dates = buildDerivedDates(range, interval);
   const normalizedDates = dates.length > 0 ? dates : [interval.end];
 
-  // TODO: Replace flat fallback with real historical net worth snapshots once timeline API is available.
   return normalizedDates.map((date) => ({
     date: normalizeDateKey(date),
     assets: toSafeNumber(snapshot.assets),

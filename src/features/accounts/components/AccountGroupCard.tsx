@@ -30,7 +30,7 @@ export function AccountGroupCard({
           </div>
         </div>
         {totalLabel ? (
-          <p className="shrink-0 text-right text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-slate-100">
+          <p className="max-w-full shrink-0 break-words text-right text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-slate-100">
             {totalLabel}
           </p>
         ) : null}

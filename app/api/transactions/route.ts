@@ -6,6 +6,10 @@ import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
 import {
+  deleteLedgerForLegacyTransactions,
+  syncLedgerForLegacyTransactions
+} from "@/lib/server/ledger-sync.service";
+import {
   createTransactionForUser,
   createTransactionSchema,
   listTransactionsForUser,
@@ -60,11 +64,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const transaction = await createTransactionForUser(auth.userId, parsed.data);
+    let transaction;
+    try {
+      transaction = await createTransactionForUser(auth.userId, parsed.data);
+    } catch (error) {
+      if (error instanceof Error && error.message === "ACCOUNT_NOT_FOUND") {
+        return NextResponse.json({ error: "Conta informada não foi encontrada." }, { status: 400 });
+      }
+      if (error instanceof Error && error.message === "CREDIT_ACCOUNT_MANUAL_NOT_ALLOWED") {
+        return NextResponse.json(
+          {
+            error:
+              "Transações manuais não podem ser criadas em conta de cartão de crédito. Use importação de fatura ou transferência."
+          },
+          { status: 400 }
+        );
+      }
+      throw error;
+    }
 
     if (!transaction) {
       return NextResponse.json({ error: "Falha ao criar transação" }, { status: 500 });
     }
+
+    await syncLedgerForLegacyTransactions({
+      userId: auth.userId,
+      transactionIds: [transaction.id]
+    });
 
     invalidateFinanceCaches(auth.userId);
 
@@ -90,7 +116,12 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     }
 
     const dedupedIds = [...new Set(parsed.data.ids)];
+    const cascadeIds = await transactionsRepo.resolveCascadeDeleteIdsForUser(dedupedIds, auth.userId);
     const deletedCount = await transactionsRepo.deleteManyByIdsForUser(dedupedIds, auth.userId);
+    await deleteLedgerForLegacyTransactions({
+      userId: auth.userId,
+      transactionIds: cascadeIds
+    });
 
     invalidateFinanceCaches(auth.userId);
 

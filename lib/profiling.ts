@@ -39,7 +39,7 @@ function round(value: number): number {
   return Number(value.toFixed(2));
 }
 
-export function isApiProfilingEnabled(): boolean {
+function isApiProfilingEnabled(): boolean {
   return parseBooleanFlag(process.env.API_PROFILING);
 }
 

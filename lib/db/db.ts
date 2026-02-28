@@ -178,7 +178,7 @@ function createStatement(sql: string): DbStatement {
   };
 }
 
-export function getDb(): FinanceDb {
+function getDb(): FinanceDb {
   return {
     dialect: "postgres",
     prepare(sql: string): DbStatement {

@@ -14,11 +14,11 @@ import { CASHFLOW_PERIOD_OPTIONS } from "@/src/features/cashflow/utils/cashflow"
 
 function CashflowLoading(): React.JSX.Element {
   return (
-    <div className="space-y-4">
-      <Skeleton className="h-[440px] rounded-2xl" />
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Skeleton className="h-[380px] rounded-2xl" />
-        <Skeleton className="h-[380px] rounded-2xl" />
+    <div className="space-y-5">
+      <Skeleton className="h-[430px] rounded-2xl" />
+      <div className="grid gap-4 xl:grid-cols-5">
+        <Skeleton className="h-[410px] rounded-2xl xl:col-span-3" />
+        <Skeleton className="h-[410px] rounded-2xl xl:col-span-2" />
       </div>
     </div>
   );
@@ -27,6 +27,11 @@ function CashflowLoading(): React.JSX.Element {
 export function CashflowPage(): React.JSX.Element {
   const [period, setPeriod] = useState<CashflowPeriodKey>("3m");
   const { data, loading, error } = useCashflowData(period);
+  const quickPeriodOptions = useMemo(
+    () => CASHFLOW_PERIOD_OPTIONS.filter((option) => option.value !== "ytd"),
+    []
+  );
+
   const periodLabel = useMemo(() => {
     return CASHFLOW_PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "Período selecionado";
   }, [period]);
@@ -36,11 +41,11 @@ export function CashflowPage(): React.JSX.Element {
       <PeriodSelect
         value={period}
         onChange={setPeriod}
-        options={CASHFLOW_PERIOD_OPTIONS}
+        options={quickPeriodOptions}
         disabled={loading}
       />
     ),
-    [loading, period]
+    [loading, period, quickPeriodOptions]
   );
 
   return (
@@ -52,7 +57,7 @@ export function CashflowPage(): React.JSX.Element {
           {error || "Não foi possível carregar os dados de fluxo de caixa."}
         </FeedbackMessage>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <NetResultCard
             dateRangeLabel={data.currentRangeLabel}
             totalNet={data.netResult.current}
@@ -61,22 +66,26 @@ export function CashflowPage(): React.JSX.Element {
             isLoading={loading}
           />
 
-          <div className="grid gap-4 xl:grid-cols-2">
-            <ExpensesCard
-              periodLabel={periodLabel}
-              dateRangeLabel={data.currentRangeLabel}
-              totalExpense={data.expense.current}
-              previousTotalExpense={data.expense.previous}
-              chartData={data.expensesChart}
-              isLoading={loading}
-            />
-            <IncomeCard
-              dateRangeLabel={data.currentRangeLabel}
-              totalIncome={data.income.current}
-              previousTotalIncome={data.income.previous}
-              chartData={data.incomeChart}
-              isLoading={loading}
-            />
+          <div className="grid gap-4 xl:grid-cols-5 xl:items-stretch">
+            <div className="min-w-0 h-full xl:col-span-3">
+              <ExpensesCard
+                periodLabel={periodLabel}
+                dateRangeLabel={data.currentRangeLabel}
+                totalExpense={data.expense.current}
+                previousTotalExpense={data.expense.previous}
+                chartData={data.expensesChart}
+                isLoading={loading}
+              />
+            </div>
+            <div className="min-w-0 h-full xl:col-span-2">
+              <IncomeCard
+                dateRangeLabel={data.currentRangeLabel}
+                totalIncome={data.income.current}
+                previousTotalIncome={data.income.previous}
+                chartData={data.incomeChart}
+                isLoading={loading}
+              />
+            </div>
           </div>
         </div>
       )}

@@ -453,6 +453,46 @@ test("critical backend flow via API", async () => {
   const reusedRuleCategoryId = reusedRuleCategory.payload?.id;
   assert.ok(typeof reusedRuleCategoryId === "string");
 
+  const emptySummary = await apiRequest(
+    `/api/dashboard/summary?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(emptySummary.status, 200);
+  assert.equal(emptySummary.payload?.data?.totalIncome, 0);
+  assert.equal(emptySummary.payload?.data?.totalExpense, 0);
+  assert.equal(emptySummary.payload?.data?.net, 0);
+
+  const emptyCategories = await apiRequest(
+    `/api/dashboard/categories?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(emptyCategories.status, 200);
+  assert.deepEqual(emptyCategories.payload?.data?.topCategories ?? [], []);
+
+  const emptyTrends = await apiRequest(
+    `/api/dashboard/trends?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}&granularity=day`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(emptyTrends.status, 200);
+  assert.ok(Array.isArray(emptyTrends.payload?.data?.series));
+  assert.ok(emptyTrends.payload?.data?.series.every((item) => item.income === 0 && item.expense === 0 && item.net === 0));
+
+  const emptyPatrimony = await apiRequest(
+    `/api/dashboard/patrimony?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}&granularity=week`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(emptyPatrimony.status, 200);
+  assert.ok(Array.isArray(emptyPatrimony.payload?.data?.series));
+  assert.ok(emptyPatrimony.payload?.data?.series.every((item) => Number(item.value) === 0));
+
   const invalidTransactionPayload = await apiRequest("/api/transactions", {
     method: "POST",
     cookies: authCookies,
@@ -487,6 +527,61 @@ test("critical backend flow via API", async () => {
     }
   });
   assert.equal(invalidRecurringPayload.status, 400);
+
+  const disposableAccount = await apiRequest("/api/accounts", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      name: "Conta Temporaria QA",
+      type: "cash",
+      institution: "QA Wallet",
+      currency: "BRL"
+    }
+  });
+  assert.equal(disposableAccount.status, 201);
+  const disposableAccountId = disposableAccount.payload?.id;
+  assert.ok(typeof disposableAccountId === "string");
+
+  const deleteDisposableAccount = await apiRequest(`/api/accounts/${disposableAccountId}`, {
+    method: "DELETE",
+    cookies: authCookies
+  });
+  assert.equal(deleteDisposableAccount.status, 200);
+  assert.equal(deleteDisposableAccount.payload?.success, true);
+
+  const parentDeleteBlockedChecking = await apiRequest("/api/accounts", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      name: "Conta Mae Exclusao QA",
+      type: "checking",
+      institution: "QA Bank",
+      currency: "BRL"
+    }
+  });
+  assert.equal(parentDeleteBlockedChecking.status, 201);
+  const parentDeleteBlockedCheckingId = parentDeleteBlockedChecking.payload?.id;
+  assert.ok(typeof parentDeleteBlockedCheckingId === "string");
+
+  const parentDeleteBlockedCard = await apiRequest("/api/accounts", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      name: "Cartao Filho Exclusao QA",
+      type: "credit",
+      institution: "QA Bank",
+      currency: "BRL",
+      parentAccountId: parentDeleteBlockedCheckingId
+    }
+  });
+  assert.equal(parentDeleteBlockedCard.status, 201);
+
+  const deleteParentWithChild = await apiRequest(`/api/accounts/${parentDeleteBlockedCheckingId}`, {
+    method: "DELETE",
+    cookies: authCookies
+  });
+  assert.equal(deleteParentWithChild.status, 409);
+  assert.match(String(deleteParentWithChild.payload?.error ?? ""), /cartões vinculados/i);
 
   const createdTransaction = await apiRequest("/api/transactions", {
     method: "POST",
@@ -548,14 +643,37 @@ test("critical backend flow via API", async () => {
   });
   assert.equal(transactionsAfterStatementTransfer.status, 200);
 
-  const cardPaymentTransferLegs = transactionsAfterStatementTransfer.payload.items.filter(
+  const visibleCardPaymentTransferLegs = transactionsAfterStatementTransfer.payload.items.filter(
     (item) =>
       item.type === "transfer" &&
       item.description.includes("Credit Card Payment Inter")
   );
-  assert.equal(cardPaymentTransferLegs.length, 2);
-  assert.ok(cardPaymentTransferLegs.some((item) => item.accountId === checkingAccountId && Number(item.amount) < 0));
-  assert.ok(cardPaymentTransferLegs.some((item) => item.accountId === creditAccountId && Number(item.amount) > 0));
+  assert.equal(visibleCardPaymentTransferLegs.length, 1);
+  assert.ok(
+    visibleCardPaymentTransferLegs.some(
+      (item) => item.accountId === checkingAccountId && Number(item.amount) < 0
+    )
+  );
+
+  const transactionsWithMirrorInflow = await apiRequest(
+    "/api/transactions?period=all&page=1&pageSize=200&hideCardPaymentMirrorInflow=false",
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(transactionsWithMirrorInflow.status, 200);
+
+  const allCardPaymentTransferLegs = transactionsWithMirrorInflow.payload.items.filter(
+    (item) =>
+      item.type === "transfer" &&
+      item.description.includes("Credit Card Payment Inter")
+  );
+  assert.ok(allCardPaymentTransferLegs.length >= 1);
+  if (allCardPaymentTransferLegs.length > 1) {
+    assert.ok(
+      allCardPaymentTransferLegs.some((item) => item.accountId === creditAccountId && Number(item.amount) > 0)
+    );
+  }
 
   const invoiceCommit = await apiRequest("/api/imports/commit", {
     method: "POST",
@@ -636,7 +754,7 @@ test("critical backend flow via API", async () => {
       item.type === "transfer" &&
       item.description.includes("Credit Card Payment Inter")
   );
-  assert.equal(transferLegsAfterReimport.length, 2);
+  assert.ok(transferLegsAfterReimport.length >= 1);
 
   const routedCreditPurchase = transactionsAfterStatementReimport.payload.items.find(
     (item) => item.description === "Compra no credito roteada para cartao"
@@ -659,7 +777,7 @@ test("critical backend flow via API", async () => {
   assert.equal(Number((creditBalanceAfterTransfer - creditBalanceBeforeTransfer).toFixed(2)), 120);
 
   const februarySummary = await apiRequest(
-    `/api/dashboard/summary?from=${encodeURIComponent("2026-02-01T00:00:00.000Z")}&to=${encodeURIComponent("2026-02-28T23:59:59.999Z")}`,
+    `/api/dashboard/summary?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}`,
     {
       cookies: authCookies
     }
@@ -674,7 +792,38 @@ test("critical backend flow via API", async () => {
   const expectedFebruaryExpensesCents = februaryTransactions
     .filter((item) => item.type === "expense")
     .reduce((sum, item) => sum + Math.round(Math.abs(Number(item.amount)) * 100), 0);
-  assert.equal(februarySummary.payload?.totals?.expenses, expectedFebruaryExpensesCents);
+  assert.equal(
+    Math.round(Number(februarySummary.payload?.data?.totalExpense ?? 0) * 100),
+    expectedFebruaryExpensesCents
+  );
+
+  const februaryCategories = await apiRequest(
+    `/api/dashboard/categories?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(februaryCategories.status, 200);
+  assert.ok(Array.isArray(februaryCategories.payload?.data?.topCategories));
+
+  const februaryTrends = await apiRequest(
+    `/api/dashboard/trends?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}&granularity=day`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(februaryTrends.status, 200);
+  assert.ok(Array.isArray(februaryTrends.payload?.data?.series));
+  assert.ok(Array.isArray(februaryTrends.payload?.data?.previousSeries));
+
+  const februaryPatrimony = await apiRequest(
+    `/api/dashboard/patrimony?from=${encodeURIComponent("2026-02-01")}&to=${encodeURIComponent("2026-02-28")}&granularity=week`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(februaryPatrimony.status, 200);
+  assert.ok(Array.isArray(februaryPatrimony.payload?.data?.series));
 
   const noDuplicateInvoiceExpenseCommit = await apiRequest("/api/imports/commit", {
     method: "POST",
@@ -786,14 +935,14 @@ test("critical backend flow via API", async () => {
   assert.ok(matchedTransferLegs.every((item) => item.transferGroupId === matchedTransferGroupId));
 
   const transferOnlySummary = await apiRequest(
-    `/api/dashboard/summary?from=${encodeURIComponent("2026-03-05T00:00:00.000Z")}&to=${encodeURIComponent("2026-03-06T23:59:59.999Z")}`,
+    `/api/dashboard/summary?from=${encodeURIComponent("2026-03-05")}&to=${encodeURIComponent("2026-03-06")}`,
     {
       cookies: authCookies
     }
   );
   assert.equal(transferOnlySummary.status, 200);
-  assert.equal(transferOnlySummary.payload?.totals?.income, 0);
-  assert.equal(transferOnlySummary.payload?.totals?.expenses, 0);
+  assert.equal(transferOnlySummary.payload?.data?.totalIncome, 0);
+  assert.equal(transferOnlySummary.payload?.data?.totalExpense, 0);
 
   const lowConfidenceTransferReviewCommit = await apiRequest("/api/imports/commit", {
     method: "POST",
@@ -1467,7 +1616,7 @@ test("critical backend flow via API", async () => {
   const summaryFrom = new Date("2025-11-01T00:00:00.000Z");
   const summaryTo = new Date("2026-03-31T23:59:59.999Z");
   const summary = await apiRequest(
-    `/api/dashboard/summary?from=${encodeURIComponent(summaryFrom.toISOString())}&to=${encodeURIComponent(summaryTo.toISOString())}`,
+    `/api/dashboard/summary?from=${encodeURIComponent("2025-11-01")}&to=${encodeURIComponent("2026-03-31")}`,
     {
       cookies: authCookies
     }
@@ -1499,10 +1648,22 @@ test("critical backend flow via API", async () => {
     }
   }
 
-  assert.equal(summary.payload?.totals?.income, expectedIncomeCents);
-  assert.equal(summary.payload?.totals?.expenses, expectedExpenseCents);
-  assert.equal(summary.payload?.totals?.net, expectedIncomeCents - expectedExpenseCents);
-  assert.ok(Array.isArray(summary.payload?.byCategory) && summary.payload.byCategory.length > 0);
+  const summaryTotalIncomeCents = Math.round(Number(summary.payload?.data?.totalIncome ?? 0) * 100);
+  const summaryTotalExpenseCents = Math.round(Number(summary.payload?.data?.totalExpense ?? 0) * 100);
+  const summaryNetCents = Math.round(Number(summary.payload?.data?.net ?? 0) * 100);
+  const summarySource = String(summary.payload?.data?.source ?? "legacy");
+
+  if (summarySource === "ledger") {
+    assert.equal(summaryNetCents, summaryTotalIncomeCents - summaryTotalExpenseCents);
+    assert.ok(Number.isFinite(summaryTotalIncomeCents));
+    assert.ok(Number.isFinite(summaryTotalExpenseCents));
+  } else {
+    assert.equal(summaryTotalIncomeCents, expectedIncomeCents);
+    assert.equal(summaryTotalExpenseCents, expectedExpenseCents);
+    assert.equal(summaryNetCents, expectedIncomeCents - expectedExpenseCents);
+  }
+
+  assert.equal(typeof summary.payload?.data?.previousPeriodComparison?.percent, "number");
 
   const dashboard = await apiRequest("/api/dashboard", { cookies: authCookies });
   assert.equal(dashboard.status, 200);

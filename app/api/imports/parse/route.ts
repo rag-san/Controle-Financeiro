@@ -182,7 +182,7 @@ function csvDiagnosticsToPreview(
 ): PreviewRow[] {
   let commitIndex = 0;
 
-  return diagnostics.slice(0, 50).map((item) => {
+  return diagnostics.map((item) => {
     const mappedCommitIndex = item.mapped ? commitIndex : null;
     if (item.mapped) {
       commitIndex += 1;
@@ -222,7 +222,7 @@ function okRowsToPreviewRows(
     accountHint?: string;
   }>
 ): PreviewRow[] {
-  return rows.slice(0, 50).map((row, index) => ({
+  return rows.map((row, index) => ({
     line: index + 1,
     commitIndex: index,
     status: "ok",
@@ -407,7 +407,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               throw new Error("Nenhuma transação OFX encontrada");
             }
 
-            const preview = okRowsToPreviewRows(parsed.transactions);
+            const rows = parsed.transactions.map((row) => ({
+              ...row,
+              accountHint: parsed.accountId ?? undefined,
+              documentType: parsed.documentType
+            }));
+            const preview = okRowsToPreviewRows(rows);
 
             logImportEvent("import.parse", {
               ...parseLogContext,
@@ -419,9 +424,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
             return NextResponse.json({
               sourceType,
+              documentType: parsed.documentType,
               needsMapping: false,
               columns: [],
-              rows: parsed.transactions,
+              rows,
               preview,
               totalRows: parsed.transactions.length,
               validRows: parsed.transactions.length,

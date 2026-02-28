@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
   BarChart3,
+  ClipboardCheck,
   FileText,
   Landmark,
   LayoutDashboard,
@@ -34,7 +35,8 @@ const MAIN_NAV_ITEMS: NavItem[] = [
   { href: "/net-worth", label: "Patrimônio", icon: LineChart },
   { href: "/recurring", label: "Recorrentes", icon: Repeat2 },
   { href: "/categories", label: "Categorias", icon: Tags },
-  { href: "/reports", label: "Relatórios", icon: FileText }
+  { href: "/reports", label: "Relatórios", icon: FileText },
+  { href: "/review", label: "Revisão", icon: ClipboardCheck }
 ];
 
 const FOOTER_NAV_ITEMS: NavItem[] = [

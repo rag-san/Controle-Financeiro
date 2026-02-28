@@ -1,4 +1,4 @@
-import { addDays, endOfMonth, startOfMonth } from "date-fns";
+import { addDays, endOfMonth, startOfMonth, subMonths } from "date-fns";
 import { z } from "zod";
 import { totalsFromGroupedTypes } from "@/lib/finance/official-metrics";
 import { isValidFlexibleDate, normalizeDescription, normalizeTransaction, parseFlexibleDate } from "@/lib/normalize";
@@ -20,25 +20,28 @@ export const createTransactionSchema = z.object({
   description: z.string().min(2).max(180),
   amount: z.union([z.number(), z.string()]),
   type: z.enum(["income", "expense"]).optional(),
+  excluded: z.boolean().optional(),
   status: z.enum(["posted", "pending"]).default("posted")
 });
 
 export const transactionsQuerySchema = z.object({
-  period: z.enum(["all", "30d", "current-month", "custom"]).optional().default("all"),
+  period: z
+    .enum(["all", "7d", "30d", "90d", "this-month", "last-month", "current-month", "custom"])
+    .optional()
+    .default("current-month"),
   from: z.string().optional(),
   to: z.string().optional(),
   accountId: z.string().min(6).max(128).optional(),
   categoryId: z.string().min(6).max(128).optional(),
   type: z.enum(["income", "expense", "transfer"]).optional(),
+  excluded: z.enum(["true", "false"]).optional(),
   q: z.string().optional(),
+  sort: z.enum(["date_desc", "date_asc", "amount_desc", "amount_asc"]).optional().default("date_desc"),
+  hideCardPaymentMirrorInflow: z.coerce.boolean().optional(),
   includeMeta: z.coerce.boolean().optional().default(false),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(10).max(200).default(50)
 }).superRefine((value, context) => {
-  if (value.period !== "custom") {
-    return;
-  }
-
   if (value.from && !isValidFlexibleDate(value.from)) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -73,18 +76,18 @@ type TransactionsQuery = z.infer<typeof transactionsQuerySchema>;
 type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 
 function buildDateRange(params: TransactionsQuery): { gte?: Date; lte?: Date } {
-  if (params.period === "all") {
-    return {};
-  }
-
-  if (params.period === "custom") {
+  if (params.from || params.to || params.period === "custom") {
     return {
       gte: params.from ? parseFlexibleDate(params.from) : undefined,
       lte: params.to ? parseFlexibleDate(params.to) : undefined
     };
   }
 
-  if (params.period === "current-month") {
+  if (params.period === "all") {
+    return {};
+  }
+
+  if (params.period === "current-month" || params.period === "this-month") {
     const now = new Date();
     return {
       gte: startOfMonth(now),
@@ -92,8 +95,19 @@ function buildDateRange(params: TransactionsQuery): { gte?: Date; lte?: Date } {
     };
   }
 
+  if (params.period === "last-month") {
+    const now = new Date();
+    const reference = subMonths(now, 1);
+    return {
+      gte: startOfMonth(reference),
+      lte: endOfMonth(reference)
+    };
+  }
+
+  const daysByPeriod = params.period === "7d" ? 6 : params.period === "90d" ? 89 : 29;
+
   return {
-    gte: addDays(new Date(), -30),
+    gte: addDays(new Date(), -daysByPeriod),
     lte: new Date()
   };
 }
@@ -111,10 +125,12 @@ export async function listTransactionsForUser(userId: string, params: Transactio
     accountId: params.accountId || undefined,
     categoryId: params.categoryId || undefined,
     type: params.type || undefined,
-    normalizedQuery: params.q ? normalizeDescription(params.q) : undefined
+    excluded: params.excluded === "true" ? true : false,
+    normalizedQuery: params.q ? normalizeDescription(params.q) : undefined,
+    hideCardPaymentMirrorInflow: params.hideCardPaymentMirrorInflow ?? true
   };
 
-  const items = await transactionsRepo.listPaged(filter, { page, pageSize });
+  const items = await transactionsRepo.listPaged(filter, { page, pageSize }, { sort: params.sort });
   const totalCount = await transactionsRepo.count(filter);
   const totalsByType = await transactionsRepo.sumByType(filter);
   const totals = totalsFromGroupedTypes(totalsByType);
@@ -148,6 +164,14 @@ export async function listTransactionsForUser(userId: string, params: Transactio
 }
 
 export async function createTransactionForUser(userId: string, input: CreateTransactionInput) {
+  const account = await accountsRepo.findByIdForUser(input.accountId, userId);
+  if (!account) {
+    throw new Error("ACCOUNT_NOT_FOUND");
+  }
+  if (account.type === "credit") {
+    throw new Error("CREDIT_ACCOUNT_MANUAL_NOT_ALLOWED");
+  }
+
   const draft = normalizeTransaction({
     date: input.date,
     description: input.description,
@@ -164,6 +188,7 @@ export async function createTransactionForUser(userId: string, input: CreateTran
     normalizedDescription: draft.normalizedDescription,
     amount: draft.amount,
     type: draft.type,
+    excluded: input.excluded,
     status: input.status
   });
 }

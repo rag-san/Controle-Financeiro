@@ -3,6 +3,8 @@ import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { accountsRepo } from "@/lib/server/accounts.repo";
+import { deleteLedgerForLegacyTransactions } from "@/lib/server/ledger-sync.service";
+import { ledgerRepo } from "@/lib/server/ledger.repo";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 const updateAccountSchema = z.object({
@@ -77,20 +79,55 @@ export async function DELETE(
   if (auth instanceof NextResponse) return auth;
 
   const { id } = await params;
+  const existing = await accountsRepo.findByIdForUser(id, auth.userId);
 
-  const transactionCount = await transactionsRepo.countByAccount(auth.userId, id);
+  if (!existing) {
+    return NextResponse.json({ error: "Conta não encontrada" }, { status: 404 });
+  }
 
-  if (transactionCount > 0) {
+  const allAccounts = await accountsRepo.listByUser(auth.userId);
+  const linkedChildren = allAccounts.filter((account) => account.parentAccountId === id);
+  if (linkedChildren.length > 0) {
     return NextResponse.json(
-      { error: "Não é possível excluir conta com transações vinculadas" },
+      {
+        error: "Não é possível excluir conta mãe com cartões vinculados. Reatribua ou remova os cartões primeiro."
+      },
       { status: 409 }
     );
   }
 
-  await accountsRepo.delete({ id, userId: auth.userId });
+  const transactionCount = await transactionsRepo.countByAccount(auth.userId, id);
+  let deletedTransactions = 0;
+  let deletedLedgerEntriesByTransactions = 0;
+  if (transactionCount > 0) {
+    const accountTransactions = await transactionsRepo.listAll({
+      userId: auth.userId,
+      accountId: id
+    });
+    const cascadeIds = await transactionsRepo.resolveCascadeDeleteIdsForUser(
+      accountTransactions.map((transaction) => transaction.id),
+      auth.userId
+    );
+
+    if (cascadeIds.length > 0) {
+      deletedTransactions = await transactionsRepo.deleteManyByIdsForUser(cascadeIds, auth.userId);
+      const ledgerDeleteResult = await deleteLedgerForLegacyTransactions({
+        userId: auth.userId,
+        transactionIds: cascadeIds
+      });
+      deletedLedgerEntriesByTransactions = ledgerDeleteResult.deleted;
+    }
+  }
+
+  const deletedLedgerEntriesByAccount = await ledgerRepo.deleteEntriesByAccountRef(auth.userId, id);
+  const deletedLedgerEntries = deletedLedgerEntriesByAccount + deletedLedgerEntriesByTransactions;
+
+  const deleted = await accountsRepo.delete({ id, userId: auth.userId });
+  if (deleted === 0) {
+    return NextResponse.json({ error: "Conta não encontrada" }, { status: 404 });
+  }
 
   invalidateFinanceCaches(auth.userId);
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, deletedTransactions, deletedLedgerEntries });
 }
-

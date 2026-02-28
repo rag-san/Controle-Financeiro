@@ -1,4 +1,4 @@
-﻿import { ArrowDownUp, Plus, Upload } from "lucide-react";
+import { ArrowDownUp, Plus, Search, Upload } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
@@ -52,7 +52,7 @@ function SortButton({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-slate-400 dark:hover:text-slate-100"
       onClick={() => onToggleSort(field)}
       aria-label={`Ordenar por ${label} (${directionLabel})`}
     >
@@ -66,26 +66,26 @@ function LoadingRows(): React.JSX.Element {
   return (
     <>
       {Array.from({ length: 8 }).map((_, index) => (
-        <TableRow key={`skeleton-${index}`}>
-          <TableCell>
+        <TableRow key={`skeleton-${index}`} className="border-slate-200/70 dark:border-slate-800">
+          <TableCell className="w-9 py-3 pl-2 pr-1 md:w-11 md:pr-2">
             <Skeleton className="h-4 w-4 rounded-full" />
           </TableCell>
-          <TableCell>
-            <Skeleton className="h-4 w-40" />
+          <TableCell className="min-w-[140px] py-3 px-2 md:min-w-[240px] md:px-4">
+            <Skeleton className="h-4 w-32 md:w-44" />
           </TableCell>
-          <TableCell>
-            <Skeleton className="h-5 w-36 rounded-full" />
+          <TableCell className="hidden min-w-[120px] py-3 px-2 sm:table-cell md:min-w-[220px] md:px-4">
+            <Skeleton className="h-5 w-24 rounded-full md:w-32" />
           </TableCell>
-          <TableCell>
+          <TableCell className="hidden py-3 md:table-cell">
             <Skeleton className="h-4 w-24" />
           </TableCell>
-          <TableCell>
+          <TableCell className="hidden py-3 md:table-cell">
             <Skeleton className="h-4 w-20" />
           </TableCell>
-          <TableCell className="text-right">
+          <TableCell className="min-w-[112px] py-3 px-2 text-right md:min-w-[148px] md:px-4">
             <Skeleton className="ml-auto h-4 w-20" />
           </TableCell>
-          <TableCell className="text-right">
+          <TableCell className="hidden py-3 text-right md:table-cell">
             <Skeleton className="ml-auto h-8 w-8 rounded-lg" />
           </TableCell>
         </TableRow>
@@ -119,40 +119,44 @@ export function TransactionsTable({
   const selectedIdsSet = new Set(selectedIds);
   const allSelected = items.length > 0 && items.every((item) => selectedIdsSet.has(item.id));
   const someSelected = !allSelected && items.some((item) => selectedIdsSet.has(item.id));
-  const headerClassName = "normal-case tracking-normal text-[13px] font-semibold";
+  const headerClassName =
+    "h-11 border-b border-slate-200/70 bg-slate-50/70 px-2 md:px-4 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400";
 
   return (
     <section
-      className="rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70"
       aria-label="Tabela de transações"
     >
       <div className="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
-        <p className="text-sm text-muted-foreground">
-          Exibindo{" "}
-          <span className="font-semibold text-foreground">{visibleCount}</span> de{" "}
-          <span className="font-semibold text-foreground">{totalCount}</span> transação(ões)
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Exibindo <span className="font-semibold text-slate-900 dark:text-slate-100">{visibleCount}</span> de{" "}
+          <span className="font-semibold text-slate-900 dark:text-slate-100">{totalCount}</span> transação(ões)
         </p>
-        <p className="text-xs text-muted-foreground sm:hidden">Deslize para os lados para ver todas as colunas.</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 sm:hidden">Deslize para ver todas as colunas.</p>
       </div>
 
       <Table
-        className="min-w-[860px]"
+        className="min-w-[920px]"
         containerClassName="max-h-[70vh] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border"
       >
-        <TableHeader className="sticky top-0 z-10 bg-white/95 backdrop-blur dark:bg-slate-950/95">
+        <TableHeader className="sticky top-0 z-10 backdrop-blur">
           <TableRow>
-            <TableHead className={`w-11 pr-2 ${headerClassName}`}>
+            <TableHead className={`w-9 pr-1 md:w-11 md:pr-2 ${headerClassName}`}>
               <Checkbox
                 checked={allSelected}
                 indeterminate={someSelected}
                 onChange={(event) => onToggleSelectAll(Boolean(event.target.checked))}
-                aria-label={allSelected ? "Desmarcar todas as transações filtradas" : "Selecionar todas as transações filtradas"}
+                aria-label={
+                  allSelected
+                    ? "Desmarcar todas as transações filtradas"
+                    : "Selecionar todas as transações filtradas"
+                }
               />
             </TableHead>
             <TableHead className={headerClassName}>Descrição</TableHead>
-            <TableHead className={headerClassName}>Categoria</TableHead>
-            <TableHead className={headerClassName}>Conta</TableHead>
-            <TableHead className={headerClassName}>
+            <TableHead className={`hidden sm:table-cell ${headerClassName}`}>Categoria</TableHead>
+            <TableHead className={`hidden md:table-cell ${headerClassName}`}>Conta</TableHead>
+            <TableHead className={`hidden md:table-cell ${headerClassName}`}>
               <SortButton
                 label="Data"
                 field="date"
@@ -161,7 +165,7 @@ export function TransactionsTable({
                 onToggleSort={onToggleSort}
               />
             </TableHead>
-            <TableHead className={`w-[140px] text-right ${headerClassName}`}>
+            <TableHead className={`w-[112px] md:w-[148px] text-right ${headerClassName}`}>
               <div className="flex justify-end">
                 <SortButton
                   label="Valor"
@@ -172,7 +176,7 @@ export function TransactionsTable({
                 />
               </div>
             </TableHead>
-            <TableHead className={`w-[96px] text-right ${headerClassName}`}>Acao</TableHead>
+            <TableHead className={`hidden md:table-cell w-[96px] text-right ${headerClassName}`}>Ação</TableHead>
           </TableRow>
         </TableHeader>
 
@@ -180,15 +184,20 @@ export function TransactionsTable({
           {loading ? <LoadingRows /> : null}
 
           {!loading && items.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={7} className="py-12 text-center">
-                <p className="text-sm text-muted-foreground">Nenhuma transação encontrada para os filtros atuais.</p>
-                <p className="mt-1 text-xs text-muted-foreground">Crie uma nova transação ou importe um extrato.</p>
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={7} className="py-14 text-center">
+                <Search className="mx-auto h-8 w-8 text-slate-400 dark:text-slate-500" />
+                <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  Nenhuma transação encontrada
+                </p>
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  Ajuste os filtros ou faça um novo lançamento.
+                </p>
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                   {onCreateTransaction ? (
                     <Button type="button" size="sm" onClick={onCreateTransaction}>
                       <Plus className="h-4 w-4" />
-                      Nova transação
+                      Nova
                     </Button>
                   ) : null}
                   {onImportStatement ? (
@@ -227,4 +236,3 @@ export function TransactionsTable({
     </section>
   );
 }
-

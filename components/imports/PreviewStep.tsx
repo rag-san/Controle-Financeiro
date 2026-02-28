@@ -40,6 +40,21 @@ function rowStatusClassName(status: PreviewRow["status"]): string {
   return "bg-emerald-100 text-emerald-800";
 }
 
+function normalizeSearchText(value: unknown): string {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return "";
+  }
+
+  return String(value)
+    .replace(/\uFFFD/g, " ")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 export function PreviewStep({
   rows,
   categories = [],
@@ -59,7 +74,7 @@ export function PreviewStep({
 }): React.JSX.Element {
   const [filter, setFilter] = React.useState<PreviewFilter>("all");
   const [searchQuery, setSearchQuery] = React.useState("");
-  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const normalizedQuery = React.useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
   const hasRows = rows.length > 0;
 
   const rowsByStatus = React.useMemo(
@@ -79,15 +94,20 @@ export function PreviewStep({
       if (!normalizedQuery) return true;
 
       const searchable = [
+        row.line,
+        row.date ? new Date(row.date).toLocaleDateString("pt-BR") : "",
         row.counterparty,
         row.description,
+        row.transactionKind,
         row.merchantKey,
+        row.accountHint,
+        row.amount,
         row.reason,
         row.reasonCode
       ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+        .map((value) => normalizeSearchText(value))
+        .filter((value) => value.length > 0)
+        .join(" ");
 
       return searchable.includes(normalizedQuery);
     });
@@ -146,8 +166,8 @@ export function PreviewStep({
               <Input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Buscar por destino ou descricao"
-                aria-label="Buscar no preview por destino detectado ou descricao"
+                placeholder="Buscar em todas as colunas"
+                aria-label="Buscar no preview em todas as colunas"
               />
             </div>
           </div>

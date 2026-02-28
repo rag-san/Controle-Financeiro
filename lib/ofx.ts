@@ -13,8 +13,23 @@ export type OfxParsedTransaction = {
 
 export type OfxParseResult = {
   accountId?: string;
+  documentType: "bank_statement" | "credit_card_invoice";
   transactions: OfxParsedTransaction[];
 };
+
+function detectOfxDocumentType(text: string): "bank_statement" | "credit_card_invoice" {
+  const upper = text.toUpperCase();
+  if (
+    upper.includes("<CREDITCARDMSGSRSV1") ||
+    upper.includes("<CCSTMTTRNRS") ||
+    upper.includes("<CCSTMTRS") ||
+    upper.includes("<CCACCTFROM")
+  ) {
+    return "credit_card_invoice";
+  }
+
+  return "bank_statement";
+}
 
 function decodeBuffer(buffer: Buffer): string {
   const utf8 = buffer.toString("utf8");
@@ -32,6 +47,7 @@ function getTagValue(block: string, tag: string): string | undefined {
 export function parseOfxBuffer(buffer: Buffer): OfxParseResult {
   const text = decodeBuffer(buffer);
   const accountId = getTagValue(text, "ACCTID");
+  const documentType = detectOfxDocumentType(text);
 
   const statementBlocks = text.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi) ?? [];
 
@@ -69,6 +85,7 @@ export function parseOfxBuffer(buffer: Buffer): OfxParseResult {
 
   return {
     accountId,
+    documentType,
     transactions
   };
 }

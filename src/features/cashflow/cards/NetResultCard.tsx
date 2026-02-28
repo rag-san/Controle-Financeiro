@@ -52,40 +52,40 @@ export function NetResultCard({
   chartData,
   isLoading = false
 }: NetResultCardProps): React.JSX.Element {
-  const valueClassName = totalNet >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400";
+  const valueClassName = totalNet >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300";
   const delta = resolveNetDelta(totalNet, previousTotalNet);
 
   return (
     <Card
-      className="space-y-4 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="space-y-4 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-100/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70"
       aria-busy={isLoading}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
             RESULTADO LÍQUIDO
           </p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{dateRangeLabel}</p>
-          <p className={`text-3xl font-semibold ${valueClassName}`}>{formatBRL(totalNet)}</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">{dateRangeLabel}</p>
+          <p className={`text-[2.1rem] font-black tracking-tight ${valueClassName}`}>{formatBRL(totalNet)}</p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
             <Badge
               value={delta.badgeValue}
               variant={delta.badgeVariant}
-              className="border border-current/20 px-2 py-0.5 text-xs"
+              className="px-2 py-0.5 text-xs font-bold"
             />
             <span>vs {formatBRL(previousTotalNet)} no período anterior</span>
           </div>
         </div>
         <Link
           href="/reports"
-          className="text-xs font-medium text-slate-500 transition hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-slate-400 dark:hover:text-slate-200"
+          className="text-xs font-semibold text-sky-700 transition hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-300 dark:hover:text-sky-200"
           aria-label="Ver mais sobre resultado líquido"
         >
           Ver mais ↗
         </Link>
       </div>
 
-      <div className="mt-2">
+      <div className="mt-2 rounded-xl border border-slate-200/80 bg-white/80 p-2 dark:border-slate-800 dark:bg-slate-950/60">
         <NetResultChart
           data={chartData}
           loading={isLoading}

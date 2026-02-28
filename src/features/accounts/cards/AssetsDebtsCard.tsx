@@ -26,6 +26,7 @@ type AssetsDebtsCardProps = {
   selectedRange: AccountsRangeKey;
   onRangeChange: (range: AccountsRangeKey) => void;
   loading?: boolean;
+  hideValues?: boolean;
 };
 
 type DeltaDisplay = {
@@ -117,7 +118,8 @@ export function AssetsDebtsCard({
   chartData,
   selectedRange,
   onRangeChange,
-  loading = false
+  loading = false,
+  hideValues = false
 }: AssetsDebtsCardProps): React.JSX.Element {
   const [hoverPoint, setHoverPoint] = React.useState<HoverPoint>(null);
 
@@ -135,6 +137,9 @@ export function AssetsDebtsCard({
 
   const assetsDelta = resolveDeltaDisplay(assets, previousAssets);
   const debtsDelta = resolveDeltaDisplay(debts, previousDebts, true);
+  const assetsValueText = hideValues ? "••••••" : formatBRL(animatedAssets);
+  const debtsValueText = hideValues ? "••••••" : formatBRL(animatedDebts);
+  const hiddenDelta = { text: "Oculto", className: "text-slate-500 dark:text-slate-400" };
 
   return (
     <Card
@@ -146,17 +151,17 @@ export function AssetsDebtsCard({
           <MetricBlock
             dotClassName="bg-blue-500"
             label="Ativos"
-            valueText={formatBRL(animatedAssets)}
-            delta={assetsDelta}
-            hoverDateLabel={hoverDateLabel}
+            valueText={assetsValueText}
+            delta={hideValues ? hiddenDelta : assetsDelta}
+            hoverDateLabel={hideValues ? undefined : hoverDateLabel}
             loading={loading}
           />
           <MetricBlock
             dotClassName="bg-orange-400"
             label="Dívidas"
-            valueText={formatBRL(animatedDebts)}
-            delta={debtsDelta}
-            hoverDateLabel={hoverDateLabel}
+            valueText={debtsValueText}
+            delta={hideValues ? hiddenDelta : debtsDelta}
+            hoverDateLabel={hideValues ? undefined : hoverDateLabel}
             loading={loading}
           />
         </div>

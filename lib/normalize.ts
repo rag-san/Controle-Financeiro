@@ -85,7 +85,7 @@ export function isValidFlexibleDate(value: string | Date): boolean {
   }
 }
 
-export function inferTypeFromAmount(amount: number): "income" | "expense" {
+function inferTypeFromAmount(amount: number): "income" | "expense" {
   return amount >= 0 ? "income" : "expense";
 }
 

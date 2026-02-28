@@ -1,222 +1,103 @@
 "use client";
 
-import {
-  endOfMonth,
-  format,
-  parseISO,
-  startOfDay,
-  startOfMonth,
-  startOfYear,
-  subMonths,
-  subDays,
-  subYears
-} from "date-fns";
-import { AlertTriangle, ChevronLeft, ChevronRight, Info, SlidersHorizontal } from "lucide-react";
-import Link from "next/link";
+import { format, parseISO } from "date-fns";
+import { SlidersHorizontal } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import React from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import { PageShell } from "@/components/layout/PageShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
-import type { CategoryDTO, TransactionDTO } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { Button } from "@/src/components/ui/Button";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
-import { NetWorthCard, type NetWorthFilter } from "@/src/features/dashboard/cards/NetWorthCard";
+import { Input } from "@/src/components/ui/Input";
+import { NetWorthCard } from "@/src/features/dashboard/cards/NetWorthCard";
 import { PartialResultCard } from "@/src/features/dashboard/cards/PartialResultCard";
 import { SpendingPaceCard } from "@/src/features/dashboard/cards/SpendingPaceCard";
 import { TopCategoriesCard } from "@/src/features/dashboard/cards/TopCategoriesCard";
-import { buildInsights } from "@/src/features/insights/buildInsights";
 import { NotificationsBell } from "@/src/features/insights/components/NotificationsBell";
-import type { Insight } from "@/src/features/insights/types";
-import { filterActiveInsights } from "@/src/features/insights/utils/filterActiveInsights";
 import {
-  loadDismissed,
-  loadSnoozed,
-  pruneExpiredSnoozed,
-  saveDismissed,
-  saveSnoozed
-} from "@/src/features/insights/utils/notificationsState";
-import { buildMonthComparison } from "@/src/features/insights/utils/period";
-import { formatMonthLabel } from "@/src/utils/format";
+  isValidSharedDateInput,
+  parseSharedFilters,
+  resolveDefaultRange
+} from "@/src/features/filters/sharedFilters";
 
-type DashboardPayload = {
-  referenceMonth: string;
-  isCurrentMonthReference: boolean;
-  cards: {
-    income: number;
-    expense: number;
-    result: number;
-    netWorth: number;
-    spendPaceDelta: number;
-    resultDelta: number;
+type ApiEnvelope<T> = {
+  data: T;
+};
+
+type DashboardSummaryPayload = {
+  from: string;
+  to: string;
+  totalIncome: number;
+  totalExpense: number;
+  net: number;
+  excludedTotal: number;
+  previousPeriodComparison: {
+    delta: number;
+    percent: number;
+    previousNet: number;
+    previousIncome: number;
+    previousExpense: number;
+    previousExcludedTotal: number;
   };
-  periodComparison?: {
-    current: {
-      income: number;
-      expense: number;
-      result: number;
-      excluded: number;
-    };
-    previous: {
-      income: number;
-      expense: number;
-      result: number;
-      excluded: number;
-    };
-  };
-  netWorthDelta?: number;
-  netWorthSeries?: Array<{ date: string; value: number }>;
-  spendingTrend: { day: number; current: number; previous: number }[];
-  spendingTrendDaily?: { day: number; current: number; previous: number }[];
-  spendingTrendMeta?: {
-    compareUntilDay?: number;
-  };
-  topCategories: {
-    categoryId: string;
+};
+
+type DashboardCategoriesPayload = {
+  from: string;
+  to: string;
+  topCategories: Array<{
+    categoryId: string | null;
     name: string;
     color: string;
-    icon?: string | null;
-    current: number;
-    previous: number;
-    variation: number;
-  }[];
+    total: number;
+    percent: number;
+    previousTotal: number;
+    variationPercent: number;
+  }>;
 };
 
-type TransactionResponse = {
-  items: TransactionDTO[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    totalCount: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
-  };
-  meta?: {
-    categories: CategoryDTO[];
-  };
+type DashboardTrendPoint = {
+  bucket: string;
+  income: number;
+  expense: number;
+  net: number;
 };
 
-const DISMISSED_STORAGE_KEY = "dismissed_insights";
-const SNOOZED_STORAGE_KEY = "snoozed_insights";
+type DashboardTrendsPayload = {
+  from: string;
+  to: string;
+  granularity: "day" | "week" | "month";
+  series: DashboardTrendPoint[];
+  previousSeries: DashboardTrendPoint[];
+};
 
-const MONTH_GRID: Array<{ monthIndex: number; label: string }> = [
-  { monthIndex: 0, label: "Jan" },
-  { monthIndex: 1, label: "Fev" },
-  { monthIndex: 2, label: "Mar" },
-  { monthIndex: 3, label: "Abr" },
-  { monthIndex: 4, label: "Mai" },
-  { monthIndex: 5, label: "Jun" },
-  { monthIndex: 6, label: "Jul" },
-  { monthIndex: 7, label: "Ago" },
-  { monthIndex: 8, label: "Set" },
-  { monthIndex: 9, label: "Out" },
-  { monthIndex: 10, label: "Nov" },
-  { monthIndex: 11, label: "Dez" }
-];
+type DashboardPatrimonyPayload = {
+  from: string;
+  to: string;
+  granularity: "day" | "week" | "month";
+  series: Array<{
+    bucket: string;
+    value: number;
+  }>;
+};
 
-function parseMonthKey(value: string): { year: number; monthIndex: number } {
-  const match = /^(\d{4})-(\d{2})$/.exec(value);
-  if (match) {
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    if (Number.isInteger(year) && Number.isInteger(month) && month >= 1 && month <= 12) {
-      return { year, monthIndex: month - 1 };
-    }
-  }
+type DashboardOverviewPayload = {
+  from: string;
+  to: string;
+  summary: DashboardSummaryPayload;
+  categories: DashboardCategoriesPayload["topCategories"];
+  trends: DashboardTrendsPayload;
+  patrimony: DashboardPatrimonyPayload;
+};
 
-  const fallback = new Date();
-  return { year: fallback.getFullYear(), monthIndex: fallback.getMonth() };
-}
-
-function formatMonthKey(year: number, monthIndex: number): string {
-  const normalizedMonth = String(monthIndex + 1).padStart(2, "0");
-  return `${year}-${normalizedMonth}`;
-}
-
-function buildTransactionsMonthHref(monthKey: string): string {
-  const parsed = parseMonthKey(monthKey);
-  const monthDate = new Date(parsed.year, parsed.monthIndex, 1);
-  const from = format(startOfMonth(monthDate), "yyyy-MM-dd");
-  const to = format(endOfMonth(monthDate), "yyyy-MM-dd");
-  return `/transactions?period=custom&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-}
-
-function formatDateToInput(date: Date): string {
-  return format(date, "yyyy-MM-dd");
-}
-
-function resolveReferenceDate(referenceMonth: string): Date {
-  const [yearPart, monthPart] = referenceMonth.split("-");
-  const year = Number(yearPart);
-  const month = Number(monthPart);
-
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
-    return new Date();
-  }
-
-  return new Date(year, month - 1, 15);
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function isDashboardPayload(value: unknown): value is DashboardPayload {
-  if (!value || typeof value !== "object") return false;
-
-  const candidate = value as Partial<DashboardPayload>;
-  if (!candidate.cards || typeof candidate.cards !== "object") return false;
-
-  const cards = candidate.cards as Partial<DashboardPayload["cards"]>;
-  return (
-    typeof candidate.referenceMonth === "string" &&
-    typeof candidate.isCurrentMonthReference === "boolean" &&
-    isFiniteNumber(cards.income) &&
-    isFiniteNumber(cards.expense) &&
-    isFiniteNumber(cards.result) &&
-    isFiniteNumber(cards.netWorth) &&
-    isFiniteNumber(cards.spendPaceDelta) &&
-    isFiniteNumber(cards.resultDelta) &&
-    Array.isArray(candidate.spendingTrend) &&
-    Array.isArray(candidate.topCategories)
-  );
-}
-
-function getFilterStartDate(endDate: Date, filter: NetWorthFilter): Date {
-  switch (filter) {
-    case "1D":
-      return subDays(endDate, 1);
-    case "1W":
-      return subDays(endDate, 7);
-    case "1M":
-      return subMonths(endDate, 1);
-    case "3M":
-      return subMonths(endDate, 3);
-    case "YTD":
-      return startOfYear(endDate);
-    case "1Y":
-      return subYears(endDate, 1);
-    case "ALL":
-    default:
-      return subYears(endDate, 100);
-  }
-}
-
-function filterSeriesByRange(
-  series: Array<{ date: string; value: number }>,
-  filter: NetWorthFilter
-): Array<{ date: string; value: number }> {
-  if (series.length === 0 || filter === "ALL") return series;
-
-  const sorted = [...series].sort((a, b) => (a.date > b.date ? 1 : -1));
-  const endDate = parseISO(sorted[sorted.length - 1].date);
-  const startDate = getFilterStartDate(endDate, filter);
-
-  return sorted.filter((point) => {
-    const pointDate = parseISO(point.date);
-    return pointDate >= startOfDay(startDate) && pointDate <= endDate;
-  });
-}
+type DashboardPacePoint = {
+  day: number;
+  current: number;
+  previous: number;
+};
 
 function clamp(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -225,24 +106,40 @@ function clamp(value: number): number {
   return value;
 }
 
-function previousValueFromDelta(current: number, deltaPercent: number): number {
-  const denominator = 1 + deltaPercent / 100;
-  if (!Number.isFinite(denominator) || denominator === 0) return 0;
-  return current / denominator;
+function safeVariationPercent(current: number, previous: number): number {
+  if (previous === 0) return current === 0 ? 0 : 100;
+  return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(2));
 }
 
-function previousMonthKey(monthKey: string): string {
-  const parsed = parseMonthKey(monthKey);
-  const date = new Date(parsed.year, parsed.monthIndex, 1);
-  date.setMonth(date.getMonth() - 1);
-  return formatMonthKey(date.getFullYear(), date.getMonth());
+function formatRangeLabel(from: string, to: string): string {
+  const fromDate = parseISO(from);
+  const toDate = parseISO(to);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return `${from} - ${to}`;
+  }
+  return `${format(fromDate, "dd/MM/yyyy")} - ${format(toDate, "dd/MM/yyyy")}`;
 }
 
-function isZeroAmount(value: number): boolean {
-  return Math.abs(value) < 0.005;
+function buildSpendingPaceSeries(current: DashboardTrendPoint[], previous: DashboardTrendPoint[]): DashboardPacePoint[] {
+  const length = Math.max(current.length, previous.length);
+  const chartData: DashboardPacePoint[] = [];
+  let currentAccumulated = 0;
+  let previousAccumulated = 0;
+
+  for (let index = 0; index < length; index += 1) {
+    currentAccumulated += current[index]?.expense ?? 0;
+    previousAccumulated += previous[index]?.expense ?? 0;
+    chartData.push({
+      day: index + 1,
+      current: Number(currentAccumulated.toFixed(2)),
+      previous: Number(previousAccumulated.toFixed(2))
+    });
+  }
+
+  return chartData;
 }
 
-function DashboardLoading(): React.JSX.Element {
+export function DashboardLoading(): React.JSX.Element {
   return (
     <div className="space-y-6">
       <div className="grid gap-6 xl:grid-cols-12">
@@ -257,192 +154,80 @@ function DashboardLoading(): React.JSX.Element {
   );
 }
 
-async function fetchTransactionsForInsights(params: {
-  from: Date;
-  to: Date;
-  signal?: AbortSignal;
-}): Promise<{ items: TransactionDTO[]; categories: CategoryDTO[] }> {
-  const aggregatedItems: TransactionDTO[] = [];
-  let categories: CategoryDTO[] = [];
-  let page = 1;
-  let hasNextPage = true;
+async function fetchDashboardResource<T>(url: string): Promise<T> {
+  const response = await fetch(url);
+  const { data: payload, errorMessage } = await parseApiResponse<ApiEnvelope<T> | { error?: unknown }>(response);
 
-  while (hasNextPage) {
-    const query = new URLSearchParams({
-      period: "custom",
-      from: formatDateToInput(params.from),
-      to: params.to.toISOString(),
-      page: String(page),
-      pageSize: "200"
-    });
-    if (page === 1) {
-      query.set("includeMeta", "1");
-    }
-
-    const response = await fetch(`/api/transactions?${query.toString()}`, { signal: params.signal });
-    const { data, errorMessage } = await parseApiResponse<TransactionResponse | { error?: unknown }>(response);
-
-    if (errorMessage) {
-      throw new Error(errorMessage);
-    }
-
-    if (!response.ok || !data || !("items" in data)) {
-      throw new Error(extractApiError(data, "Não foi possível carregar dados para insights."));
-    }
-
-    aggregatedItems.push(...data.items);
-    if (page === 1 && data.meta?.categories) {
-      categories = data.meta.categories;
-    }
-
-    hasNextPage = data.pagination.hasNextPage;
-    page += 1;
+  if (errorMessage) {
+    throw new Error(errorMessage);
   }
 
-  return { items: aggregatedItems, categories };
+  if (!response.ok || !payload || !("data" in payload)) {
+    throw new Error(extractApiError(payload, "Nao foi possivel carregar os dados do dashboard."));
+  }
+
+  return payload.data;
 }
 
 export function DashboardPage(): React.JSX.Element {
-  const now = useMemo(() => new Date(), []);
-  const currentMonthKey = useMemo(() => format(now, "yyyy-MM"), [now]);
-  const currentMonthParsed = useMemo(() => parseMonthKey(currentMonthKey), [currentMonthKey]);
-  const [data, setData] = useState<DashboardPayload | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [insights, setInsights] = useState<Insight[]>([]);
-  const [insightsLoading, setInsightsLoading] = useState(true);
-  const [netWorthFilter, setNetWorthFilter] = useState<NetWorthFilter>("1W");
-  const [showFilters, setShowFilters] = useState(false);
-  const [dashboardMonth, setDashboardMonth] = useState("");
-  const [pickerYear, setPickerYear] = useState(currentMonthParsed.year);
-  const [pickerMonthIndex, setPickerMonthIndex] = useState(currentMonthParsed.monthIndex);
-  const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(new Set<string>());
-  const [snoozedInsights, setSnoozedInsights] = useState<Record<string, number>>({});
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const filtersPopoverId = `dashboard-filters-${useId().replace(/:/g, "")}`;
   const filtersRootRef = useRef<HTMLDivElement | null>(null);
-  const filtersMonthButtonRef = useRef<HTMLButtonElement | null>(null);
+  const filtersFromInputRef = useRef<HTMLInputElement | null>(null);
+  const now = useMemo(() => new Date(), []);
+  const defaultRange = useMemo(() => resolveDefaultRange(now), [now]);
+  const defaultFrom = defaultRange.from;
+  const defaultTo = defaultRange.to;
+  const [showFilters, setShowFilters] = useState(false);
+  const [draftFrom, setDraftFrom] = useState(defaultFrom);
+  const [draftTo, setDraftTo] = useState(defaultTo);
 
-  const loadDashboard = useCallback(async (): Promise<void> => {
-    setLoading(true);
-    setError("");
-
-    try {
-      const query = new URLSearchParams({ view: "dashboard" });
-      if (dashboardMonth) {
-        query.set("month", dashboardMonth);
-      }
-
-      const response = await fetch(`/api/metrics/official?${query.toString()}`);
-      const { data: payload, errorMessage } = await parseApiResponse<DashboardPayload | { error?: unknown }>(response);
-
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-
-      if (!response.ok || !payload) {
-        throw new Error(extractApiError(payload, "Não foi possível carregar o dashboard."));
-      }
-
-      if (!isDashboardPayload(payload)) {
-        throw new Error("Resposta inválida do dashboard.");
-      }
-
-      setData(payload);
-    } catch (loadError) {
-      setData(null);
-      setError(loadError instanceof Error ? loadError.message : "Erro ao carregar dashboard.");
-    } finally {
-      setLoading(false);
-    }
-  }, [dashboardMonth]);
+  const sharedFilters = useMemo(() => parseSharedFilters(searchParams, now), [now, searchParams]);
+  const selectedFrom = sharedFilters.from || defaultFrom;
+  const selectedTo = sharedFilters.to || defaultTo;
 
   useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+    const hasValidFrom = isValidSharedDateInput(searchParams.get("from"));
+    const hasValidTo = isValidSharedDateInput(searchParams.get("to"));
+    if (hasValidFrom && hasValidTo) return;
 
-  useEffect(() => {
-    const dismissed = loadDismissed(DISMISSED_STORAGE_KEY);
-    const snoozedRaw = loadSnoozed(SNOOZED_STORAGE_KEY);
-    const snoozedPruned = pruneExpiredSnoozed(snoozedRaw);
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("from", hasValidFrom ? (searchParams.get("from") as string) : defaultFrom);
+    nextParams.set("to", hasValidTo ? (searchParams.get("to") as string) : defaultTo);
+    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+  }, [defaultFrom, defaultTo, pathname, router, searchParams]);
 
-    setDismissedInsights(dismissed);
-    setSnoozedInsights(snoozedPruned);
+  const rangeQuery = useMemo(() => {
+    const params = new URLSearchParams({
+      from: selectedFrom,
+      to: selectedTo
+    });
+    if (sharedFilters.type) params.set("type", sharedFilters.type);
+    if (sharedFilters.accountId) params.set("accountId", sharedFilters.accountId);
+    if (sharedFilters.categoryId) params.set("categoryId", sharedFilters.categoryId);
+    if (sharedFilters.excluded === "excluded") params.set("excluded", "true");
+    if (sharedFilters.q) params.set("q", sharedFilters.q);
+    return params.toString();
+  }, [selectedFrom, selectedTo, sharedFilters]);
 
-    if (Object.keys(snoozedRaw).length !== Object.keys(snoozedPruned).length) {
-      saveSnoozed(SNOOZED_STORAGE_KEY, snoozedPruned);
-    }
-  }, []);
+  const overviewRequest = useSWR<DashboardOverviewPayload>(
+    `/api/dashboard/overview?${rangeQuery}`,
+    fetchDashboardResource,
+    { revalidateOnFocus: false }
+  );
 
-  useEffect(() => {
-    if (!data) {
-      setInsights([]);
-      setInsightsLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    const loadInsights = async (): Promise<void> => {
-      setInsightsLoading(true);
-
-      try {
-        const referenceDate = resolveReferenceDate(data.referenceMonth);
-        const period = buildMonthComparison(referenceDate);
-        const historyStart = startOfMonth(subMonths(period.currentPeriod.start, 6));
-        const historyEnd = period.currentPeriod.end;
-
-        const insightsData = await fetchTransactionsForInsights({
-          from: historyStart,
-          to: historyEnd,
-          signal: controller.signal
-        });
-
-        const computed = buildInsights({
-          transactions: insightsData.items,
-          categories: insightsData.categories,
-          period,
-          today: new Date()
-        });
-
-        setInsights(computed);
-      } catch (loadError) {
-        if (loadError instanceof DOMException && loadError.name === "AbortError") {
-          return;
-        }
-        setInsights([]);
-      } finally {
-        setInsightsLoading(false);
-      }
-    };
-
-    void loadInsights();
-    return () => controller.abort();
-  }, [data]);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setSnoozedInsights((current) => {
-        const pruned = pruneExpiredSnoozed(current);
-        if (Object.keys(pruned).length !== Object.keys(current).length) {
-          saveSnoozed(SNOOZED_STORAGE_KEY, pruned);
-          return pruned;
-        }
-        return current;
-      });
-    }, 60_000);
-
-    return () => window.clearInterval(intervalId);
-  }, []);
+  const loading = overviewRequest.isLoading;
+  const error = overviewRequest.error?.message || "";
 
   useEffect(() => {
     if (!showFilters) return;
-
-    const activeMonth = dashboardMonth || currentMonthKey;
-    const parsed = parseMonthKey(activeMonth);
-    setPickerYear(parsed.year);
-    setPickerMonthIndex(parsed.monthIndex);
+    setDraftFrom(selectedFrom);
+    setDraftTo(selectedTo);
 
     const focusTimer = window.setTimeout(() => {
-      filtersMonthButtonRef.current?.focus();
+      filtersFromInputRef.current?.focus();
     }, 0);
 
     const handlePointerDown = (event: MouseEvent): void => {
@@ -467,128 +252,98 @@ export function DashboardPage(): React.JSX.Element {
       window.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [currentMonthKey, dashboardMonth, showFilters]);
+  }, [selectedFrom, selectedTo, showFilters]);
 
-  const isMonthFilterActive = dashboardMonth.length > 0;
-  const appliedMonthLabel = isMonthFilterActive ? formatMonthLabel(dashboardMonth) : "";
-  const fallbackTargetMonthKey = isMonthFilterActive ? dashboardMonth : currentMonthKey;
+  const updateRangeInUrl = useCallback(
+    (from: string, to: string) => {
+      if (!isValidSharedDateInput(from) || !isValidSharedDateInput(to)) return;
+      if (new Date(`${from}T00:00:00.000Z`).getTime() > new Date(`${to}T00:00:00.000Z`).getTime()) return;
+
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.set("from", from);
+      nextParams.set("to", to);
+      router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const applyDateFilter = useCallback(() => {
+    updateRangeInUrl(draftFrom, draftTo);
+    setShowFilters(false);
+  }, [draftFrom, draftTo, updateRangeInUrl]);
+
+  const clearDateFilter = useCallback(() => {
+    updateRangeInUrl(defaultFrom, defaultTo);
+    setShowFilters(false);
+  }, [defaultFrom, defaultTo, updateRangeInUrl]);
+
+  const isMonthFilterActive = selectedFrom !== defaultFrom || selectedTo !== defaultTo;
+  const appliedMonthLabel = formatRangeLabel(selectedFrom, selectedTo);
+  const filterButtonLabel = isMonthFilterActive ? `Filtro: ${appliedMonthLabel}` : "Filtros";
 
   const dashboardView = useMemo(() => {
-    if (!data) return null;
+    if (!overviewRequest.data) {
+      return null;
+    }
 
-    const usingReferenceFallback = data.referenceMonth !== fallbackTargetMonthKey;
-    const referenceMonthLabel = formatMonthLabel(data.referenceMonth);
-    const selectedMonthLabel = formatMonthLabel(fallbackTargetMonthKey);
+    const summary = overviewRequest.data.summary;
+    const categories = overviewRequest.data.categories;
+    const trends = overviewRequest.data.trends;
+    const patrimonySeries = overviewRequest.data.patrimony.series.map((point) => ({
+      date: point.bucket,
+      value: point.value
+    }));
+
+    const paceDelta = Number(
+      (summary.previousPeriodComparison.previousExpense - summary.totalExpense).toFixed(2)
+    );
+    const expenseVariation = safeVariationPercent(
+      summary.totalExpense,
+      summary.previousPeriodComparison.previousExpense
+    );
+    const spendingTrend = buildSpendingPaceSeries(trends.series, trends.previousSeries);
+    const patrimonyCurrent = patrimonySeries[patrimonySeries.length - 1]?.value ?? 0;
+    const patrimonyVariation =
+      patrimonySeries.length >= 2 ? patrimonyCurrent - (patrimonySeries[0]?.value ?? 0) : 0;
+    const resultProgress = clamp((summary.totalExpense / Math.max(summary.totalIncome, 1)) * 100);
     const periodDescription = isMonthFilterActive
-      ? `período selecionado (${selectedMonthLabel})`
-      : usingReferenceFallback
-        ? `período de referência (${referenceMonthLabel})`
-        : "mês atual";
-
-    const currentPeriod = data.periodComparison?.current ?? {
-      income: data.cards.income,
-      expense: data.cards.expense,
-      result: data.cards.result,
-      excluded: 0
-    };
-
-    const previousPeriod = data.periodComparison?.previous ?? {
-      income: data.cards.income,
-      expense: previousValueFromDelta(data.cards.expense, data.cards.spendPaceDelta),
-      result: previousValueFromDelta(data.cards.result, data.cards.resultDelta),
-      excluded: 0
-    };
-
-    const resultProgress = clamp((currentPeriod.expense / Math.max(currentPeriod.income, 1)) * 100);
-
-    const sortedSeries = [...(data.netWorthSeries ?? [])].sort((a, b) => (a.date > b.date ? 1 : -1));
-    const filteredNetWorthSeries = filterSeriesByRange(sortedSeries, netWorthFilter);
-    const netWorthSeries = filteredNetWorthSeries.length > 0 ? filteredNetWorthSeries : sortedSeries;
-
-    const netWorthCurrent = netWorthSeries[netWorthSeries.length - 1]?.value ?? data.cards.netWorth;
-    const netWorthVariation =
-      netWorthSeries.length >= 2
-        ? netWorthCurrent - netWorthSeries[0].value
-        : (data.netWorthDelta ?? 0);
+      ? `${formatRangeLabel(selectedFrom, selectedTo)}`
+      : "mes atual";
 
     return {
-      referenceMonthLabel,
       periodDescription,
-      currentPeriod,
-      previousPeriod,
-      resultProgress,
-      netWorthCurrent,
-      netWorthVariation,
-      netWorthSeries,
-      topCategories: data.topCategories.map((item) => ({
-        ...item,
-        icon: item.icon ?? null
+      spending: {
+        paceDelta,
+        expenseVariation,
+        previousExpense: summary.previousPeriodComparison.previousExpense,
+        chartData: spendingTrend
+      },
+      result: {
+        current: summary.net,
+        variation: summary.previousPeriodComparison.percent,
+        previous: summary.previousPeriodComparison.previousNet,
+        progress: resultProgress,
+        income: summary.totalIncome,
+        expense: summary.totalExpense,
+        excluded: summary.excludedTotal
+      },
+      patrimony: {
+        current: patrimonyCurrent,
+        variation: Number(patrimonyVariation.toFixed(2)),
+        hasData: patrimonySeries.length >= 2,
+        series: patrimonySeries
+      },
+      categories: categories.map((item) => ({
+        categoryId: item.categoryId ?? "uncategorized",
+        name: item.name,
+        color: item.color,
+        icon: null,
+        current: item.total,
+        previous: item.previousTotal,
+        variation: item.variationPercent
       }))
     };
-  }, [data, fallbackTargetMonthKey, isMonthFilterActive, netWorthFilter]);
-
-  const handleDismissInsight = useCallback((insightId: string): void => {
-    setDismissedInsights((current) => {
-      const next = new Set(current);
-      next.add(insightId);
-      saveDismissed(DISMISSED_STORAGE_KEY, next);
-      return next;
-    });
-  }, []);
-
-  const handleSnoozeInsight = useCallback((insightId: string, days: 1 | 7): void => {
-    const until = Date.now() + days * 24 * 60 * 60 * 1000;
-    setSnoozedInsights((current) => {
-      const next = { ...current, [insightId]: until };
-      saveSnoozed(SNOOZED_STORAGE_KEY, next);
-      return next;
-    });
-  }, []);
-
-  const handleClearDismissed = useCallback((): void => {
-    const next = new Set<string>();
-    setDismissedInsights(next);
-    saveDismissed(DISMISSED_STORAGE_KEY, next);
-  }, []);
-
-  const activeNotifications = useMemo(() => {
-    const prunedSnoozed = pruneExpiredSnoozed(snoozedInsights);
-    return filterActiveInsights(insights, dismissedInsights, prunedSnoozed);
-  }, [dismissedInsights, insights, snoozedInsights]);
-
-  const applyMonthFilter = useCallback((year: number, monthIndex: number): void => {
-    setDashboardMonth(formatMonthKey(year, monthIndex));
-    setPickerYear(year);
-    setPickerMonthIndex(monthIndex);
-    setShowFilters(false);
-  }, []);
-
-  const filterButtonLabel = isMonthFilterActive ? `Filtro: ${appliedMonthLabel}` : "Filtros";
-  const fallbackTargetMonthLabel = formatMonthLabel(fallbackTargetMonthKey);
-  const previousFallbackTargetMonthLabel = formatMonthLabel(previousMonthKey(fallbackTargetMonthKey));
-  const fallbackTransactionsHref = buildTransactionsMonthHref(fallbackTargetMonthKey);
-  const isReferenceFallbackActive = data ? data.referenceMonth !== fallbackTargetMonthKey : false;
-  const hasNoTransactionsInSelectedMonth = Boolean(
-    dashboardView &&
-      isZeroAmount(dashboardView.currentPeriod.income) &&
-      isZeroAmount(dashboardView.currentPeriod.expense) &&
-      isZeroAmount(dashboardView.currentPeriod.result)
-  );
-  const showMonthNotice = isReferenceFallbackActive || hasNoTransactionsInSelectedMonth;
-  const fallbackNoticeVariant = isReferenceFallbackActive
-    ? isMonthFilterActive
-      ? "info"
-      : "warning"
-    : "info";
-  const noticeTitle = `Sem lançamentos em ${fallbackTargetMonthLabel}.`;
-  const referenceNoticeMonthLabel = dashboardView?.referenceMonthLabel ?? fallbackTargetMonthLabel;
-  const shouldShowReferenceNotice = isReferenceFallbackActive && referenceNoticeMonthLabel !== fallbackTargetMonthLabel;
-  const noticeSubtitle = shouldShowReferenceNotice
-    ? `Mostrando dados de ${referenceNoticeMonthLabel}.`
-    : `Comparando com ${previousFallbackTargetMonthLabel}.`;
-  const isCurrentMonthScope = !isMonthFilterActive && data?.isCurrentMonthReference === true;
-  const spendingCurrentLabel = isCurrentMonthScope ? "Este mês" : "Período selecionado";
-  const spendingPreviousLabel = isCurrentMonthScope ? "Mês passado" : "Mês anterior";
+  }, [isMonthFilterActive, overviewRequest.data, selectedFrom, selectedTo]);
 
   const actions = useMemo(
     () => (
@@ -596,12 +351,16 @@ export function DashboardPage(): React.JSX.Element {
         <div className="relative order-first" ref={filtersRootRef}>
           <Button
             type="button"
-            variant={showFilters ? "primary" : "outline"}
             size="sm"
             aria-haspopup="dialog"
             aria-expanded={showFilters}
             aria-controls={showFilters ? filtersPopoverId : undefined}
             onClick={() => setShowFilters((previous) => !previous)}
+            className={cn(
+              "border border-slate-300/90 bg-white/90 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
+              showFilters &&
+                "border-sky-500/40 bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-[0_10px_22px_rgba(14,116,144,0.35)] hover:brightness-110 dark:border-sky-500/30 dark:text-white"
+            )}
           >
             <SlidersHorizontal className="h-4 w-4" />
             {filterButtonLabel}
@@ -613,7 +372,7 @@ export function DashboardPage(): React.JSX.Element {
             aria-label="Filtro do dashboard"
             aria-hidden={!showFilters}
             className={[
-              "absolute right-0 top-full z-40 mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card p-2.5 shadow-xl",
+              "absolute right-0 top-full z-40 mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-100/90 p-2.5 shadow-xl dark:border-slate-700 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/90",
               "origin-top-right transition-all duration-150 ease-out",
               showFilters
                 ? "visible translate-y-0 scale-100 opacity-100 pointer-events-auto"
@@ -621,210 +380,124 @@ export function DashboardPage(): React.JSX.Element {
             ].join(" ")}
           >
             <div className="space-y-0.5">
-              <h3 className="text-[13px] font-semibold">Filtro do dashboard</h3>
-              <p className="text-[11px] text-muted-foreground">Selecione mês e ano sem abrir listas grandes.</p>
+              <h3 className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">Filtro do dashboard</h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Selecione o intervalo de datas.</p>
             </div>
 
-            <div className="mt-2.5 flex items-center justify-between rounded-xl border border-border/80 bg-muted/30 px-1.5 py-0.5">
-              <button
-                type="button"
-                aria-label="Ano anterior"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setPickerYear((current) => current - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="text-xs font-semibold tabular-nums">{pickerYear}</span>
-              <button
-                type="button"
-                aria-label="Próximo ano"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setPickerYear((current) => current + 1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+            <div className="mt-3 grid grid-cols-1 gap-2">
+              <div className="space-y-1">
+                <label htmlFor="dashboard-filter-from" className="text-[11px] text-slate-500 dark:text-slate-400">
+                  De
+                </label>
+                <Input
+                  id="dashboard-filter-from"
+                  ref={filtersFromInputRef}
+                  type="date"
+                  value={draftFrom}
+                  onChange={(event) => setDraftFrom(event.target.value)}
+                  className="h-9 rounded-xl border-slate-200/90 bg-white dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="dashboard-filter-to" className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Ate
+                </label>
+                <Input
+                  id="dashboard-filter-to"
+                  type="date"
+                  value={draftTo}
+                  onChange={(event) => setDraftTo(event.target.value)}
+                  className="h-9 rounded-xl border-slate-200/90 bg-white dark:border-slate-700 dark:bg-slate-900"
+                />
+              </div>
             </div>
 
-            <div className="mt-2.5 grid grid-cols-4 gap-1">
-              {MONTH_GRID.map((month) => {
-                const isSelected = month.monthIndex === pickerMonthIndex;
-                const isCurrentMonth =
-                  pickerYear === currentMonthParsed.year && month.monthIndex === currentMonthParsed.monthIndex;
-
-                return (
-                  <button
-                    key={month.monthIndex}
-                    ref={month.monthIndex === pickerMonthIndex ? filtersMonthButtonRef : undefined}
-                    type="button"
-                    aria-pressed={isSelected}
-                    onClick={() => applyMonthFilter(pickerYear, month.monthIndex)}
-                    className={[
-                      "h-7 rounded-lg border text-[11px] font-medium transition",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      isSelected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background text-foreground hover:bg-muted",
-                      isCurrentMonth && !isSelected ? "border-primary/40" : ""
-                    ].join(" ")}
-                  >
-                    {month.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-2.5 flex items-center justify-between gap-2">
+            <div className="mt-3 flex items-center justify-between gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  setDashboardMonth("");
-                  setShowFilters(false);
-                }}
+                onClick={clearDateFilter}
+                className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
               >
-                Sem filtro
+                Mes atual
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => applyMonthFilter(currentMonthParsed.year, currentMonthParsed.monthIndex)}
+                onClick={applyDateFilter}
+                className="border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                Este mês
+                Aplicar
               </Button>
             </div>
           </section>
         </div>
+
         <NotificationsBell
-          insights={activeNotifications}
-          isLoading={insightsLoading}
-          dismissedCount={dismissedInsights.size}
-          onDismissInsight={handleDismissInsight}
-          onSnoozeInsight={handleSnoozeInsight}
-          onClearDismissed={handleClearDismissed}
+          insights={[]}
+          isLoading={false}
+          dismissedCount={0}
+          onDismissInsight={() => undefined}
+          onSnoozeInsight={() => undefined}
+          onClearDismissed={() => undefined}
         />
       </>
     ),
-    [
-      activeNotifications,
-      applyMonthFilter,
-      currentMonthParsed.monthIndex,
-      currentMonthParsed.year,
-      dismissedInsights.size,
-      filterButtonLabel,
-      filtersPopoverId,
-      handleClearDismissed,
-      handleDismissInsight,
-      handleSnoozeInsight,
-      insightsLoading,
-      pickerMonthIndex,
-      pickerYear,
-      showFilters,
-    ]
+    [applyDateFilter, clearDateFilter, draftFrom, draftTo, filterButtonLabel, filtersPopoverId, showFilters]
   );
 
   return (
-    <PageShell title="Dashboard" subtitle="Aqui está uma visão geral das suas finanças" actions={actions}>
-      <div className="space-y-4">
+    <PageShell title="Dashboard" subtitle="Visao geral das suas financas" actions={actions}>
+      <div className="space-y-5 overflow-x-hidden">
         {loading ? (
           <DashboardLoading />
-        ) : !data || !dashboardView ? (
-          <FeedbackMessage variant="error">{error || "Não foi possível carregar os dados do dashboard."}</FeedbackMessage>
+        ) : error || !dashboardView ? (
+          <FeedbackMessage variant="error">{error || "Nao foi possivel carregar os dados do dashboard."}</FeedbackMessage>
         ) : (
-          <div className="space-y-6">
-            {showMonthNotice ? (
-              <FeedbackMessage
-                variant={fallbackNoticeVariant}
-                className={[
-                  "!rounded-lg !px-3 !py-2",
-                  isReferenceFallbackActive
-                    ? isMonthFilterActive
-                      ? "!bg-muted/55 !text-muted-foreground"
-                      : "!bg-amber-50/45 !text-amber-800 dark:!bg-amber-950/25 dark:!text-amber-200"
-                    : "!bg-muted/55 !text-muted-foreground"
-                ].join(" ")}
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5 shrink-0 opacity-90" aria-hidden="true">
-                      {isReferenceFallbackActive && !isMonthFilterActive ? (
-                        <AlertTriangle className="h-4 w-4" />
-                      ) : (
-                        <Info className="h-4 w-4" />
-                      )}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium leading-5">{noticeTitle}</p>
-                      <p className="text-xs opacity-85">{noticeSubtitle}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Link
-                      href={fallbackTransactionsHref}
-                      className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      Ver transações do mês
-                    </Link>
-                    {isMonthFilterActive ? (
-                      <button
-                        type="button"
-                        className="inline-flex h-7 items-center rounded-full border border-current/20 px-2.5 text-xs font-medium transition hover:bg-current/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => {
-                          setDashboardMonth("");
-                          setShowFilters(false);
-                        }}
-                      >
-                        Limpar filtro
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </FeedbackMessage>
-            ) : null}
-
-            <section className="grid gap-6 xl:grid-cols-12">
-              <div className="xl:col-span-7">
+          <div className="space-y-5">
+            <section className="grid gap-4 xl:grid-cols-12">
+              <div className="min-w-0 xl:col-span-7">
                 <SpendingPaceCard
-                  chartAccumulatedData={data.spendingTrend}
-                  chartDailyData={data.spendingTrendDaily}
-                  compareUntilDay={data.spendingTrendMeta?.compareUntilDay}
-                  currentLabel={spendingCurrentLabel}
-                  previousLabel={spendingPreviousLabel}
+                  paceDelta={dashboardView.spending.paceDelta}
+                  variationPercent={dashboardView.spending.expenseVariation}
+                  previousExpense={dashboardView.spending.previousExpense}
+                  chartData={dashboardView.spending.chartData}
+                  currentLabel="Periodo atual"
+                  previousLabel="Periodo anterior"
                   periodDescription={dashboardView.periodDescription}
                 />
               </div>
 
-              <div className="xl:col-span-5">
+              <div className="min-w-0 xl:col-span-5">
                 <NetWorthCard
-                  valorTotal={dashboardView.netWorthCurrent}
-                  variacao={dashboardView.netWorthVariation}
-                  isDataAvailable={dashboardView.netWorthSeries.length >= 2}
-                  activeFilter={netWorthFilter}
-                  onFilterChange={setNetWorthFilter}
+                  valorTotal={dashboardView.patrimony.current}
+                  variacao={dashboardView.patrimony.variation}
+                  isDataAvailable={dashboardView.patrimony.hasData}
                   periodDescription={dashboardView.periodDescription}
-                  series={dashboardView.netWorthSeries}
+                  series={dashboardView.patrimony.series}
                 />
               </div>
             </section>
 
-            <section className="grid gap-6 xl:grid-cols-12">
-              <div className="xl:col-span-5">
+            <section className="grid gap-4 xl:grid-cols-12">
+              <div className="min-w-0 xl:col-span-5">
                 <PartialResultCard
-                  resultadoAtual={dashboardView.currentPeriod.result}
-                  porcentagemVariacao={data.cards.resultDelta}
-                  resultadoMesAnterior={dashboardView.previousPeriod.result}
-                  porcentagemProgresso={dashboardView.resultProgress}
-                  receita={dashboardView.currentPeriod.income}
-                  gasto={dashboardView.currentPeriod.expense}
-                  excluido={dashboardView.currentPeriod.excluded}
+                  resultadoAtual={dashboardView.result.current}
+                  porcentagemVariacao={dashboardView.result.variation}
+                  resultadoMesAnterior={dashboardView.result.previous}
+                  porcentagemProgresso={dashboardView.result.progress}
+                  receita={dashboardView.result.income}
+                  gasto={dashboardView.result.expense}
+                  excluido={dashboardView.result.excluded}
                   periodDescription={dashboardView.periodDescription}
                 />
               </div>
 
-              <div className="xl:col-span-7">
+              <div className="min-w-0 xl:col-span-7">
                 <TopCategoriesCard
-                  categorias={dashboardView.topCategories}
+                  categorias={dashboardView.categories}
                   periodDescription={dashboardView.periodDescription}
                 />
               </div>

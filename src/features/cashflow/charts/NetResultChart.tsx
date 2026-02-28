@@ -1,11 +1,11 @@
 "use client";
 
+import type { TooltipContentProps, TooltipPayloadEntry } from "recharts";
 import {
   Bar,
+  BarChart,
   CartesianGrid,
   Cell,
-  ComposedChart,
-  Line,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -13,9 +13,8 @@ import {
   YAxis
 } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DefaultChartTooltip } from "@/src/components/charts/DefaultChartTooltip";
 import type { NetResultRow } from "@/src/features/cashflow/types";
-import { formatBRLCompact, formatMonthLabel } from "@/src/utils/format";
+import { formatBRL, formatBRLCompact, formatMonthLabel } from "@/src/utils/format";
 
 type NetResultChartProps = {
   data: NetResultRow[];
@@ -23,11 +22,12 @@ type NetResultChartProps = {
   loading?: boolean;
 };
 
+type NetTooltipPayloadItem = TooltipPayloadEntry<number, string>;
+
 function resolveDomainMax(data: NetResultRow[]): number {
   const maxAbsolute = data.reduce((accumulator, item) => {
-    const previousAbs = typeof item.previousNet === "number" ? Math.abs(item.previousNet) : 0;
     const valueAbs = Math.abs(item.net);
-    return Math.max(accumulator, valueAbs, previousAbs);
+    return Math.max(accumulator, valueAbs);
   }, 0);
 
   if (maxAbsolute === 0) {
@@ -39,22 +39,34 @@ function resolveDomainMax(data: NetResultRow[]): number {
   return Math.ceil(padded / magnitude) * magnitude;
 }
 
-function formatTooltipMonth(label: string | number | undefined): string {
-  if (typeof label === "string") {
-    return formatMonthLabel(label);
-  }
-
-  if (typeof label === "number") {
-    return String(label);
-  }
-
-  return "";
-}
-
 function resolveXAxisInterval(pointsLength: number): number {
   if (pointsLength <= 6) return 0;
   if (pointsLength <= 12) return 1;
   return Math.max(1, Math.ceil(pointsLength / 8) - 1);
+}
+
+function NetResultTooltip({
+  active,
+  payload,
+  label
+}: Partial<TooltipContentProps<number, string>>): React.JSX.Element | null {
+  if (!active || !payload || payload.length === 0) return null;
+
+  const item = (payload as NetTooltipPayloadItem[]).find((entry) => entry.dataKey === "net");
+  const value = typeof item?.value === "number" ? item.value : 0;
+  const labelText = typeof label === "string" ? formatMonthLabel(label) : String(label ?? "");
+
+  return (
+    <div className="min-w-[12rem] rounded-xl border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-100 shadow-xl backdrop-blur">
+      <p className="mb-2 font-semibold">{labelText}</p>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-slate-300">Resultado liquido</span>
+        <span className={value >= 0 ? "font-bold text-emerald-300" : "font-bold text-rose-300"}>
+          {formatBRL(value)}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function NetResultChart({
@@ -70,69 +82,64 @@ export function NetResultChart({
     return [-maxDomainValue, maxDomainValue];
   })();
 
-  const hasPreviousNet = chartData.some((entry) => typeof entry.previousNet === "number");
-
   if (loading) {
-    return <Skeleton className="h-[260px] rounded-xl" />;
+    return <Skeleton className="h-[220px] rounded-xl" />;
   }
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
         Sem dados no período selecionado.
       </div>
     );
   }
 
   return (
-    <div className="h-[260px] w-full">
+    <div className="h-[220px] w-full">
       <p className="sr-only">{a11ySummary}</p>
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={chartData} margin={{ top: 12, right: 10, left: 0, bottom: 0 }}>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.14} />
+        <BarChart data={chartData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }} barSize={44}>
+          <defs>
+            <linearGradient id="cashflow-net-positive" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.9} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0.42} />
+            </linearGradient>
+            <linearGradient id="cashflow-net-negative" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ef4444" stopOpacity={0.92} />
+              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.45} />
+            </linearGradient>
+          </defs>
+
+          <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.18} />
           <XAxis
             dataKey="month"
             tickFormatter={formatMonthLabel}
             interval={xAxisInterval}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false}
             axisLine={false}
-            tickMargin={10}
+            tickMargin={8}
             minTickGap={12}
           />
           <YAxis
             tickFormatter={formatBRLCompact}
             domain={yDomain}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false}
             axisLine={false}
-            width={84}
+            width={78}
           />
-          <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1.4} />
-          <Tooltip content={<DefaultChartTooltip titleFormatter={formatTooltipMonth} />} />
-          <Bar
-            dataKey="net"
-            name="Resultado líquido"
-            fill="#66bb6a"
-            maxBarSize={34}
-            radius={[8, 8, 8, 8]}
-          >
+          <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1.2} strokeDasharray="4 3" />
+          <Tooltip content={<NetResultTooltip />} cursor={{ fill: "rgba(148,163,184,0.12)" }} />
+          <Bar dataKey="net" name="Resultado liquido" radius={[6, 6, 0, 0]}>
             {chartData.map((entry) => (
-              <Cell key={entry.month} fill={entry.net >= 0 ? "#66bb6a" : "#ef5350"} />
+              <Cell
+                key={entry.month}
+                fill={entry.net >= 0 ? "url(#cashflow-net-positive)" : "url(#cashflow-net-negative)"}
+              />
             ))}
           </Bar>
-          {hasPreviousNet ? (
-            <Line
-              type="monotone"
-              dataKey="previousNet"
-              name="Período anterior"
-              stroke="#94a3b8"
-              strokeDasharray="4 4"
-              strokeWidth={2}
-              dot={false}
-            />
-          ) : null}
-        </ComposedChart>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );

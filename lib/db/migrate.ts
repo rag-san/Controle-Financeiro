@@ -212,6 +212,7 @@ async function runMigrations(): Promise<void> {
       currency TEXT NOT NULL DEFAULT 'BRL',
       type TEXT NOT NULL,
       direction TEXT NOT NULL DEFAULT 'out',
+      excluded BOOLEAN NOT NULL DEFAULT FALSE,
       is_internal_transfer BOOLEAN NOT NULL DEFAULT FALSE,
       status TEXT NOT NULL DEFAULT 'posted',
       account TEXT,
@@ -305,17 +306,155 @@ async function runMigrations(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_rules_user_priority ON category_rules(user_id, priority);
     CREATE INDEX IF NOT EXISTS idx_rules_user_enabled ON category_rules(user_id, enabled);
+
+    CREATE TABLE IF NOT EXISTS institutions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_institutions_slug ON institutions(slug);
+
+    CREATE TABLE IF NOT EXISTS credit_card_accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      institution_id TEXT,
+      name TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'BRL',
+      closing_day INTEGER,
+      due_day INTEGER,
+      default_payment_account_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE SET NULL,
+      FOREIGN KEY (default_payment_account_id) REFERENCES accounts(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_credit_card_accounts_user ON credit_card_accounts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_credit_card_accounts_user_institution ON credit_card_accounts(user_id, institution_id);
+    CREATE INDEX IF NOT EXISTS idx_credit_card_accounts_user_default_payment
+      ON credit_card_accounts(user_id, default_payment_account_id);
+
+    CREATE TABLE IF NOT EXISTS import_sources (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      institution_id TEXT,
+      kind TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      file_hash TEXT NOT NULL,
+      imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE SET NULL,
+      CHECK (kind IN ('BANK_STATEMENT', 'CC_STATEMENT'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_import_sources_user_hash ON import_sources(user_id, file_hash);
+    CREATE INDEX IF NOT EXISTS idx_import_sources_user_imported_at ON import_sources(user_id, imported_at);
+
+    CREATE TABLE IF NOT EXISTS transaction_raw (
+      id TEXT PRIMARY KEY,
+      import_source_id TEXT NOT NULL,
+      raw_external_id TEXT,
+      posted_at TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      direction TEXT NOT NULL,
+      description_raw TEXT NOT NULL,
+      meta_json TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (import_source_id) REFERENCES import_sources(id) ON DELETE CASCADE,
+      CHECK (direction IN ('IN', 'OUT'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_transaction_raw_source_posted ON transaction_raw(import_source_id, posted_at);
+    CREATE INDEX IF NOT EXISTS idx_transaction_raw_source_external ON transaction_raw(import_source_id, raw_external_id);
+
+    CREATE TABLE IF NOT EXISTS ledger_entries (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      posted_at TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      direction TEXT,
+      type TEXT NOT NULL,
+      description_normalized TEXT NOT NULL,
+      merchant_normalized TEXT,
+      account_id TEXT,
+      credit_card_account_id TEXT,
+      category_id TEXT,
+      import_source_id TEXT,
+      raw_transaction_id TEXT,
+      external_ref TEXT,
+      fingerprint TEXT NOT NULL,
+      transfer_group_id TEXT,
+      reconciliation_status TEXT NOT NULL DEFAULT 'unmatched',
+      transfer_fee_cents INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL,
+      FOREIGN KEY (credit_card_account_id) REFERENCES credit_card_accounts(id) ON DELETE SET NULL,
+      FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL,
+      FOREIGN KEY (import_source_id) REFERENCES import_sources(id) ON DELETE SET NULL,
+      FOREIGN KEY (raw_transaction_id) REFERENCES transaction_raw(id) ON DELETE SET NULL,
+      CHECK (amount_cents >= 0),
+      CHECK (direction IN ('IN', 'OUT') OR direction IS NULL),
+      CHECK (type IN ('income', 'expense', 'transfer', 'cc_purchase', 'cc_payment', 'fee', 'refund')),
+      CHECK (reconciliation_status IN ('matched', 'unmatched', 'suggested'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_entries_user_fingerprint
+      ON ledger_entries(user_id, fingerprint);
+    CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_posted ON ledger_entries(user_id, posted_at);
+    CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_type ON ledger_entries(user_id, type);
+    CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_account ON ledger_entries(user_id, account_id);
+    CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_credit_card ON ledger_entries(user_id, credit_card_account_id);
+    CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_transfer_group ON ledger_entries(user_id, transfer_group_id);
+    CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_reconciliation ON ledger_entries(user_id, reconciliation_status);
+
+    CREATE TABLE IF NOT EXISTS transfer_match_suggestions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      out_entry_id TEXT NOT NULL,
+      in_entry_id TEXT NOT NULL,
+      score NUMERIC NOT NULL,
+      status TEXT NOT NULL DEFAULT 'suggested',
+      metadata_json TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (out_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE,
+      FOREIGN KEY (in_entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE,
+      CHECK (status IN ('suggested', 'confirmed', 'rejected'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_transfer_match_suggestions_pair
+      ON transfer_match_suggestions(user_id, out_entry_id, in_entry_id);
+    CREATE INDEX IF NOT EXISTS idx_transfer_match_suggestions_user_status
+      ON transfer_match_suggestions(user_id, status);
+
+    CREATE TABLE IF NOT EXISTS reconciliation_denials (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      entry_id TEXT NOT NULL,
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (entry_id) REFERENCES ledger_entries(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_reconciliation_denials_user_entry
+      ON reconciliation_denials(user_id, entry_id);
   `);
 
   await ensureColumn("accounts", "parent_account_id", "TEXT");
+  await ensureColumn("accounts", "institution_id", "TEXT");
   await ensureColumn("transactions", "transfer_group_id", "TEXT");
   await ensureColumn("transactions", "transfer_peer_tx_id", "TEXT");
   await ensureColumn("transactions", "transfer_from_account_id", "TEXT");
   await ensureColumn("transactions", "transfer_to_account_id", "TEXT");
   await ensureColumn("transactions", "external_id", "TEXT");
   await ensureColumn("transactions", "direction", "TEXT NOT NULL DEFAULT 'out'");
+  await ensureColumn("transactions", "excluded", "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("transactions", "is_internal_transfer", "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("import_events", "internal_transfer_auto_matched", "INTEGER");
+  await ensureColumn("ledger_entries", "transfer_fee_cents", "INTEGER NOT NULL DEFAULT 0");
 
   await ensurePostgresTransactionTypeEnum();
   await ensurePostgresTransactionDirectionEnum();
@@ -327,6 +466,11 @@ async function runMigrations(): Promise<void> {
        OR LOWER(direction::text) <> CASE WHEN amount_cents < 0 THEN 'out' ELSE 'in' END
        OR BTRIM(direction::text) = ''
        OR direction::text NOT IN ('in', 'out');
+  `);
+  await db.exec(`
+    UPDATE transactions
+    SET excluded = FALSE
+    WHERE excluded IS NULL;
   `);
   await db.exec(`
     UPDATE transactions
@@ -376,6 +520,8 @@ async function runMigrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_transactions_user_account_external_id
       ON transactions(user_id, account_id, external_id)
       WHERE external_id IS NOT NULL AND BTRIM(external_id) <> '';
+    CREATE INDEX IF NOT EXISTS idx_accounts_user_institution_id
+      ON accounts(user_id, institution_id);
   `);
 
   if (db.dialect === "postgres") {

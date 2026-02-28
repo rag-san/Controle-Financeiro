@@ -112,7 +112,7 @@ function inferKindFromText(description: string): string {
   return "Transacao";
 }
 
-export function extractTransactionKindAndCounterparty(input: ExtractInput): SplitResult {
+function extractTransactionKindAndCounterparty(input: ExtractInput): SplitResult {
   const explicitKind = cleanRawField(input.transactionKindRaw);
   const explicitCounterparty = cleanRawField(input.counterpartyRaw);
   const fallbackDescription = cleanRawField(input.description);

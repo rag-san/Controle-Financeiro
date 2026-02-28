@@ -9,6 +9,7 @@ import { accountsRepo } from "@/lib/server/accounts.repo";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { categoryRulesRepo } from "@/lib/server/category-rules.repo";
 import { importsRepo } from "@/lib/server/imports.repo";
+import { syncLedgerFromImportBatch } from "@/lib/server/ledger-sync.service";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 export const MAX_IMPORT_COMMIT_ROWS = 5000;
@@ -16,8 +17,7 @@ export const MAX_IMPORT_COMMIT_ROWS = 5000;
 const CARD_PAYMENT_STATEMENT_PATTERN =
   /\b(?:PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|FATURA\s+CARTAO|PAGAMENTO\s+DE\s+FATURA|CREDIT\s+CARD\s+PAYMENT|PAYMENT\s+OF\s+(?:THE\s+)?CREDIT\s+CARD|FATURA)\b/i;
 const CARD_PAYMENT_INVOICE_SKIP_PATTERN =
-  /\b(?:PAGAMENTO\s+RECEBIDO|PAGAMENTO\s+EM|PGTO\s+EM|PAGTO\s+EM|PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CREDIT\s+CARD\s+PAYMENT|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
-const CARD_NAME_HINT_PATTERN = /CARTAO|CREDITO|CREDIT/i;
+  /\b(?:PAGAMENTO\s+RECEBIDO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
 const INTERNAL_TRANSFER_KEYWORD_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER)\b/i;
 const INTERNAL_TRANSFER_DESCRIPTION_HINT_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER|ENVIO|RECEBIDO)\b/i;
 const INTERNAL_TRANSFER_MAX_DATE_DIFF_MS = 24 * 60 * 60 * 1000;
@@ -131,13 +131,16 @@ function isCheckingLikeAccount(accountType: UserAccount["type"]): boolean {
 
 function shouldDetectCardPaymentFromStatement(input: {
   accountType: UserAccount["type"];
-  amount: number;
   normalizedDescription: string;
 }): boolean {
+  const hasFatura = input.normalizedDescription.includes("FATURA");
+  const hasPaymentHint = /\b(?:PAGAMENTO|PAGTO|PGTO|PAG)\b/.test(input.normalizedDescription);
+  const hasCardHint = /\bCART[A-Z]*\b/.test(input.normalizedDescription);
+
   return (
     isCheckingLikeAccount(input.accountType) &&
-    input.amount < 0 &&
-    CARD_PAYMENT_STATEMENT_PATTERN.test(input.normalizedDescription)
+    (CARD_PAYMENT_STATEMENT_PATTERN.test(input.normalizedDescription) ||
+      (hasFatura && (hasPaymentHint || hasCardHint)))
   );
 }
 
@@ -148,6 +151,11 @@ function shouldSkipCardPaymentOnCreditImport(input: {
   skipCardPaymentLines: boolean;
 }): boolean {
   if (!input.skipCardPaymentLines || input.accountType !== "credit") {
+    return false;
+  }
+
+  // Em faturas de cartão, pagamento costuma vir como crédito/entrada.
+  if (input.amount < 0) {
     return false;
   }
 
@@ -204,9 +212,7 @@ function resolveCardPaymentTargetAccountId(input: {
 
     const accountInstitution = account.institution?.trim();
     if (!accountInstitution) return false;
-    if (normalizeDescription(accountInstitution) !== normalizedInstitution) return false;
-
-    return CARD_NAME_HINT_PATTERN.test(normalizeDescription(account.name));
+    return normalizeDescription(accountInstitution) === normalizedInstitution;
   });
 
   if (sameInstitutionCards.length === 1) {
@@ -763,15 +769,17 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       canonical.type === "transfer" || Boolean(row.transferToAccountId) || Boolean(row.transferFromAccountId);
     const detectedCardPayment = shouldDetectCardPaymentFromStatement({
       accountType: resolvedAccount.type,
-      amount: canonical.amount,
       normalizedDescription: canonical.normalizedDescription
     });
+    const normalizedCardPaymentAmount = detectedCardPayment ? -Math.abs(canonical.amount) : canonical.amount;
+    const shouldConvertDetectedCardPayment =
+      detectedCardPayment && mappingOptions.convertCardPaymentsToTransfer;
 
     if (detectedCardPayment) {
       totalCardPaymentsDetected += 1;
     }
 
-    if (wantsExplicitTransfer || detectedCardPayment) {
+    if (wantsExplicitTransfer || shouldConvertDetectedCardPayment) {
       const fromAccountId = row.transferFromAccountId?.trim() || resolvedAccountId;
       const fromAccount = accountById.get(fromAccountId);
 
@@ -819,7 +827,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         const transferHashBase = createTransferKeyHash({
           userId,
           date: canonical.date,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           normalizedDescription: canonical.normalizedDescription,
           fromAccountId: fromAccount.id,
           toAccountId: toAccount.id,
@@ -835,7 +843,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           date: canonical.date,
           description: canonical.description,
           normalizedDescription: canonical.normalizedDescription,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           status: "posted",
           transferHashBase,
           externalIdBase: canonicalExternalId,
@@ -867,7 +875,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           userId,
           sourceType: payload.sourceType,
           date: canonical.date,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           normalizedDescription: canonical.normalizedDescription,
           accountId: fromAccount.id,
           externalId: canonicalExternalId
@@ -880,7 +888,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           date: canonical.date,
           description: canonical.description,
           normalizedDescription: canonical.normalizedDescription,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           type: "transfer",
           direction: "out",
           isInternalTransfer: true,
@@ -909,12 +917,23 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       }
     }
 
+    const canonicalForClassification =
+      detectedCardPayment && !mappingOptions.convertCardPaymentsToTransfer
+        ? {
+            ...canonical,
+            amount: normalizedCardPaymentAmount,
+            type: "expense" as const
+          }
+        : canonical;
+
     const canonicalType =
-      canonical.type === "transfer" ? (canonical.amount >= 0 ? "income" : "expense") : canonical.type;
+      canonicalForClassification.type === "transfer"
+        ? (canonicalForClassification.amount >= 0 ? "income" : "expense")
+        : canonicalForClassification.type;
 
     const deterministic = shouldApplyDeterministic
       ? categorizeImportRowDeterministic({
-          row: canonical,
+          row: canonicalForClassification,
           accountId: resolvedAccountId,
           userRules: rules,
           categories: categoryRefs
@@ -934,7 +953,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       userId,
       sourceType: payload.sourceType,
       date: canonical.date,
-      amount: canonical.amount,
+      amount: canonicalForClassification.amount,
       normalizedDescription: canonical.normalizedDescription,
       accountId: resolvedAccountId,
       externalId: canonicalExternalId
@@ -947,9 +966,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       date: canonical.date,
       description: canonical.description,
       normalizedDescription: canonical.normalizedDescription,
-      amount: canonical.amount,
+      amount: canonicalForClassification.amount,
       type: canonicalType,
-      direction: directionFromAmount(canonical.amount),
+      direction: directionFromAmount(canonicalForClassification.amount),
       isInternalTransfer: false,
       transferFromAccountId: null,
       transferToAccountId: null,
@@ -1311,6 +1330,26 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     totalSkipped
   });
 
+  let ledgerSync:
+    | {
+        processed: number;
+        created: number;
+        deduped: number;
+        skipped: number;
+      }
+    | null = null;
+
+  try {
+    ledgerSync = await syncLedgerFromImportBatch({
+      userId,
+      importBatchId: batch.id,
+      fileName: payload.fileName
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "falha desconhecida";
+    warnings.push(`Não foi possível sincronizar o ledger para este lote (${message}).`);
+  }
+
   return {
     batchId: batch.id,
     totalImported,
@@ -1385,7 +1424,8 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
             from: new Date(minTimestamp).toISOString(),
             to: new Date(maxTimestamp).toISOString()
           }
-        : null
+        : null,
+    ledgerSync
   };
 }
 

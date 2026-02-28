@@ -47,31 +47,6 @@ function createPeriodRange(args: {
   };
 }
 
-export function buildMonthComparison(referenceDate: Date = new Date()): PeriodComparison {
-  const currentStart = startOfMonth(referenceDate);
-  const currentEnd = endOfMonth(referenceDate);
-  const previousReference = subMonths(referenceDate, 1);
-  const previousStart = startOfMonth(previousReference);
-  const previousEnd = endOfMonth(previousReference);
-
-  return {
-    currentPeriod: createPeriodRange({
-      key: "this-month",
-      label: "Este mês",
-      start: currentStart,
-      end: currentEnd,
-      query: "period=this-month"
-    }),
-    previousPeriod: createPeriodRange({
-      key: "last-month",
-      label: "Mês anterior",
-      start: previousStart,
-      end: previousEnd,
-      query: "period=last-month"
-    })
-  };
-}
-
 function resolveCurrentPeriod(params: BuildPeriodParams): PeriodRange {
   const referenceDate = params.referenceDate ?? new Date();
   const range = params.range ?? "this-month";

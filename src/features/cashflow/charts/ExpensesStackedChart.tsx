@@ -29,9 +29,9 @@ function CompactLegend({
   categories: string[];
 }): React.JSX.Element {
   return (
-    <ul className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+    <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400">
       {categories.map((category) => (
-        <li key={category} className="flex max-w-[130px] items-center gap-1.5">
+        <li key={category} className="flex max-w-[150px] items-center gap-1.5">
           <span
             className="h-2 w-2 shrink-0 rounded-full"
             style={{ backgroundColor: getCategoryColor(category) }}
@@ -52,12 +52,12 @@ export function ExpensesStackedChart({
   loading = false
 }: ExpensesStackedChartProps): React.JSX.Element {
   if (loading) {
-    return <Skeleton className="h-[240px] rounded-xl" />;
+    return <Skeleton className="h-[250px] rounded-xl" />;
   }
 
   if (data.rows.length === 0 || data.categories.length === 0) {
     return (
-      <div className="flex h-[240px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/80 bg-muted/20 text-sm text-muted-foreground">
+      <div className="flex h-[250px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/70 bg-slate-900/20 text-sm text-slate-400">
         <AlertCircle className="h-4 w-4" />
         <p>Sem despesas neste período.</p>
       </div>
@@ -68,32 +68,32 @@ export function ExpensesStackedChart({
     <div className="space-y-3">
       <p className="sr-only">{a11ySummary}</p>
       <CompactLegend categories={data.legendCategories} />
-      <div className="h-[240px] w-full overflow-x-auto">
-        <div className="h-full min-w-[480px]">
+      <div className="h-[250px] w-full overflow-x-auto">
+        <div className="h-full min-w-[460px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={data.rows}
               margin={{ top: 8, right: 4, left: 0, bottom: 0 }}
               barCategoryGap="35%"
-              barGap={6}
+              barGap={4}
             >
-              <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.14} />
+              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(59,130,246,0.16)" />
               <XAxis
                 dataKey="month"
                 tickFormatter={formatMonthLabel}
-                tick={{ fontSize: 12 }}
+                tick={{ fontSize: 11, fill: "#5f7aa3" }}
                 tickLine={false}
                 axisLine={false}
-                tickMargin={10}
+                tickMargin={8}
               />
               <YAxis
                 tickFormatter={formatBRLCompact}
-                tick={{ fontSize: 12 }}
+                tick={{ fontSize: 11, fill: "#5f7aa3" }}
                 tickLine={false}
                 axisLine={false}
-                width={84}
+                width={78}
               />
-              <Tooltip content={<ExpensesStackedTooltip />} />
+              <Tooltip content={<ExpensesStackedTooltip />} cursor={{ fill: "rgba(59,130,246,0.1)" }} />
               <Legend content={() => null} />
               {data.categories.map((category) => (
                 <Bar
@@ -103,7 +103,7 @@ export function ExpensesStackedChart({
                   fill={getCategoryColor(category)}
                   name={category}
                   radius={[8, 8, 0, 0]}
-                  maxBarSize={38}
+                  maxBarSize={40}
                 />
               ))}
             </BarChart>
