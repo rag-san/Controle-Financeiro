@@ -52,7 +52,7 @@ export function CategoriesTopTabs({
             onKeyDown={(event) => handleKeyDown(event, tab.id)}
             className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
               selected
-                ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+                ? "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
                 : "text-muted-foreground hover:bg-secondary hover:text-foreground dark:text-muted-foreground/80 dark:hover:bg-secondary dark:hover:text-foreground"
             }`}
           >

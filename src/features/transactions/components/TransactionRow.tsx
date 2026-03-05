@@ -145,7 +145,7 @@ export function TransactionRow({
   return (
     <TableRow
       data-state={checked ? "selected" : undefined}
-      className="border-border/70 hover:bg-secondary/70 data-[state=selected]:bg-sky-50/60 dark:border-border dark:hover:bg-secondary/45 dark:data-[state=selected]:bg-sky-950/25"
+      className="border-border/70 hover:bg-secondary/70 data-[state=selected]:bg-primary/10 dark:border-border dark:hover:bg-secondary/45 dark:data-[state=selected]:bg-primary/20"
     >
       <TableCell className="w-9 py-3 pl-2 pr-1 md:w-11 md:pr-2">
         <Checkbox
@@ -179,7 +179,7 @@ export function TransactionRow({
             type="button"
             size="sm"
             variant="ghost"
-            className="mt-2 h-7 rounded-md px-2 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/40 dark:hover:text-sky-200 sm:hidden"
+            className="mt-2 h-7 rounded-md px-2 text-[11px] font-semibold text-primary hover:bg-primary/10 hover:text-primary dark:text-primary-foreground dark:hover:bg-primary/25 dark:hover:text-primary-foreground sm:hidden"
             onClick={() => onApplySuggestion(transaction, suggestion)}
             isLoading={applyingSuggestion}
             disabled={applyingSuggestion}
@@ -216,7 +216,7 @@ export function TransactionRow({
           <CategoryPill name={categoryName} size="sm" className="font-semibold" />
           {suggestion ? (
             <span
-              className="inline-flex items-center rounded-full border border-sky-300 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
+              className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary dark:border-primary/40 dark:bg-primary/20 dark:text-primary-foreground"
               title={suggestion.reason}
             >
               Sugerido • {Math.round(suggestion.confidence * 100)}%
@@ -227,7 +227,7 @@ export function TransactionRow({
               type="button"
               size="sm"
               variant="ghost"
-              className="h-7 rounded-md px-2 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/40 dark:hover:text-sky-200"
+              className="h-7 rounded-md px-2 text-[11px] font-semibold text-primary hover:bg-primary/10 hover:text-primary dark:text-primary-foreground dark:hover:bg-primary/25 dark:hover:text-primary-foreground"
               onClick={() => onApplySuggestion(transaction, suggestion)}
               isLoading={applyingSuggestion}
               disabled={applyingSuggestion}

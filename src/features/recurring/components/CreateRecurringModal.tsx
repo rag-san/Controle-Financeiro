@@ -171,7 +171,7 @@ export function CreateRecurringModal({
               setForm((previous) => ({ ...previous, markAsPaidThisMonth: event.target.checked }))
             }
             disabled={busy}
-            className="h-4 w-4 rounded border-border text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-border text-primary focus:ring-ring"
           />
           Marcar como pago neste mês
         </label>

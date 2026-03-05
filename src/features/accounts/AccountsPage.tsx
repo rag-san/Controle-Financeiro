@@ -53,7 +53,7 @@ function EmptyGroupRow({
       <button
         type="button"
         onClick={onAction}
-        className="rounded-md px-2 py-1 font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-blue-400 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+        className="rounded-md px-2 py-1 font-medium text-primary transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-primary-foreground dark:hover:bg-primary/25 dark:hover:text-primary-foreground"
       >
         {ctaLabel}
       </button>
@@ -448,7 +448,7 @@ export function AccountsPage(): React.JSX.Element {
 
           <AccountGroupCard
             icon={<Link2 className="h-4 w-4" aria-hidden="true" />}
-            iconClassName="bg-blue-100 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300"
+            iconClassName="bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
             title="Conexões"
             subtitle={`${connections.length} instituições conectadas`}
           >

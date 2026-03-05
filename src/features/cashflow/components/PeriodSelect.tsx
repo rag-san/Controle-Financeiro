@@ -42,7 +42,7 @@ export function PeriodSelect({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               disabled ? "cursor-not-allowed opacity-60" : "",
               selected
-                ? "bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-[0_8px_18px_rgba(14,116,144,0.35)]"
+                ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-card hover:text-foreground dark:text-muted-foreground dark:hover:bg-secondary dark:hover:text-foreground"
             ].join(" ")}
           >

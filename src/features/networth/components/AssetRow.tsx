@@ -22,7 +22,7 @@ export function AssetRow({
   return (
     <tr
       className={`transition-colors duration-200 hover:bg-secondary/70 dark:hover:bg-secondary/40 ${
-        isActive ? "bg-blue-50/60 dark:bg-blue-950/20" : ""
+        isActive ? "bg-primary/10 dark:bg-primary/20" : ""
       }`}
     >
       <td className="px-4 py-3">

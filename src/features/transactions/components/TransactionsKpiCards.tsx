@@ -149,21 +149,21 @@ export function TransactionsKpiCards({
         tone={{
           borderClassName:
             cashBalance >= 0
-              ? "border-sky-200/80 dark:border-sky-900/60"
+              ? "border-primary/35 dark:border-primary/45"
               : "border-orange-200/80 dark:border-orange-900/60",
           glowClassName:
-            cashBalance >= 0 ? "bg-sky-400/35 dark:bg-sky-500/25" : "bg-orange-400/35 dark:bg-orange-500/25",
+            cashBalance >= 0 ? "bg-primary/30 dark:bg-primary/25" : "bg-orange-400/35 dark:bg-orange-500/25",
           iconClassName:
-            cashBalance >= 0 ? "text-sky-600 dark:text-sky-300" : "text-orange-600 dark:text-orange-300",
+            cashBalance >= 0 ? "text-primary dark:text-primary-foreground" : "text-orange-600 dark:text-orange-300",
           iconContainerClassName:
             cashBalance >= 0
-              ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-300"
+              ? "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary-foreground"
               : "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-300",
           valueClassName:
-            cashBalance >= 0 ? "text-sky-700 dark:text-sky-300" : "text-orange-700 dark:text-orange-300",
+            cashBalance >= 0 ? "text-primary dark:text-primary-foreground" : "text-orange-700 dark:text-orange-300",
           badgeClassName:
             cashBalance >= 0
-              ? "bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-200"
+              ? "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
               : "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200"
         }}
       />

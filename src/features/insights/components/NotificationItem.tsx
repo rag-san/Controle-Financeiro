@@ -25,7 +25,7 @@ function resolveIconClass(severity: Insight["severity"]): string {
     return "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300";
   }
 
-  return "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
+  return "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground";
 }
 
 function resolveContainerClass(severity: Insight["severity"]): string {
@@ -33,7 +33,7 @@ function resolveContainerClass(severity: Insight["severity"]): string {
     return "border-l-4 border-l-amber-400";
   }
 
-  return "border-l-4 border-l-blue-400";
+  return "border-l-4 border-l-primary/60";
 }
 
 function resolveSeverityBadge(severity: Insight["severity"]): { label: string; className: string } {
@@ -46,7 +46,7 @@ function resolveSeverityBadge(severity: Insight["severity"]): { label: string; c
 
   return {
     label: "Info",
-    className: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300"
+    className: "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
   };
 }
 
@@ -89,7 +89,7 @@ export function NotificationItem({
             {insight.cta ? (
               <Link
                 href={insight.cta.href}
-                className="inline-flex h-7 items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50"
+                className="inline-flex h-7 items-center rounded-full border border-primary/30 bg-primary/10 px-2.5 text-xs font-semibold text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:border-primary/40 dark:bg-primary/20 dark:text-primary-foreground dark:hover:bg-primary/25"
               >
                 {insight.cta.label}
               </Link>

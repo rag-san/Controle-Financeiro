@@ -1214,7 +1214,7 @@ export function TransactionsPage(): React.JSX.Element {
       <Button
         ref={importButtonRef}
         onClick={() => setImportModalOpen(true)}
-        className="flex-1 border border-sky-500/40 bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-[0_10px_22px_rgba(14,116,144,0.35)] transition hover:brightness-110 sm:flex-none"
+        className="flex-1 border border-primary/35 bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 sm:flex-none"
       >
         <Upload className="h-4 w-4" />
         Importar extrato

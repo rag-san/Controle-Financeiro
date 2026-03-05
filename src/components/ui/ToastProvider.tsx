@@ -27,7 +27,7 @@ type ToastContextValue = {
 };
 
 const toastStyleByVariant: Record<ToastVariant, string> = {
-  info: "border-sky-200/80 bg-sky-50/95 text-sky-900 dark:border-sky-700/45 dark:bg-card/95 dark:text-sky-100",
+  info: "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary-foreground",
   success:
     "border-emerald-200/80 bg-emerald-50/95 text-emerald-900 dark:border-emerald-700/45 dark:bg-card/95 dark:text-emerald-100",
   error: "border-rose-200/80 bg-rose-50/95 text-rose-900 dark:border-rose-700/45 dark:bg-card/95 dark:text-rose-100"

@@ -135,7 +135,7 @@ export function NotificationsBell({
       >
         <Bell className="h-4 w-4" />
         {activeCount > 0 ? (
-          <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold leading-none text-white">
+          <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
             {activeCount > 9 ? "9+" : activeCount}
           </span>
         ) : null}
