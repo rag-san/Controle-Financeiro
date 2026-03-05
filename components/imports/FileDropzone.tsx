@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { Upload } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/src/components/ui/Button";
 
 type FileDropzoneProps = {
   onSelect: (file: File) => void;

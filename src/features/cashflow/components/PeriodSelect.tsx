@@ -23,7 +23,7 @@ export function PeriodSelect({
 
   return (
     <div
-      className="inline-flex items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-100/70 p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900/70"
+      className="inline-flex items-center gap-1 rounded-xl border border-border/80 bg-secondary/75 p-1 shadow-sm dark:border-border dark:bg-secondary/60"
       role="group"
       aria-label="Selecionar periodo do fluxo de caixa"
     >
@@ -43,7 +43,7 @@ export function PeriodSelect({
               disabled ? "cursor-not-allowed opacity-60" : "",
               selected
                 ? "bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-[0_8px_18px_rgba(14,116,144,0.35)]"
-                : "text-slate-600 hover:bg-white hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                : "text-muted-foreground hover:bg-card hover:text-foreground dark:text-muted-foreground dark:hover:bg-secondary dark:hover:text-foreground"
             ].join(" ")}
           >
             {labelByValue[option.value] ?? option.label}
@@ -54,3 +54,5 @@ export function PeriodSelect({
     </div>
   );
 }
+
+

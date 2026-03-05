@@ -83,9 +83,9 @@ export function NetWorthHistoryChart({
   const xAxisInterval = resolveXAxisInterval(range, data.length);
 
   return (
-    <Card className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950">
+    <Card className="rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 hover:shadow-md dark:border-border dark:bg-card">
       <div className="space-y-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           HISTÓRICO DO PATRIMÔNIO
         </p>
 
@@ -93,7 +93,7 @@ export function NetWorthHistoryChart({
           <Skeleton className="h-[228px] rounded-xl" />
         ) : data.length === 0 ? (
           <div
-            className="flex h-[228px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-400"
+            className="flex h-[228px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-secondary/45 text-sm text-muted-foreground dark:border-border dark:bg-secondary/45 dark:text-muted-foreground/80"
             role="status"
             aria-live="polite"
           >
@@ -178,10 +178,12 @@ export function NetWorthHistoryChart({
             value={range}
             onChange={onRangeChange}
             ariaLabel="Selecionar intervalo do histórico de patrimônio"
-            className="rounded-full bg-slate-100/80 p-1 dark:bg-slate-900/80"
+            className="rounded-full bg-secondary/80 p-1 dark:bg-secondary/80"
           />
         </div>
       </div>
     </Card>
   );
 }
+
+

@@ -55,7 +55,7 @@ function FilterSelect({
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-xl border-slate-200/90 bg-white/95 text-sm dark:border-slate-800 dark:bg-slate-950/80"
+        className="h-10 rounded-xl border-border/90 bg-card/95 text-sm dark:border-border dark:bg-card/85"
         disabled={disabled}
       >
         {children}
@@ -90,16 +90,16 @@ export function TransactionsFiltersBar({
 
   return (
     <section
-      className="rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50/70 p-4 shadow-[0_8px_20px_rgba(15,23,42,0.06)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70"
+      className="rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-secondary/60 p-4 shadow-[0_8px_20px_rgba(15,23,42,0.06)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70"
       aria-label="Filtros de transações"
       aria-busy={busy}
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          <Funnel className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+        <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Funnel className="h-4 w-4 text-muted-foreground" />
           <span>Filtros</span>
           {activeFiltersCount > 0 ? (
-            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+            <span className="inline-flex items-center rounded-full border border-border bg-secondary px-2 py-0.5 text-[11px] font-medium text-muted-foreground dark:border-border dark:bg-secondary/60 dark:text-muted-foreground">
               {activeFiltersCount} ativo(s)
             </span>
           ) : null}
@@ -109,7 +109,7 @@ export function TransactionsFiltersBar({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 rounded-lg px-2 text-xs text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+          className="h-8 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground"
           onClick={onClear}
           disabled={busy || !canClear}
         >
@@ -123,14 +123,14 @@ export function TransactionsFiltersBar({
           <label htmlFor="tx-filter-search" className="sr-only">
             Buscar transações
           </label>
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             id="tx-filter-search"
             value={searchQuery}
             onChange={(event) => onSearchQueryChange(event.target.value)}
             placeholder="Buscar descrição ou estabelecimento"
             disabled={busy}
-            className="h-10 rounded-xl border-slate-200/90 bg-white pl-9 dark:border-slate-800 dark:bg-slate-950/80"
+            className="h-10 rounded-xl border-border/90 bg-card pl-9 dark:border-border dark:bg-card/85"
           />
         </div>
 
@@ -218,9 +218,9 @@ export function TransactionsFiltersBar({
                 value={filters.from}
                 onChange={(event) => onChange({ from: event.target.value })}
                 disabled={busy}
-                className="h-10 rounded-xl border-slate-200/90 bg-white pr-9 dark:border-slate-800 dark:bg-slate-950/80"
+                className="h-10 rounded-xl border-border/90 bg-card pr-9 dark:border-border dark:bg-card/85"
               />
-              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
 
             <div className="relative">
@@ -233,9 +233,9 @@ export function TransactionsFiltersBar({
                 value={filters.to}
                 onChange={(event) => onChange({ to: event.target.value })}
                 disabled={busy}
-                className="h-10 rounded-xl border-slate-200/90 bg-white pr-9 dark:border-slate-800 dark:bg-slate-950/80"
+                className="h-10 rounded-xl border-border/90 bg-card pr-9 dark:border-border dark:bg-card/85"
               />
-              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+              <CalendarDays className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
           </div>
         ) : null}
@@ -243,3 +243,5 @@ export function TransactionsFiltersBar({
     </section>
   );
 }
+
+

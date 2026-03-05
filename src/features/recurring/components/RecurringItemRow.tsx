@@ -41,21 +41,21 @@ export function RecurringItemRow({
   onTogglePaid
 }: RecurringItemRowProps): React.JSX.Element {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/40">
+    <div className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-secondary/70 dark:hover:bg-secondary/45">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/55 text-xs font-semibold text-foreground dark:border-border dark:bg-secondary/60 dark:text-foreground">
           {resolveBrandLabel(item.name)}
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{item.name}</p>
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+          <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
             {item.category?.name ?? "Sem categoria"}
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="tabular-nums text-sm font-semibold text-slate-900 dark:text-slate-100">
+        <span className="tabular-nums text-sm font-semibold text-foreground">
           {formatBRL(Math.abs(item.amount))}
         </span>
         <Button
@@ -77,7 +77,7 @@ export function RecurringItemRow({
             </>
           ) : (
             <>
-              <Circle className="h-3.5 w-3.5 text-slate-400" />
+              <Circle className="h-3.5 w-3.5 text-muted-foreground/80" />
               Marcar
             </>
           )}
@@ -86,3 +86,5 @@ export function RecurringItemRow({
     </div>
   );
 }
+
+

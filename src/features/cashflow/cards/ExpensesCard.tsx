@@ -58,26 +58,26 @@ export function ExpensesCard({
 
   return (
     <Card
-      className="flex h-full flex-col space-y-4 rounded-2xl border border-slate-700/70 bg-[linear-gradient(135deg,#020817,#04112a_60%,#0a1730)] text-slate-100 shadow-[0_12px_30px_rgba(2,6,23,0.55)]"
+      className="flex h-full flex-col space-y-4 text-foreground"
       aria-busy={isLoading}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">GASTOS</p>
-          <p className="text-[1.75rem] font-black tracking-tight text-rose-400">{formatBRL(totalExpense)}</p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">GASTOS</p>
+          <p className="text-[1.75rem] font-black tracking-tight text-rose-700 dark:text-rose-300">{formatBRL(totalExpense)}</p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge
               value={delta.badgeValue}
               variant={delta.badgeVariant}
-              className="border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-xs font-bold text-slate-200"
+              className="border border-border bg-secondary/70 px-2 py-0.5 text-xs font-bold text-foreground"
             />
             <span>vs {formatBRL(previousTotalExpense)} no período anterior</span>
           </div>
-          <p className="text-xs text-slate-500">{dateRangeLabel}</p>
+          <p className="text-xs text-muted-foreground">{dateRangeLabel}</p>
         </div>
         <Link
           href="/transactions?type=expense"
-          className="text-xs font-semibold text-indigo-400 transition hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Ver mais sobre gastos"
         >
           Ver mais ↗
@@ -92,3 +92,4 @@ export function ExpensesCard({
     </Card>
   );
 }
+

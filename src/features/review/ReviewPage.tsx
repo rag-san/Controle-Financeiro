@@ -209,21 +209,21 @@ export function ReviewPage(): React.JSX.Element {
         ) : null}
         {actionError ? <FeedbackMessage variant="error">{actionError}</FeedbackMessage> : null}
 
-        <section className="space-y-3 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Transferências sugeridas</h2>
+        <section className="space-y-3 rounded-2xl border border-border/80 bg-card/90 p-4 shadow-sm dark:border-border dark:bg-card/90">
+          <h2 className="text-base font-semibold text-foreground">Transferências sugeridas</h2>
           {isLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">Carregando sugestões...</p>
+            <p className="text-sm text-muted-foreground">Carregando sugestões...</p>
           ) : !data || data.transferSuggestions.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">Sem sugestões pendentes.</p>
+            <p className="text-sm text-muted-foreground">Sem sugestões pendentes.</p>
           ) : (
             <div className="space-y-3">
               {data.transferSuggestions.map((item) => (
                 <article
                   key={item.id}
-                  className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/60"
+                  className="rounded-xl border border-border/80 bg-secondary/50 p-3 dark:border-border dark:bg-secondary/50"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <p className="text-sm font-medium text-foreground">
                       Score: {item.score.toFixed(3)}
                     </p>
                     <div className="flex items-center gap-2">
@@ -246,11 +246,11 @@ export function ReviewPage(): React.JSX.Element {
                       </Button>
                     </div>
                   </div>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  <p className="mt-2 text-sm text-muted-foreground">
                     Saída: {item.outEntry?.accountName ?? "Conta"} em {formatDate(item.outEntry?.date ?? "")} (
                     {formatMoney(item.outEntry?.amount ?? 0)})
                   </p>
-                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                  <p className="text-sm text-muted-foreground">
                     Entrada: {item.inEntry?.accountName ?? "Conta"} em {formatDate(item.inEntry?.date ?? "")} (
                     {formatMoney(item.inEntry?.amount ?? 0)})
                   </p>
@@ -260,31 +260,31 @@ export function ReviewPage(): React.JSX.Element {
           )}
         </section>
 
-        <section className="space-y-3 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+        <section className="space-y-3 rounded-2xl border border-border/80 bg-card/90 p-4 shadow-sm dark:border-border dark:bg-card/90">
+          <h2 className="text-base font-semibold text-foreground">
             Pagamentos de fatura não conciliados
           </h2>
           {isLoading ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">Carregando pagamentos...</p>
+            <p className="text-sm text-muted-foreground">Carregando pagamentos...</p>
           ) : !data || data.unmatchedCardPayments.length === 0 ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">Sem pagamentos pendentes.</p>
+            <p className="text-sm text-muted-foreground">Sem pagamentos pendentes.</p>
           ) : (
             <div className="space-y-3">
               {data.unmatchedCardPayments.map((item) => (
                 <article
                   key={item.id}
-                  className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/60"
+                  className="rounded-xl border border-border/80 bg-secondary/50 p-3 dark:border-border dark:bg-secondary/50"
                 >
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  <p className="text-sm font-medium text-foreground">
                     {formatMoney(item.amount)} em {formatDate(item.date)}
                   </p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.description}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+                  <p className="text-xs text-muted-foreground">
                     Conta origem: {item.accountName ?? "Não identificada"}
                   </p>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                     <select
-                      className="h-9 min-w-[12rem] rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                      className="h-9 min-w-[12rem] rounded-lg border border-border bg-card px-2 text-sm text-foreground dark:border-border dark:bg-secondary/60 dark:text-foreground"
                       value={selectedCardMap[item.id] ?? ""}
                       onChange={(event) =>
                         setSelectedCardByPayment((previous) => ({
@@ -318,3 +318,5 @@ export function ReviewPage(): React.JSX.Element {
     </PageShell>
   );
 }
+
+

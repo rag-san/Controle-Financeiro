@@ -1,4 +1,4 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 
 export default function DashboardLoading(): React.JSX.Element {
   return (

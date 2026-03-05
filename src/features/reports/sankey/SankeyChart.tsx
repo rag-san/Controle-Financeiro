@@ -156,11 +156,11 @@ function SankeyTooltip({
   const percent = totalIncome > 0 ? (value / totalIncome) * 100 : 0;
 
   return (
-    <div className="min-w-[14rem] rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-xl dark:border-slate-700 dark:bg-slate-900">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-1 tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatBRL(value)}</p>
+    <div className="min-w-[14rem] rounded-xl border border-border bg-card p-3 text-sm shadow-xl dark:border-border dark:bg-secondary/60">
+      <p className="text-xs text-muted-foreground">{title}</p>
+      <p className="mt-1 tabular-nums font-semibold text-foreground">{formatBRL(value)}</p>
       {totalIncome > 0 ? (
-        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{percent.toFixed(1)}% da receita</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{percent.toFixed(1)}% da receita</p>
       ) : null}
     </div>
   );
@@ -244,7 +244,7 @@ export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): Re
             y={showValue ? textY - 5 : textY}
             textAnchor={textAnchor}
             dominantBaseline="middle"
-            className="fill-slate-800 text-[12px] font-semibold dark:fill-slate-100"
+            className="fill-foreground text-[12px] font-semibold"
             aria-hidden="true"
           >
             {label}
@@ -256,7 +256,7 @@ export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): Re
             y={textY + 9}
             textAnchor={textAnchor}
             dominantBaseline="middle"
-            className="fill-slate-700 text-[11px] font-medium tabular-nums dark:fill-slate-200"
+            className="fill-muted-foreground text-[11px] font-medium tabular-nums"
             aria-hidden="true"
           >
             {formatBRL(displayValue)}
@@ -345,3 +345,5 @@ export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): Re
     </div>
   );
 }
+
+

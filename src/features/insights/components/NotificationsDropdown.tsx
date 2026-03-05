@@ -34,12 +34,12 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
         aria-label="Central de notificações"
         aria-modal="false"
         tabIndex={-1}
-        className="fixed inset-x-3 top-[4.5rem] z-40 max-h-[calc(100dvh-5.25rem)] overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-3 shadow-2xl backdrop-blur sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-[380px] sm:max-h-[460px] sm:max-w-[92vw] dark:border-slate-800 dark:bg-slate-950/95"
+        className="fixed inset-x-3 top-[4.5rem] z-40 max-h-[calc(100dvh-5.25rem)] overflow-hidden rounded-2xl border border-border/90 bg-card/95 p-3 shadow-2xl backdrop-blur sm:absolute sm:inset-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-[380px] sm:max-h-[460px] sm:max-w-[92vw] dark:border-border dark:bg-card/95"
       >
-        <div className="mb-2 flex items-start justify-between gap-2 border-b border-slate-200/80 pb-2 dark:border-slate-800">
+        <div className="mb-2 flex items-start justify-between gap-2 border-b border-border/80 pb-2 dark:border-border">
           <div>
-            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Notificações</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-sm font-semibold text-foreground">Notificações</p>
+            <p className="text-xs text-muted-foreground">
               {isLoading ? "Atualizando..." : insights.length > 0 ? `${insights.length} ativas` : "Nenhuma ativa"}
             </p>
           </div>
@@ -47,7 +47,7 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
             <button
               type="button"
               onClick={onClearDismissed}
-              className="rounded-full border border-transparent px-2 py-1 text-xs text-slate-500 transition hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-slate-400 dark:hover:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              className="rounded-full border border-transparent px-2 py-1 text-xs text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-muted-foreground/80 dark:hover:border-border dark:hover:bg-secondary dark:hover:text-foreground"
             >
               Limpar dispensadas
             </button>
@@ -61,7 +61,7 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
             <Skeleton className="h-[96px] rounded-xl" />
           </div>
         ) : insights.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 px-3 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+          <div className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground dark:border-border dark:text-muted-foreground/80">
             Sem alertas no momento. Tudo sob controle.
           </div>
         ) : (
@@ -82,4 +82,6 @@ export const NotificationsDropdown = React.forwardRef<HTMLDivElement, Notificati
 );
 
 NotificationsDropdown.displayName = "NotificationsDropdown";
+
+
 

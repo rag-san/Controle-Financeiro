@@ -7,7 +7,7 @@ import React from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { PageShell } from "@/components/layout/PageShell";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import { cn } from "@/lib/utils";
 import { Button } from "@/src/components/ui/Button";
@@ -369,9 +369,9 @@ export function DashboardPage(): React.JSX.Element {
             aria-controls={showFilters ? filtersPopoverId : undefined}
             onClick={() => setShowFilters((previous) => !previous)}
             className={cn(
-              "border border-slate-300/90 bg-white/90 text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
+              "border border-border/70 bg-card/85 text-muted-foreground shadow-sm transition hover:bg-secondary hover:text-foreground",
               showFilters &&
-                "border-sky-500/40 bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-[0_10px_22px_rgba(14,116,144,0.35)] hover:brightness-110 dark:border-sky-500/30 dark:text-white"
+                "border-primary/40 bg-primary text-primary-foreground shadow-[0_10px_22px_rgba(14,116,144,0.32)] hover:brightness-105"
             )}
           >
             <SlidersHorizontal className="h-4 w-4" />
@@ -384,7 +384,7 @@ export function DashboardPage(): React.JSX.Element {
             aria-label="Filtro do dashboard"
             aria-hidden={!showFilters}
             className={[
-              "absolute right-0 top-full z-40 mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-gradient-to-br from-white via-white to-slate-100/90 p-2.5 shadow-xl dark:border-slate-700 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/90",
+              "absolute right-0 top-full z-40 mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-border/80 bg-card/95 p-2.5 shadow-xl backdrop-blur",
               "origin-top-right transition-all duration-150 ease-out",
               showFilters
                 ? "visible translate-y-0 scale-100 opacity-100 pointer-events-auto"
@@ -392,13 +392,13 @@ export function DashboardPage(): React.JSX.Element {
             ].join(" ")}
           >
             <div className="space-y-0.5">
-              <h3 className="text-[13px] font-semibold text-slate-800 dark:text-slate-100">Filtro do dashboard</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">Selecione o intervalo de datas.</p>
+              <h3 className="text-[13px] font-semibold text-foreground">Filtro do dashboard</h3>
+              <p className="text-[11px] text-muted-foreground">Selecione o intervalo de datas.</p>
             </div>
 
             <div className="mt-3 grid grid-cols-1 gap-2">
               <div className="space-y-1">
-                <label htmlFor="dashboard-filter-from" className="text-[11px] text-slate-500 dark:text-slate-400">
+                <label htmlFor="dashboard-filter-from" className="text-[11px] text-muted-foreground">
                   De
                 </label>
                 <Input
@@ -407,11 +407,11 @@ export function DashboardPage(): React.JSX.Element {
                   type="date"
                   value={draftFrom}
                   onChange={(event) => setDraftFrom(event.target.value)}
-                  className="h-9 rounded-xl border-slate-200/90 bg-white dark:border-slate-700 dark:bg-slate-900"
+                  className="h-9 rounded-xl border-border bg-background/70"
                 />
               </div>
               <div className="space-y-1">
-                <label htmlFor="dashboard-filter-to" className="text-[11px] text-slate-500 dark:text-slate-400">
+                <label htmlFor="dashboard-filter-to" className="text-[11px] text-muted-foreground">
                   Ate
                 </label>
                 <Input
@@ -419,7 +419,7 @@ export function DashboardPage(): React.JSX.Element {
                   type="date"
                   value={draftTo}
                   onChange={(event) => setDraftTo(event.target.value)}
-                  className="h-9 rounded-xl border-slate-200/90 bg-white dark:border-slate-700 dark:bg-slate-900"
+                  className="h-9 rounded-xl border-border bg-background/70"
                 />
               </div>
             </div>
@@ -430,7 +430,7 @@ export function DashboardPage(): React.JSX.Element {
                 variant="ghost"
                 size="sm"
                 onClick={clearDateFilter}
-                className="text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+                className="text-muted-foreground hover:text-foreground"
               >
                 Mes atual
               </Button>
@@ -439,7 +439,7 @@ export function DashboardPage(): React.JSX.Element {
                 variant="outline"
                 size="sm"
                 onClick={applyDateFilter}
-                className="border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="border-border bg-card/80 text-foreground hover:bg-secondary"
               >
                 Aplicar
               </Button>

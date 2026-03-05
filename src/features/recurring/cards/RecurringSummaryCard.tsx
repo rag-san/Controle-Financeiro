@@ -9,13 +9,13 @@ type RecurringSummaryCardProps = {
 
 export function RecurringSummaryCard({ totals }: RecurringSummaryCardProps): React.JSX.Element {
   return (
-    <Card className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-7 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <Card className="w-full rounded-2xl border border-border bg-card px-6 py-7 shadow-sm dark:border-border dark:bg-card">
       <div className="grid gap-6 md:grid-cols-[1fr_auto_1fr] md:items-center">
         <div className="text-center md:text-left">
-          <p className="tabular-nums text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          <p className="tabular-nums text-3xl font-semibold tracking-tight text-foreground">
             {formatBRL(totals.remaining)}
           </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Falta pagar este mês</p>
+          <p className="mt-1 text-sm text-muted-foreground">Falta pagar este mês</p>
         </div>
 
         <div className="mx-auto">
@@ -23,12 +23,14 @@ export function RecurringSummaryCard({ totals }: RecurringSummaryCardProps): Rea
         </div>
 
         <div className="text-center md:text-right">
-          <p className="tabular-nums text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          <p className="tabular-nums text-3xl font-semibold tracking-tight text-foreground">
             {formatBRL(totals.paid)}
           </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pago até agora</p>
+          <p className="mt-1 text-sm text-muted-foreground">Pago até agora</p>
         </div>
       </div>
     </Card>
   );
 }
+
+

@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { DefaultChartTooltip } from "@/src/components/charts/DefaultChartTooltip";
 import type { IncomeRow } from "@/src/features/cashflow/types";
 import { formatBRLCompact, formatMonthLabel } from "@/src/utils/format";

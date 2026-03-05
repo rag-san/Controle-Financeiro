@@ -127,10 +127,10 @@ export function NotificationsBell({
         aria-controls={open ? dropdownId : undefined}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition",
-          "hover:bg-slate-100 hover:text-slate-700",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          "dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+          "relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition",
+          "hover:bg-secondary hover:text-foreground",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          "dark:border-border dark:bg-secondary/60 dark:text-muted-foreground dark:hover:bg-secondary dark:hover:text-foreground"
         )}
       >
         <Bell className="h-4 w-4" />
@@ -156,4 +156,6 @@ export function NotificationsBell({
     </div>
   );
 }
+
+
 

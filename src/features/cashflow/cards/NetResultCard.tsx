@@ -57,17 +57,17 @@ export function NetResultCard({
 
   return (
     <Card
-      className="space-y-4 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-100/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70"
+      className="space-y-4 rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-secondary/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70"
       aria-busy={isLoading}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
             RESULTADO LÍQUIDO
           </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400">{dateRangeLabel}</p>
+          <p className="text-xs text-muted-foreground">{dateRangeLabel}</p>
           <p className={`text-[2.1rem] font-black tracking-tight ${valueClassName}`}>{formatBRL(totalNet)}</p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge
               value={delta.badgeValue}
               variant={delta.badgeVariant}
@@ -85,7 +85,7 @@ export function NetResultCard({
         </Link>
       </div>
 
-      <div className="mt-2 rounded-xl border border-slate-200/80 bg-white/80 p-2 dark:border-slate-800 dark:bg-slate-950/60">
+      <div className="mt-2 rounded-xl border border-border/80 bg-card/80 p-2 dark:border-border dark:bg-card/85">
         <NetResultChart
           data={chartData}
           loading={isLoading}
@@ -95,3 +95,5 @@ export function NetResultCard({
     </Card>
   );
 }
+
+

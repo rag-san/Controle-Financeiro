@@ -82,7 +82,7 @@ export function NewCategoryModal({
         }}
       >
         <div className="space-y-1">
-          <label htmlFor="new-category-name" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          <label htmlFor="new-category-name" className="text-sm font-medium text-muted-foreground">
             Nome
           </label>
           <Input
@@ -97,7 +97,7 @@ export function NewCategoryModal({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <label htmlFor="new-category-color" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            <label htmlFor="new-category-color" className="text-sm font-medium text-muted-foreground">
               Cor
             </label>
             <Input
@@ -111,7 +111,7 @@ export function NewCategoryModal({
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="new-category-icon" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            <label htmlFor="new-category-icon" className="text-sm font-medium text-muted-foreground">
               Ícone (opcional)
             </label>
             <Input
@@ -125,7 +125,7 @@ export function NewCategoryModal({
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="new-category-parent" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          <label htmlFor="new-category-parent" className="text-sm font-medium text-muted-foreground">
             Grupo pai (opcional)
           </label>
           <Select
@@ -146,3 +146,4 @@ export function NewCategoryModal({
     </Modal>
   );
 }
+

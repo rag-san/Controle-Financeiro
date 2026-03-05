@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import * as React from "react";
 import { format } from "date-fns";
 import { MoreHorizontal, Pencil, Tag, Trash2 } from "lucide-react";
-import { TableCell, TableRow } from "@/components/ui/table";
+import { TableCell, TableRow } from "@/src/components/ui/Table";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/src/components/ui/Button";
@@ -145,7 +145,7 @@ export function TransactionRow({
   return (
     <TableRow
       data-state={checked ? "selected" : undefined}
-      className="border-slate-200/70 hover:bg-slate-50/60 data-[state=selected]:bg-sky-50/60 dark:border-slate-800 dark:hover:bg-slate-900/40 dark:data-[state=selected]:bg-sky-950/25"
+      className="border-border/70 hover:bg-secondary/70 data-[state=selected]:bg-sky-50/60 dark:border-border dark:hover:bg-secondary/45 dark:data-[state=selected]:bg-sky-950/25"
     >
       <TableCell className="w-9 py-3 pl-2 pr-1 md:w-11 md:pr-2">
         <Checkbox
@@ -161,7 +161,7 @@ export function TransactionRow({
 
       <TableCell className="min-w-0 py-3 px-2 md:min-w-[240px] md:px-4">
         <div className="flex items-start justify-between gap-2">
-          <p className="truncate text-[13px] font-semibold text-slate-800 dark:text-slate-100">
+          <p className="truncate text-[13px] font-semibold text-foreground">
             {transaction.description}
           </p>
           <div className="md:hidden">
@@ -172,8 +172,8 @@ export function TransactionRow({
             />
           </div>
         </div>
-        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{subtitleLabel}</p>
-        <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 sm:hidden">{categoryName}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{subtitleLabel}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground sm:hidden">{categoryName}</p>
         {suggestion && onApplySuggestion ? (
           <Button
             type="button"
@@ -199,7 +199,7 @@ export function TransactionRow({
               setShowCategorySelect(false);
             }}
             onBlur={() => setShowCategorySelect(false)}
-            className="mt-2 h-8 min-w-[150px] rounded-lg border-slate-200 bg-white text-xs dark:border-slate-700 dark:bg-slate-900 sm:hidden"
+            className="mt-2 h-8 min-w-[150px] rounded-lg border-border bg-card text-xs dark:border-border dark:bg-secondary/60 sm:hidden"
           >
             <option value="">Sem categoria</option>
             {categories.map((category) => (
@@ -247,7 +247,7 @@ export function TransactionRow({
                 setShowCategorySelect(false);
               }}
               onBlur={() => setShowCategorySelect(false)}
-              className="hidden h-8 min-w-[150px] rounded-lg border-slate-200 bg-white text-xs dark:border-slate-700 dark:bg-slate-900 sm:block"
+              className="hidden h-8 min-w-[150px] rounded-lg border-border bg-card text-xs dark:border-border dark:bg-secondary/60 sm:block"
             >
               <option value="">Sem categoria</option>
               {categories.map((category) => (
@@ -260,11 +260,11 @@ export function TransactionRow({
         </div>
       </TableCell>
 
-      <TableCell className="hidden min-w-[130px] py-3 text-sm text-slate-600 dark:text-slate-300 md:table-cell">
+      <TableCell className="hidden min-w-[130px] py-3 text-sm text-muted-foreground md:table-cell">
         {transaction.account.name}
       </TableCell>
 
-      <TableCell className="hidden min-w-[120px] py-3 text-sm text-slate-500 dark:text-slate-400 md:table-cell">
+      <TableCell className="hidden min-w-[120px] py-3 text-sm text-muted-foreground md:table-cell">
         {format(new Date(transaction.date), "dd/MM/yyyy")}
       </TableCell>
 
@@ -289,4 +289,6 @@ export function TransactionRow({
     </TableRow>
   );
 }
+
+
 

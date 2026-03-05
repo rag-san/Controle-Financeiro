@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { Select } from "@/components/ui/select";
+import { Select } from "@/src/components/ui/Select";
 import type { AccountDTO, CategoryDTO } from "@/lib/types";
 import { Button } from "@/src/components/ui/Button";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
@@ -40,7 +40,7 @@ export function TransactionForm({
 
   return (
     <section
-      className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm dark:border-border dark:bg-card"
       aria-labelledby="tx-form-title"
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -122,5 +122,6 @@ export function TransactionForm({
     </section>
   );
 }
+
 
 

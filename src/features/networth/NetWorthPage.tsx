@@ -72,12 +72,12 @@ function EmptyAllocationState({
   message: string;
 }): React.JSX.Element {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-10 text-center dark:border-slate-700 dark:bg-slate-900/40">
-      <Landmark className="h-5 w-5 text-slate-400" aria-hidden="true" />
-      <p className="text-sm text-slate-500 dark:text-slate-400">{message}</p>
+    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-secondary/50 px-4 py-10 text-center dark:border-border dark:bg-secondary/45">
+      <Landmark className="h-5 w-5 text-muted-foreground/80" aria-hidden="true" />
+      <p className="text-sm text-muted-foreground">{message}</p>
       <Link
         href="/accounts"
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:border-border dark:text-foreground dark:hover:bg-secondary"
       >
         <PlusCircle className="h-3.5 w-3.5" />
         Adicionar ativo
@@ -106,9 +106,9 @@ function AllocationPanel({
 
   return (
     <section id={`networth-panel-${id}`} role="tabpanel" aria-labelledby={`networth-tab-${id}`}>
-      <Card className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950">
-        <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
-          {title} <span className="text-slate-400">•</span> {formatBRL(total)}
+      <Card className="space-y-5 rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 hover:shadow-md dark:border-border dark:bg-card">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+          {title} <span className="text-muted-foreground/80">•</span> {formatBRL(total)}
         </h2>
 
         {items.length === 0 ? (
@@ -117,22 +117,22 @@ function AllocationPanel({
           <>
             <AllocationBar items={items} onItemSelect={onSelectItem} />
 
-            <div className="overflow-x-auto rounded-xl border border-slate-200 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:border-slate-800 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700">
+            <div className="overflow-x-auto rounded-xl border border-border [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:border-border dark:[&::-webkit-scrollbar-thumb]:bg-border">
               <table className="w-full min-w-[520px] border-collapse">
-                <thead className="bg-slate-50 dark:bg-slate-900/50">
+                <thead className="bg-secondary/55 dark:bg-secondary/40">
                   <tr>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Nome
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Peso
                     </th>
-                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    <th className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       Valor
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                <tbody className="divide-y divide-border dark:divide-border">
                   {items.map((item) => (
                     <AssetRow
                       key={item.id}
@@ -328,7 +328,7 @@ export function NetWorthPage(): React.JSX.Element {
           />
 
           {loading ? (
-            <Card className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+            <Card className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-sm dark:border-border dark:bg-card">
               <Skeleton className="h-8 w-48" />
               <Skeleton className="h-4 w-full rounded-full" />
               <Skeleton className="h-4 w-2/3 rounded-full" />
@@ -372,4 +372,6 @@ export function NetWorthPage(): React.JSX.Element {
     </PageShell>
   );
 }
+
+
 

@@ -39,7 +39,7 @@ export function InsightsBanner({
 
   return (
     <section
-      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm dark:border-border dark:bg-card"
       aria-label="Insights rápidos"
     >
       <ul className="flex flex-col gap-2">
@@ -57,7 +57,7 @@ export function InsightsBanner({
             {insight.cta ? (
               <Link
                 href={insight.cta.href}
-                className="text-xs font-semibold underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="text-xs font-semibold underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {insight.cta.label}
               </Link>
@@ -68,3 +68,5 @@ export function InsightsBanner({
     </section>
   );
 }
+
+

@@ -1,6 +1,6 @@
 import * as React from "react";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/src/components/ui/Checkbox";
+import { Select } from "@/src/components/ui/Select";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { SegmentedControl } from "@/src/components/ui/SegmentedControl";
@@ -183,7 +183,7 @@ export function PreviewStep({
         <>
           <div
             className={cn(
-              "max-h-80 overflow-auto md:hidden [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700",
+              "max-h-80 overflow-auto md:hidden [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:[&::-webkit-scrollbar-thumb]:bg-border",
               maxHeightClassName
             )}
           >
@@ -286,7 +286,7 @@ export function PreviewStep({
 
           <div
             className={cn(
-              "hidden max-h-80 overflow-auto md:block [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700",
+              "hidden max-h-80 overflow-auto md:block [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:[&::-webkit-scrollbar-thumb]:bg-border",
               maxHeightClassName
             )}
           >
@@ -411,4 +411,5 @@ export function PreviewStep({
     </div>
   );
 }
+
 

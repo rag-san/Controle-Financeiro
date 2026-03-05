@@ -3,7 +3,7 @@
 import * as React from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/Card";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import { Button } from "@/src/components/ui/Button";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";

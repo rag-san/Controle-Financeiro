@@ -57,26 +57,26 @@ export function IncomeCard({
 
   return (
     <Card
-      className="flex h-full flex-col space-y-4 rounded-2xl border border-slate-700/70 bg-[linear-gradient(135deg,#020817,#04112a_60%,#0a1730)] text-slate-100 shadow-[0_12px_30px_rgba(2,6,23,0.55)]"
+      className="flex h-full flex-col space-y-4 text-foreground"
       aria-busy={isLoading}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="space-y-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">RECEITAS</p>
-          <p className="text-[1.9rem] font-black tracking-tight text-emerald-400">{formatBRL(totalIncome)}</p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">RECEITAS</p>
+          <p className="text-[1.9rem] font-black tracking-tight text-emerald-700 dark:text-emerald-300">{formatBRL(totalIncome)}</p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge
               value={delta.badgeValue}
               variant={delta.badgeVariant}
-              className="border border-slate-700 bg-slate-800/80 px-2 py-0.5 text-xs font-bold text-slate-200"
+              className="border border-border bg-secondary/70 px-2 py-0.5 text-xs font-bold text-foreground"
             />
             <span>vs {formatBRL(previousTotalIncome)} no período anterior</span>
           </div>
-          <p className="text-xs text-slate-500">{dateRangeLabel}</p>
+          <p className="text-xs text-muted-foreground">{dateRangeLabel}</p>
         </div>
         <Link
           href="/transactions?type=income"
-          className="text-xs font-semibold text-indigo-400 transition hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Ver mais sobre receitas"
         >
           Ver mais ↗
@@ -91,13 +91,13 @@ export function IncomeCard({
 
       {!hasIncomeData ? (
         <div className="flex flex-col items-center justify-center gap-1 pt-1">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-emerald-500/35 bg-emerald-500/12 text-base text-emerald-300 shadow-[0_10px_24px_rgba(16,185,129,0.2)]">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-emerald-500/35 bg-emerald-500/12 text-base text-emerald-700 dark:text-emerald-300 shadow-[0_10px_24px_rgba(16,185,129,0.2)]">
             ↗
           </span>
-          <p className="text-xs text-slate-400">Nenhuma receita no período</p>
+          <p className="text-xs text-muted-foreground">Nenhuma receita no período</p>
           <Link
             href="/transactions?new=1&type=income"
-            className="text-sm font-semibold text-indigo-400 transition hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="text-sm font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             + Adicionar receita
           </Link>
@@ -106,3 +106,4 @@ export function IncomeCard({
     </Card>
   );
 }
+

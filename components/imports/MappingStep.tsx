@@ -1,6 +1,6 @@
 "use client";
 
-import { Select } from "@/components/ui/select";
+import { Select } from "@/src/components/ui/Select";
 import { Button } from "@/src/components/ui/Button";
 import { FormField } from "@/src/components/ui/FormField";
 

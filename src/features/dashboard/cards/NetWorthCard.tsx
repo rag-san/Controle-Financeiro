@@ -169,19 +169,19 @@ export function NetWorthCard({
   const canRenderChart = chartContainer.size.width > 0 && chartContainer.size.height > 0;
 
   return (
-    <Card className="h-full overflow-hidden border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-100/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70">
+    <Card className="h-full overflow-hidden">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="text-[11px] tracking-[0.12em] text-slate-500 dark:text-slate-400">
+          <CardTitle className="text-[11px] tracking-[0.12em] text-muted-foreground">
             Patrimonio
           </CardTitle>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-xs text-muted-foreground">
             Evolucao por faixa selecionada ({periodDescription}).
           </p>
         </div>
         <Link
           href={hrefVerTodas}
-          className="text-xs font-semibold text-sky-700 transition hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-300 dark:hover:text-sky-200"
+          className="text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver mais ↗
         </Link>
@@ -189,19 +189,19 @@ export function NetWorthCard({
 
       <CardContent className="min-h-[320px] overflow-hidden">
         <div className="space-y-2.5">
-          <p className="break-words text-4xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+          <p className="break-words text-4xl font-black tracking-tight text-foreground">
             {formatBRL(valorTotal)}
           </p>
           <div className="flex items-center gap-2">
             <Badge value={variationBadge.value} variant={variationBadge.variant} />
-            <span className="text-xs text-slate-500 dark:text-slate-400">variacao na faixa</span>
+            <span className="text-xs text-muted-foreground">variacao na faixa</span>
           </div>
         </div>
 
         {isDataAvailable ? (
           <div
             ref={chartContainer.ref}
-            className="relative mt-4 h-[190px] min-h-[190px] w-full min-w-0 rounded-xl border border-slate-200/80 bg-white/80 px-1 py-2 dark:border-slate-800 dark:bg-slate-950/60"
+            className="app-surface-inset relative mt-4 h-[190px] min-h-[190px] w-full min-w-0 rounded-xl px-1 py-2"
           >
             {canRenderChart ? (
               <AreaChart
@@ -262,19 +262,19 @@ export function NetWorthCard({
             ) : null}
             {flatSeries ? (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <span className="rounded-full border border-slate-200/90 bg-white/90 px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-300">
+                <span className="rounded-full border border-border/85 bg-card/90 px-3 py-1 text-[11px] font-semibold text-muted-foreground shadow-sm">
                   Sem variacao no periodo
                 </span>
               </div>
             ) : null}
           </div>
         ) : (
-          <div className="mt-4 flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300/80 px-4 text-center text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <div className="mt-4 flex h-[170px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 px-4 text-center text-muted-foreground">
             <Clock3 className="h-8 w-8" aria-hidden="true" />
             <p role="status">Dados disponiveis apos 7 dias</p>
             <Link
               href={hrefImportarExtrato}
-              className="inline-flex h-8 items-center rounded-lg border border-sky-300 bg-sky-50 px-3 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-950/60"
+              className="inline-flex h-8 items-center rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Adicionar transações
             </Link>

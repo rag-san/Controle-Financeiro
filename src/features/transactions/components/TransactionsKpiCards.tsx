@@ -38,7 +38,7 @@ function KpiCard({
   return (
     <article
       className={cn(
-        "relative overflow-hidden rounded-2xl border bg-gradient-to-br from-white via-white to-slate-100/70 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/60",
+        "relative overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-secondary/70 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:from-card dark:via-card dark:to-secondary/65",
         tone.borderClassName
       )}
     >
@@ -52,10 +52,10 @@ function KpiCard({
 
       <div className="relative z-[1] flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             {title}
           </p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{periodLabel}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{periodLabel}</p>
         </div>
         <span
           className={cn(
@@ -170,3 +170,5 @@ export function TransactionsKpiCards({
     </section>
   );
 }
+
+

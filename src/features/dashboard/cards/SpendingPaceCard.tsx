@@ -35,7 +35,7 @@ function resolveDeltaBadgeClass(variationPercent: number): string {
     return "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-200";
   }
 
-  return "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300";
+  return "bg-secondary text-secondary-foreground";
 }
 
 export function SpendingPaceCard({
@@ -60,20 +60,20 @@ export function SpendingPaceCard({
   const deltaClass = resolveDeltaBadgeClass(variationPercent);
 
   return (
-    <Card className="h-full border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-100/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70">
+    <Card className="h-full">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-slate-500 dark:text-slate-400">
+          <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-muted-foreground">
             <span>Ritmo de gastos</span>
-            <Info className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" aria-hidden="true" />
+            <Info className="h-3.5 w-3.5 text-muted-foreground/80" aria-hidden="true" />
           </CardTitle>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-xs text-muted-foreground">
             Comparativo acumulado {periodDescription}.
           </p>
         </div>
         <Link
           href={hrefVerTodas}
-          className="text-xs font-semibold text-sky-700 transition hover:text-sky-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-sky-300 dark:hover:text-sky-200"
+          className="text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Ver todas ↗
         </Link>
@@ -81,10 +81,10 @@ export function SpendingPaceCard({
 
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <p className="break-words text-4xl font-black tracking-tight text-slate-900 dark:text-slate-100">
+          <p className="break-words text-4xl font-black tracking-tight text-foreground">
             {headlineValue} <span className={cn("text-2xl", headlineLabelClass)}>{headlineLabel}</span>
           </p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-bold", deltaClass)}>
               {formatSignedPercent(variationPercent)}
             </span>
@@ -93,7 +93,7 @@ export function SpendingPaceCard({
         </div>
 
         {hasData ? (
-          <div className="rounded-xl border border-slate-200/80 bg-white/80 p-2 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="app-surface-inset rounded-xl p-2">
             <SpendingPaceChart
               data={chartData}
               currentLabel={currentLabel}
@@ -102,11 +102,11 @@ export function SpendingPaceCard({
             />
           </div>
         ) : (
-          <div className="flex h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-slate-300/90 px-4 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <div className="flex h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/80 px-4 text-sm text-muted-foreground">
             <p className="text-center">Dados disponiveis apos os primeiros lancamentos do periodo.</p>
             <Link
               href={hrefImportarExtrato}
-              className="inline-flex h-8 items-center rounded-lg border border-sky-300 bg-sky-50 px-3 text-xs font-semibold text-sky-700 transition hover:bg-sky-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-950/60"
+              className="inline-flex h-8 items-center rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               Adicionar transações
             </Link>

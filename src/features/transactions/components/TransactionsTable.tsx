@@ -1,6 +1,6 @@
 import { ArrowDownUp, Plus, Search, Upload } from "lucide-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/src/components/ui/Table";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
 import { Button } from "@/src/components/ui/Button";
 import { Checkbox } from "@/src/components/ui/Checkbox";
@@ -52,7 +52,7 @@ function SortButton({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-slate-400 dark:hover:text-slate-100"
+      className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-muted-foreground/80 dark:hover:text-foreground"
       onClick={() => onToggleSort(field)}
       aria-label={`Ordenar por ${label} (${directionLabel})`}
     >
@@ -66,7 +66,7 @@ function LoadingRows(): React.JSX.Element {
   return (
     <>
       {Array.from({ length: 8 }).map((_, index) => (
-        <TableRow key={`skeleton-${index}`} className="border-slate-200/70 dark:border-slate-800">
+        <TableRow key={`skeleton-${index}`} className="border-border/70">
           <TableCell className="w-9 py-3 pl-2 pr-1 md:w-11 md:pr-2">
             <Skeleton className="h-4 w-4 rounded-full" />
           </TableCell>
@@ -120,19 +120,19 @@ export function TransactionsTable({
   const allSelected = items.length > 0 && items.every((item) => selectedIdsSet.has(item.id));
   const someSelected = !allSelected && items.some((item) => selectedIdsSet.has(item.id));
   const headerClassName =
-    "h-11 border-b border-slate-200/70 bg-slate-50/70 px-2 md:px-4 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-400";
+    "h-11 border-b border-border/70 bg-secondary/50 px-2 md:px-4 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground dark:border-border dark:bg-secondary/45 dark:text-muted-foreground/80";
 
   return (
     <section
-      className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50/70 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70"
+      className="overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-secondary/60 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70"
       aria-label="Tabela de transações"
     >
-      <div className="flex flex-col gap-3 border-b border-slate-200/70 px-4 py-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
-        <p className="text-sm text-slate-600 dark:text-slate-300">
-          Exibindo <span className="font-semibold text-slate-900 dark:text-slate-100">{visibleCount}</span> de{" "}
-          <span className="font-semibold text-slate-900 dark:text-slate-100">{totalCount}</span> transação(ões)
+      <div className="flex flex-col gap-3 border-b border-border/70 px-4 py-4 dark:border-border lg:flex-row lg:items-center lg:justify-between">
+        <p className="text-sm text-muted-foreground">
+          Exibindo <span className="font-semibold text-foreground">{visibleCount}</span> de{" "}
+          <span className="font-semibold text-foreground">{totalCount}</span> transação(ões)
         </p>
-        <p className="text-xs text-slate-500 dark:text-slate-400 sm:hidden">Deslize para ver todas as colunas.</p>
+        <p className="text-xs text-muted-foreground sm:hidden">Deslize para ver todas as colunas.</p>
       </div>
 
       <Table
@@ -186,11 +186,11 @@ export function TransactionsTable({
           {!loading && items.length === 0 ? (
             <TableRow className="hover:bg-transparent">
               <TableCell colSpan={7} className="py-14 text-center">
-                <Search className="mx-auto h-8 w-8 text-slate-400 dark:text-slate-500" />
-                <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                <Search className="mx-auto h-8 w-8 text-muted-foreground/80" />
+                <p className="mt-3 text-sm font-semibold text-foreground">
                   Nenhuma transação encontrada
                 </p>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Ajuste os filtros ou faça um novo lançamento.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -236,3 +236,5 @@ export function TransactionsTable({
     </section>
   );
 }
+
+

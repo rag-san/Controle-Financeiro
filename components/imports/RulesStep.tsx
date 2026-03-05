@@ -1,6 +1,6 @@
 "use client";
 
-import { Checkbox } from "@/components/ui/checkbox";
+import { Checkbox } from "@/src/components/ui/Checkbox";
 
 type RulesStepProps = {
   applyRules: boolean;

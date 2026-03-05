@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { ExpensesStackedTooltip } from "@/src/components/charts/ExpensesStackedTooltip";
 import { getCategoryColor } from "@/src/features/categories/categoryColors";
 import type { ExpensesStackedChartData } from "@/src/features/cashflow/types";
@@ -29,7 +29,7 @@ function CompactLegend({
   categories: string[];
 }): React.JSX.Element {
   return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400">
+    <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground/80">
       {categories.map((category) => (
         <li key={category} className="flex max-w-[150px] items-center gap-1.5">
           <span
@@ -57,7 +57,7 @@ export function ExpensesStackedChart({
 
   if (data.rows.length === 0 || data.categories.length === 0) {
     return (
-      <div className="flex h-[250px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/70 bg-slate-900/20 text-sm text-slate-400">
+      <div className="flex h-[250px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-secondary/25 text-sm text-muted-foreground/80">
         <AlertCircle className="h-4 w-4" />
         <p>Sem despesas neste período.</p>
       </div>
@@ -113,3 +113,5 @@ export function ExpensesStackedChart({
     </div>
   );
 }
+
+

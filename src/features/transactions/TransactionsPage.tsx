@@ -1206,7 +1206,7 @@ export function TransactionsPage(): React.JSX.Element {
       <Button
         variant="outline"
         onClick={() => setCreatePanelOpen(!showCreate)}
-        className="flex-1 border-slate-300/90 bg-white/90 text-slate-700 shadow-sm hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 sm:flex-none"
+        className="flex-1 border-border/90 bg-card/90 text-foreground shadow-sm hover:bg-secondary dark:border-border dark:bg-secondary/60 dark:text-foreground dark:hover:bg-secondary sm:flex-none"
       >
         <Plus className="h-4 w-4" />
         {showCreate ? "Fechar" : "Nova"}
@@ -1256,7 +1256,7 @@ export function TransactionsPage(): React.JSX.Element {
         />
 
         {uncategorizedStats.count > 0 && !uncategorizedOnly ? (
-          <section className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50/90 via-amber-50/60 to-white px-4 py-3 shadow-sm dark:border-amber-900/60 dark:from-amber-950/30 dark:via-slate-950 dark:to-slate-950 sm:flex-row sm:items-center sm:justify-between">
+          <section className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50/90 via-amber-50/60 to-card px-4 py-3 shadow-sm dark:border-amber-900/60 dark:from-amber-950/30 dark:via-card dark:to-card sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                 <AlertTriangle className="h-4 w-4" />
@@ -1395,13 +1395,13 @@ export function TransactionsPage(): React.JSX.Element {
           onConfirm={() => handleDeleteSelected()}
         />
 
-        <div className="flex flex-col gap-2 rounded-2xl border border-slate-200/80 bg-gradient-to-r from-white via-white to-slate-100/70 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.08)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-950 dark:to-slate-900/70 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-secondary/70 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.08)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Exibindo <span className="font-semibold text-slate-900 dark:text-slate-100">{visibleTransactions.length}</span> de{" "}
-              <span className="font-semibold text-slate-900 dark:text-slate-100">{pagination.totalCount}</span> transação(ões)
+            <p className="text-sm text-muted-foreground">
+              Exibindo <span className="font-semibold text-foreground">{visibleTransactions.length}</span> de{" "}
+              <span className="font-semibold text-foreground">{pagination.totalCount}</span> transação(ões)
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-muted-foreground">
               Página {pagination.page} de {pagination.totalPages}
             </p>
           </div>
@@ -1430,3 +1430,5 @@ export function TransactionsPage(): React.JSX.Element {
     </PageShell>
   );
 }
+
+

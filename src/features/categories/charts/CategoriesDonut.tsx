@@ -21,10 +21,10 @@ function DonutTooltip({
 
   const item = payload[0].payload;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
-      <p className="font-medium text-slate-700 dark:text-slate-200">{item.label}</p>
-      <p className="tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatBRL(item.value)}</p>
-      <p className="text-slate-500 dark:text-slate-400">{item.percentage.toFixed(1)}%</p>
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg dark:border-border dark:bg-secondary/60">
+      <p className="font-medium text-foreground">{item.label}</p>
+      <p className="tabular-nums font-semibold text-foreground">{formatBRL(item.value)}</p>
+      <p className="text-muted-foreground">{item.percentage.toFixed(1)}%</p>
     </div>
   );
 }
@@ -69,3 +69,5 @@ export function CategoriesDonut({ slices }: CategoriesDonutProps): React.JSX.Ele
     </div>
   );
 }
+
+

@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import type { NetResultRow } from "@/src/features/cashflow/types";
 import { formatBRL, formatBRLCompact, formatMonthLabel } from "@/src/utils/format";
 
@@ -57,11 +57,17 @@ function NetResultTooltip({
   const labelText = typeof label === "string" ? formatMonthLabel(label) : String(label ?? "");
 
   return (
-    <div className="min-w-[12rem] rounded-xl border border-slate-700 bg-slate-950/95 p-3 text-xs text-slate-100 shadow-xl backdrop-blur">
+    <div className="min-w-[12rem] rounded-xl border border-border bg-card/95 p-3 text-xs text-foreground shadow-xl backdrop-blur dark:bg-secondary/85">
       <p className="mb-2 font-semibold">{labelText}</p>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-slate-300">Resultado liquido</span>
-        <span className={value >= 0 ? "font-bold text-emerald-300" : "font-bold text-rose-300"}>
+        <span className="text-muted-foreground">Resultado liquido</span>
+        <span
+          className={
+            value >= 0
+              ? "font-bold text-emerald-700 dark:text-emerald-300"
+              : "font-bold text-rose-700 dark:text-rose-300"
+          }
+        >
           {formatBRL(value)}
         </span>
       </div>
@@ -144,3 +150,4 @@ export function NetResultChart({
     </div>
   );
 }
+

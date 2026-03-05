@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import * as React from "react";
 import { Button } from "@/src/components/ui/Button";
@@ -65,7 +65,7 @@ export function BulkDeleteModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="bulk-delete-modal-title"
-        className="w-full max-w-md rounded-2xl border border-slate-200/70 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+        className="w-full max-w-md rounded-2xl border border-border/70 bg-card p-5 shadow-xl dark:border-border dark:bg-card"
       >
         <h2 id="bulk-delete-modal-title" className="text-base font-semibold text-foreground">
           Confirmar exclusao
@@ -116,4 +116,5 @@ export function BulkDeleteModal({
     </div>
   );
 }
+
 

@@ -156,10 +156,10 @@ function resolvePaletteItem(categoryName: string): CategoryColorPaletteItem {
       key: "other",
       chart: "#9ca3af",
       chip: {
-        bg: "bg-slate-50 dark:bg-slate-900/40",
-        border: "border-slate-200 dark:border-slate-700/70",
-        text: "text-slate-700 dark:text-slate-200",
-        dot: "bg-slate-500 dark:bg-slate-300"
+        bg: "bg-secondary/45",
+        border: "border-border dark:border-border/70",
+        text: "text-foreground",
+        dot: "bg-secondary/55 dark:bg-muted-foreground"
       }
     };
   }
@@ -181,3 +181,5 @@ export function getCategoryChipClasses(categoryName: string): {
 } {
   return resolvePaletteItem(categoryName).chip;
 }
+
+

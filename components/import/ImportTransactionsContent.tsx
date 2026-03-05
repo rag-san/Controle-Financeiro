@@ -1,10 +1,10 @@
-﻿"use client";
+"use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { UploadCloud } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { Checkbox } from "@/src/components/ui/Checkbox";
+import { Select } from "@/src/components/ui/Select";
 import { FileDropzone } from "@/components/imports/FileDropzone";
 import { MappingStep } from "@/components/imports/MappingStep";
 import { PreviewStep } from "@/components/imports/PreviewStep";

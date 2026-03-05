@@ -80,7 +80,7 @@ export function ReportsFilters({
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label htmlFor="reports-filter-account" className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <label htmlFor="reports-filter-account" className="text-xs font-medium text-muted-foreground">
               Conta
             </label>
             <Select
@@ -99,7 +99,7 @@ export function ReportsFilters({
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="reports-filter-category" className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <label htmlFor="reports-filter-category" className="text-xs font-medium text-muted-foreground">
               Categoria
             </label>
             <Select
@@ -121,4 +121,5 @@ export function ReportsFilters({
     </Card>
   );
 }
+
 

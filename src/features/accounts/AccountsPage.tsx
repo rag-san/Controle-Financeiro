@@ -3,7 +3,7 @@
 import { CreditCard, Eye, EyeOff, Link2, RefreshCcw, Trash2, Wallet } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import type { AccountDTO } from "@/lib/types";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
@@ -48,12 +48,12 @@ function EmptyGroupRow({
   onAction: () => void;
 }): React.JSX.Element {
   return (
-    <div className="flex flex-col items-start gap-3 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
+    <div className="flex flex-col items-start gap-3 px-4 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between dark:text-muted-foreground/80">
       <span>{message}</span>
       <button
         type="button"
         onClick={onAction}
-        className="rounded-md px-2 py-1 font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+        className="rounded-md px-2 py-1 font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-blue-400 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
       >
         {ctaLabel}
       </button>
@@ -360,7 +360,7 @@ export function AccountsPage(): React.JSX.Element {
                 const parentRow = group.parent ? (
                   <div
                     key={`parent-${group.parent.id}`}
-                    className="border-b border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400"
+                    className="border-b border-border/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground dark:border-border dark:text-muted-foreground/80"
                   >
                     {group.parent.name}
                   </div>
@@ -385,7 +385,7 @@ export function AccountsPage(): React.JSX.Element {
                         <button
                           type="button"
                           onClick={() => setDeleteTarget({ id: account.id, name: account.name })}
-                          className="rounded-md p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
+                          className="rounded-md p-1.5 text-muted-foreground/80 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
                           aria-label={`Excluir conta ${account.name}`}
                         >
                           <Trash2 className="h-4 w-4" />
@@ -434,7 +434,7 @@ export function AccountsPage(): React.JSX.Element {
                       <button
                         type="button"
                         onClick={() => setDeleteTarget({ id: account.id, name: account.name })}
-                        className="rounded-md p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
+                        className="rounded-md p-1.5 text-muted-foreground/80 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
                         aria-label={`Excluir conta ${account.name}`}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -504,4 +504,6 @@ export function AccountsPage(): React.JSX.Element {
     </PageShell>
   );
 }
+
+
 

@@ -50,10 +50,10 @@ export function CategoriesTopTabs({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => handleKeyDown(event, tab.id)}
-            className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+            className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
               selected
                 ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
-                : "text-slate-500 hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                : "text-muted-foreground hover:bg-secondary hover:text-foreground dark:text-muted-foreground/80 dark:hover:bg-secondary dark:hover:text-foreground"
             }`}
           >
             {tab.label}
@@ -63,3 +63,5 @@ export function CategoriesTopTabs({
     </div>
   );
 }
+
+

@@ -97,7 +97,7 @@ export function CreateRecurringModal({
         }}
       >
         <div className="space-y-1">
-          <label htmlFor="create-recurring-name" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          <label htmlFor="create-recurring-name" className="text-sm font-medium text-muted-foreground">
             Nome
           </label>
           <Input
@@ -112,7 +112,7 @@ export function CreateRecurringModal({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <label htmlFor="create-recurring-amount" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            <label htmlFor="create-recurring-amount" className="text-sm font-medium text-muted-foreground">
               Valor (R$)
             </label>
             <Input
@@ -128,7 +128,7 @@ export function CreateRecurringModal({
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="create-recurring-due-day" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+            <label htmlFor="create-recurring-due-day" className="text-sm font-medium text-muted-foreground">
               Dia de vencimento
             </label>
             <Input
@@ -145,7 +145,7 @@ export function CreateRecurringModal({
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="create-recurring-category" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+          <label htmlFor="create-recurring-category" className="text-sm font-medium text-muted-foreground">
             Categoria
           </label>
           <Select
@@ -163,7 +163,7 @@ export function CreateRecurringModal({
           </Select>
         </div>
 
-        <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
           <input
             type="checkbox"
             checked={form.markAsPaidThisMonth}
@@ -171,7 +171,7 @@ export function CreateRecurringModal({
               setForm((previous) => ({ ...previous, markAsPaidThisMonth: event.target.checked }))
             }
             disabled={busy}
-            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-border text-blue-600 focus:ring-blue-500"
           />
           Marcar como pago neste mês
         </label>
@@ -179,3 +179,5 @@ export function CreateRecurringModal({
     </Modal>
   );
 }
+
+

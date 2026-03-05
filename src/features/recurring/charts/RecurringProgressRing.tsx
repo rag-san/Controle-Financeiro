@@ -27,9 +27,9 @@ function RingTooltip({
 
   const item = payload[0].payload;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
-      <p className="font-medium text-slate-700 dark:text-slate-200">{item.name}</p>
-      <p className="tabular-nums font-semibold text-slate-900 dark:text-slate-100">
+    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg dark:border-border dark:bg-secondary/60">
+      <p className="font-medium text-foreground">{item.name}</p>
+      <p className="tabular-nums font-semibold text-foreground">
         {formatBRL(item.value)}
       </p>
     </div>
@@ -79,8 +79,8 @@ export function RecurringProgressRing({
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Pago</p>
-          <p className="tabular-nums text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Pago</p>
+          <p className="tabular-nums text-sm font-semibold text-foreground">
             {total > 0 ? `${Math.round((safePaid / total) * 100)}%` : "0%"}
           </p>
         </div>
@@ -88,3 +88,5 @@ export function RecurringProgressRing({
     </div>
   );
 }
+
+

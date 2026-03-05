@@ -31,27 +31,27 @@ export function CategoriesTreeList({
   }, []);
 
   return (
-    <Card className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <Card className="rounded-2xl border border-border bg-card p-5 shadow-sm dark:border-border dark:bg-card">
       <div className="mb-4 flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           CATEGORIAS DO SISTEMA
         </p>
-        <p className="tabular-nums text-sm font-semibold text-slate-900 dark:text-slate-100">{formatBRL(totalSpent)}</p>
+        <p className="tabular-nums text-sm font-semibold text-foreground">{formatBRL(totalSpent)}</p>
       </div>
 
       {groups.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground dark:border-border dark:text-muted-foreground/80">
           Sem gastos registrados para este mês.
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="px-1 text-xs text-slate-500 sm:hidden dark:text-slate-400">
+          <p className="px-1 text-xs text-muted-foreground sm:hidden dark:text-muted-foreground/80">
             Deslize para os lados para visualizar todas as colunas.
           </p>
 
-          <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700">
+          <div className="overflow-x-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:[&::-webkit-scrollbar-thumb]:bg-border">
             <div className="min-w-[560px] space-y-3">
-              <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-4 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-4 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <span>Nome</span>
                 <span>Peso</span>
                 <span className="text-right">Valor</span>
@@ -71,7 +71,7 @@ export function CategoriesTreeList({
                     />
 
                     {!collapsed ? (
-                      <div className="space-y-0.5 border-l border-slate-200 pl-4 dark:border-slate-800">
+                      <div className="space-y-0.5 border-l border-border pl-4 dark:border-border">
                         {group.children.map((item) => (
                           <CategoryRow
                             key={`${group.id}-${item.categoryId ?? item.name}`}
@@ -92,3 +92,5 @@ export function CategoriesTreeList({
     </Card>
   );
 }
+
+

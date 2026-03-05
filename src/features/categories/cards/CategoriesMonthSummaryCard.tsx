@@ -23,13 +23,13 @@ export function CategoriesMonthSummaryCard({
   const monthLabel = formatMonthYearPtBr(monthDate);
 
   return (
-    <Card className="rounded-2xl border border-slate-200 bg-white px-6 py-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <Card className="rounded-2xl border border-border bg-card px-6 py-6 shadow-sm dark:border-border dark:bg-card">
       <div className="grid gap-5 md:grid-cols-[1fr_auto_1fr] md:items-center">
         <div className="space-y-1 text-center md:text-left">
-          <p className="tabular-nums text-3xl font-semibold text-slate-900 dark:text-slate-100">
+          <p className="tabular-nums text-3xl font-semibold text-foreground">
             {formatBRL(totalSpent)}
           </p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">gasto em {monthLabel}</p>
+          <p className="text-sm text-muted-foreground">gasto em {monthLabel}</p>
         </div>
 
         <div className="mx-auto">
@@ -37,7 +37,7 @@ export function CategoriesMonthSummaryCard({
         </div>
 
         <div className="space-y-3 text-center md:text-right">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 dark:border-slate-700 dark:bg-slate-900">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/55 px-2 py-1 dark:border-border dark:bg-secondary/60">
             <Button
               type="button"
               size="icon"
@@ -48,7 +48,7 @@ export function CategoriesMonthSummaryCard({
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <p className="px-1 text-sm font-medium text-slate-700 dark:text-slate-200">{monthLabel}</p>
+            <p className="px-1 text-sm font-medium text-foreground">{monthLabel}</p>
             <Button
               type="button"
               size="icon"
@@ -65,3 +65,5 @@ export function CategoriesMonthSummaryCard({
     </Card>
   );
 }
+
+

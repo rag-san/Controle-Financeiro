@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
 import { ExpensesCard } from "@/src/features/cashflow/cards/ExpensesCard";
 import { IncomeCard } from "@/src/features/cashflow/cards/IncomeCard";

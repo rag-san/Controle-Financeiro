@@ -103,22 +103,22 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="modal-title"
         className={cn(
-          "relative z-[121] w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950",
+          "app-surface-card relative z-[121] w-full max-w-lg rounded-2xl p-5 shadow-xl",
           className
         )}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="space-y-1">
-            <h2 id="modal-title" className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+            <h2 id="modal-title" className="text-lg font-semibold text-foreground">
               {title}
             </h2>
-            {description ? <p className="text-sm text-slate-500 dark:text-slate-400">{description}</p> : null}
+            {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
           </div>
           <button
             ref={closeButtonRef}
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label="Fechar modal"
           >
             <X className="h-4 w-4" />
