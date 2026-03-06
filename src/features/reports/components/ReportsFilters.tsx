@@ -32,27 +32,30 @@ export function ReportsFilters({
   return (
     <Card className="p-4">
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div role="group" aria-label="Selecionar período" className="flex flex-wrap items-center gap-2">
-            {REPORTS_PERIOD_OPTIONS.map((option) => {
-              const selected = preset === option.value;
-              return (
-                <Button
-                  key={option.value}
-                  type="button"
-                  size="sm"
-                  variant={selected ? "primary" : "outline"}
-                  aria-pressed={selected}
-                  onClick={() => onPresetChange(option.value)}
-                  disabled={disabled}
-                >
-                  {option.label}
-                </Button>
-              );
-            })}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="-mx-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div role="group" aria-label="Selecionar período" className="flex min-w-max items-center gap-2">
+              {REPORTS_PERIOD_OPTIONS.map((option) => {
+                const selected = preset === option.value;
+                return (
+                  <Button
+                    key={option.value}
+                    type="button"
+                    size="sm"
+                    variant={selected ? "primary" : "outline"}
+                    aria-pressed={selected}
+                    onClick={() => onPresetChange(option.value)}
+                    disabled={disabled}
+                    className="shrink-0"
+                  >
+                    {option.label}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <Button
               type="button"
               size="sm"
@@ -60,6 +63,7 @@ export function ReportsFilters({
               disabled
               title="Exportação CSV em breve"
               aria-label="Exportar CSV (indisponível)"
+              className="w-full sm:w-auto"
             >
               <Download className="h-4 w-4" />
               CSV
@@ -71,6 +75,7 @@ export function ReportsFilters({
               disabled
               title="Exportação PDF em breve"
               aria-label="Exportar PDF (indisponível)"
+              className="w-full sm:w-auto"
             >
               <FileText className="h-4 w-4" />
               PDF
@@ -80,7 +85,7 @@ export function ReportsFilters({
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <label htmlFor="reports-filter-account" className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <label htmlFor="reports-filter-account" className="text-xs font-medium text-muted-foreground">
               Conta
             </label>
             <Select
@@ -99,7 +104,7 @@ export function ReportsFilters({
           </div>
 
           <div className="space-y-1">
-            <label htmlFor="reports-filter-category" className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            <label htmlFor="reports-filter-category" className="text-xs font-medium text-muted-foreground">
               Categoria
             </label>
             <Select
@@ -121,4 +126,5 @@ export function ReportsFilters({
     </Card>
   );
 }
+
 

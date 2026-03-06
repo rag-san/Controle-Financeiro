@@ -26,6 +26,7 @@ type AssetsDebtsCardProps = {
   selectedRange: AccountsRangeKey;
   onRangeChange: (range: AccountsRangeKey) => void;
   loading?: boolean;
+  hideValues?: boolean;
 };
 
 type DeltaDisplay = {
@@ -41,7 +42,7 @@ function resolveDeltaDisplay(
   if (previous === 0) {
     return {
       text: "→ N/A",
-      className: "text-slate-500 dark:text-slate-400"
+      className: "text-muted-foreground"
     };
   }
 
@@ -49,7 +50,7 @@ function resolveDeltaDisplay(
   if (deltaPercent === 0) {
     return {
       text: "→ 0,0%",
-      className: "text-slate-500 dark:text-slate-400"
+      className: "text-muted-foreground"
     };
   }
 
@@ -94,14 +95,14 @@ function MetricBlock({
 
   return (
     <div className="space-y-1 sm:min-w-[13rem]">
-      <p className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <span className={`h-2 w-2 rounded-full ${dotClassName}`} aria-hidden="true" />
         {label}
       </p>
-      <p className="tabular-nums whitespace-nowrap text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl dark:text-slate-100">
+      <p className="tabular-nums break-words text-[1.8rem] font-semibold tracking-tight text-foreground sm:text-4xl dark:text-foreground">
         {valueText}
       </p>
-      <p className="min-h-[1rem] text-[11px] text-slate-500 dark:text-slate-400">
+      <p className="min-h-[1rem] text-[11px] text-muted-foreground">
         {hoverDateLabel ? `em ${hoverDateLabel}` : ""}
       </p>
       <p className={`text-xs font-semibold ${delta.className}`}>{delta.text}</p>
@@ -117,7 +118,8 @@ export function AssetsDebtsCard({
   chartData,
   selectedRange,
   onRangeChange,
-  loading = false
+  loading = false,
+  hideValues = false
 }: AssetsDebtsCardProps): React.JSX.Element {
   const [hoverPoint, setHoverPoint] = React.useState<HoverPoint>(null);
 
@@ -135,10 +137,13 @@ export function AssetsDebtsCard({
 
   const assetsDelta = resolveDeltaDisplay(assets, previousAssets);
   const debtsDelta = resolveDeltaDisplay(debts, previousDebts, true);
+  const assetsValueText = hideValues ? "••••••" : formatBRL(animatedAssets);
+  const debtsValueText = hideValues ? "••••••" : formatBRL(animatedDebts);
+  const hiddenDelta = { text: "Oculto", className: "text-muted-foreground" };
 
   return (
     <Card
-      className="space-y-5 rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950"
+      className="space-y-5 rounded-2xl border border-border bg-card shadow-sm transition-shadow duration-200 hover:shadow-md dark:border-border dark:bg-card"
       aria-busy={loading}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -146,23 +151,23 @@ export function AssetsDebtsCard({
           <MetricBlock
             dotClassName="bg-blue-500"
             label="Ativos"
-            valueText={formatBRL(animatedAssets)}
-            delta={assetsDelta}
-            hoverDateLabel={hoverDateLabel}
+            valueText={assetsValueText}
+            delta={hideValues ? hiddenDelta : assetsDelta}
+            hoverDateLabel={hideValues ? undefined : hoverDateLabel}
             loading={loading}
           />
           <MetricBlock
             dotClassName="bg-orange-400"
             label="Dívidas"
-            valueText={formatBRL(animatedDebts)}
-            delta={debtsDelta}
-            hoverDateLabel={hoverDateLabel}
+            valueText={debtsValueText}
+            delta={hideValues ? hiddenDelta : debtsDelta}
+            hoverDateLabel={hideValues ? undefined : hoverDateLabel}
             loading={loading}
           />
         </div>
         <button
           type="button"
-          className="self-end rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:self-auto dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          className="self-start rounded-lg p-1.5 text-muted-foreground/80 transition hover:bg-secondary hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:self-auto dark:hover:bg-secondary dark:hover:text-foreground"
           aria-label="Configurar visualização de contas"
         >
           <Settings className="h-4 w-4" />
@@ -189,3 +194,5 @@ export function AssetsDebtsCard({
     </Card>
   );
 }
+
+

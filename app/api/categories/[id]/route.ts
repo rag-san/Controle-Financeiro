@@ -23,7 +23,7 @@ export async function PATCH(
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
   }
   const parsed = updateCategorySchema.safeParse(payload);
 
@@ -34,7 +34,7 @@ export async function PATCH(
   const existing = await categoriesRepo.findByIdForUser(id, auth.userId);
 
   if (!existing) {
-    return NextResponse.json({ error: "Categoria nao encontrada" }, { status: 404 });
+    return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
   }
 
   const category = await categoriesRepo.update({
@@ -44,7 +44,7 @@ export async function PATCH(
   });
 
   if (!category) {
-    return NextResponse.json({ error: "Categoria nao encontrada" }, { status: 404 });
+    return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
   }
 
   invalidateFinanceCaches(auth.userId);
@@ -75,5 +75,4 @@ export async function DELETE(
 
   return NextResponse.json({ success: true });
 }
-
 

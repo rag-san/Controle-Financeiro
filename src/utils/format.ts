@@ -20,12 +20,6 @@ const monthFormatter = new Intl.DateTimeFormat("pt-BR", {
   timeZone: "UTC"
 });
 
-const monthYearFormatter = new Intl.DateTimeFormat("pt-BR", {
-  month: "short",
-  year: "numeric",
-  timeZone: "UTC"
-});
-
 const monthYearLongFormatter = new Intl.DateTimeFormat("pt-BR", {
   month: "long",
   year: "numeric"
@@ -120,19 +114,6 @@ export function formatMonthLabel(iso: string): string {
   const date = new Date(Date.UTC(year, month - 1, 1));
   const monthLabel = monthFormatter.format(date).replace(".", "").toLowerCase();
   return `${monthLabel}/${year}`;
-}
-
-export function formatMonthYearLabel(iso: string): string {
-  const [yearPart, monthPart] = iso.split("-");
-  const year = Number(yearPart);
-  const month = Number(monthPart);
-
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
-    return iso;
-  }
-
-  const date = new Date(Date.UTC(year, month - 1, 1));
-  return monthYearFormatter.format(date).replace(".", "");
 }
 
 export function formatMonthYearPtBr(dateInput: Date | string): string {

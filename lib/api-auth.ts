@@ -1,4 +1,4 @@
-import { getToken } from "next-auth/jwt";
+﻿import { getToken } from "next-auth/jwt";
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_SECRET } from "@/lib/auth";
 import { getRequiredUserId } from "@/lib/auth";
@@ -38,12 +38,12 @@ export async function requireUser(request?: NextRequest): Promise<{ userId: stri
       return { userId: token.sub };
     }
 
-    return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
   const userId = await getRequiredUserId();
   if (!userId) {
-    return NextResponse.json({ error: "Nao autenticado" }, { status: 401 });
+    return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
   if (!(await ensureUserExists(userId))) {
@@ -52,4 +52,5 @@ export async function requireUser(request?: NextRequest): Promise<{ userId: stri
 
   return { userId };
 }
+
 

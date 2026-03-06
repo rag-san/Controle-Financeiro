@@ -134,12 +134,24 @@ async function run(): Promise<void> {
 
   const allBefore = await listTransactionsForUser(seeded.userId, {
     period: "all",
+    sort: "date_desc",
     page: 1,
     pageSize: 200,
     includeMeta: true
   });
+  const excludedBefore = await listTransactionsForUser(seeded.userId, {
+    period: "all",
+    excluded: "true",
+    sort: "date_desc",
+    page: 1,
+    pageSize: 200,
+    includeMeta: false
+  });
 
-  assert(allBefore.items.length === seeded.createdCount, "Quantidade inicial de transações diverge do seed.");
+  assert(
+    allBefore.pagination.totalCount + excludedBefore.pagination.totalCount === seeded.createdCount,
+    "Quantidade inicial de transações diverge do seed."
+  );
   assert(
     approxEqual(allBefore.summary.income, seeded.totals.income),
     `Resumo de receitas divergente. esperado=${seeded.totals.income} atual=${allBefore.summary.income}`
@@ -162,15 +174,17 @@ async function run(): Promise<void> {
 
   const allAfter = await listTransactionsForUser(seeded.userId, {
     period: "all",
+    sort: "date_desc",
     page: 1,
     pageSize: 250,
     includeMeta: true
   });
 
   const summaryBeforeTransfer = { ...allAfter.summary };
+  const transferCountBefore = allAfter.items.filter((item) => item.type === "transfer").length;
 
   assert(
-    allAfter.pagination.totalCount === seeded.createdCount + 1,
+    allAfter.pagination.totalCount === allBefore.pagination.totalCount + 1,
     "Total de transações após create não corresponde ao esperado."
   );
 
@@ -189,13 +203,22 @@ async function run(): Promise<void> {
 
   const allAfterTransfer = await listTransactionsForUser(seeded.userId, {
     period: "all",
+    sort: "date_desc",
     page: 1,
     pageSize: 300,
     includeMeta: true
   });
+  const excludedAfterTransfer = await listTransactionsForUser(seeded.userId, {
+    period: "all",
+    excluded: "true",
+    sort: "date_desc",
+    page: 1,
+    pageSize: 300,
+    includeMeta: false
+  });
 
   assert(
-    allAfterTransfer.pagination.totalCount === seeded.createdCount + 3,
+    allAfterTransfer.pagination.totalCount === allAfter.pagination.totalCount + 2,
     "Total de transações após transferencia não corresponde ao esperado."
   );
   assert(
@@ -212,17 +235,19 @@ async function run(): Promise<void> {
   );
 
   const transferRows = allAfterTransfer.items.filter((item) => item.type === "transfer");
-  assert(transferRows.length === 2, "Esperado exatamente 2 pernas de transferencia.");
+  assert(transferRows.length === transferCountBefore + 2, "Quantidade de pernas de transferencia divergente.");
   assert(transferRows.every((item) => item.categoryId === null), "Transferencia nao deve possuir categoria.");
 
-  const transferOut = transferRows.find((item) => item.accountId === seeded.accounts.checkingId && item.amount < 0);
-  const transferIn = transferRows.find((item) => item.accountId === seeded.accounts.creditId && item.amount > 0);
+  const createdTransferRows = transferRows.filter((item) => item.description === "Pagamento fatura cartao QA");
+  const transferOut = createdTransferRows.find((item) => item.accountId === seeded.accounts.checkingId && item.amount < 0);
+  const transferIn = createdTransferRows.find((item) => item.accountId === seeded.accounts.creditId && item.amount > 0);
   assert(Boolean(transferOut), "Perna de saida da transferencia nao encontrada.");
   assert(Boolean(transferIn), "Perna de entrada da transferencia nao encontrada.");
 
   const accountBalances = await accountsRepo.listByUserWithBalance(seeded.userId);
   const manualBalanceByAccount = new Map<string, number>();
-  for (const item of allAfterTransfer.items) {
+  const allRowsForBalance = [...allAfterTransfer.items, ...excludedAfterTransfer.items];
+  for (const item of allRowsForBalance) {
     manualBalanceByAccount.set(item.accountId, round2((manualBalanceByAccount.get(item.accountId) ?? 0) + item.amount));
   }
   for (const account of accountBalances) {

@@ -10,6 +10,12 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+out
+coverage
+tmp
+uploads
+.cache
+.turbo
 *.local
 .next
 tsconfig.tsbuildinfo
@@ -33,5 +39,15 @@ server/data.json
 data/*.db
 data/*.db-shm
 data/*.db-wal
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 artifacts/
 Arquivosdeexemplo/*
+
+# Sensitive import files
+[Ee]xtrato-*.csv
+downloadMobile*.pdf
+fatura-*.pdf
+Nubank_*.pdf

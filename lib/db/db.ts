@@ -178,15 +178,14 @@ function createStatement(sql: string): DbStatement {
   };
 }
 
-export function getDb(): FinanceDb {
+function getDb(): FinanceDb {
   return {
     dialect: "postgres",
     prepare(sql: string): DbStatement {
       return createStatement(sql);
     },
     async exec(sql: string): Promise<void> {
-      await ensureDbInitialized();
-      await getPgPool().query(sql);
+      await queryInternal(sql);
     },
     async query<T extends QueryResultRow = QueryResultRow>(
       sql: string,

@@ -13,6 +13,12 @@
 npm run test
 ```
 
+- Browser E2E tests (UI real para dashboard, transações, importação e cashflow):
+
+```bash
+npm run test:e2e
+```
+
 - Seed deterministic backend dataset used by validation flow:
 
 ```bash

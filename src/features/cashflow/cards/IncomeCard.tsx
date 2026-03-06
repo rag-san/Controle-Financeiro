@@ -9,6 +9,7 @@ type IncomeCardProps = {
   dateRangeLabel: string;
   totalIncome: number;
   previousTotalIncome: number;
+  classifiedIncome?: number;
   chartData: IncomeRow[];
   isLoading?: boolean;
 };
@@ -49,46 +50,70 @@ export function IncomeCard({
   dateRangeLabel,
   totalIncome,
   previousTotalIncome,
+  classifiedIncome,
   chartData,
   isLoading = false
 }: IncomeCardProps): React.JSX.Element {
   const delta = resolveIncomeDelta(totalIncome, previousTotalIncome);
+  const hasIncomeData = chartData.some((row) => row.income > 0);
 
   return (
     <Card
-      className="space-y-4 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="flex h-full flex-col space-y-4 text-foreground"
       aria-busy={isLoading}
+      data-testid="cashflow-income-card"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">RECEITAS</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{dateRangeLabel}</p>
-          <p className="text-3xl font-semibold text-emerald-600 dark:text-emerald-400">{formatBRL(totalIncome)}</p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">ENTRADAS DE CAIXA</p>
+          <p className="break-words text-[1.6rem] font-black tracking-tight text-emerald-700 dark:text-emerald-300 sm:text-[1.9rem]">
+            {formatBRL(totalIncome)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge
               value={delta.badgeValue}
               variant={delta.badgeVariant}
-              className="border border-current/20 px-2 py-0.5 text-xs"
+              className="border border-border bg-secondary/70 px-2 py-0.5 text-xs font-bold text-foreground"
             />
             <span>vs {formatBRL(previousTotalIncome)} no período anterior</span>
           </div>
+          {typeof classifiedIncome === "number" ? (
+            <p className="text-xs text-muted-foreground">
+              Receitas classificadas no período: {formatBRL(classifiedIncome)}
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">{dateRangeLabel}</p>
         </div>
         <Link
           href="/transactions?type=income"
-          className="text-xs font-medium text-slate-500 transition hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-slate-400 dark:hover:text-slate-200"
+          className="self-start text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Ver mais sobre receitas"
         >
           Ver mais ↗
         </Link>
       </div>
 
-      <div className="mt-2">
-        <IncomeChart
-          data={chartData}
-          loading={isLoading}
-          a11ySummary={`Gráfico de receitas mensais para ${dateRangeLabel}.`}
-        />
-      </div>
+      <IncomeChart
+        data={chartData}
+        loading={isLoading}
+        a11ySummary={`Gráfico de receitas mensais para ${dateRangeLabel}.`}
+      />
+
+      {!hasIncomeData ? (
+        <div className="flex flex-col items-center justify-center gap-1 pt-1">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-emerald-500/35 bg-emerald-500/12 text-base text-emerald-700 dark:text-emerald-300 shadow-[0_10px_24px_rgba(16,185,129,0.2)]">
+            ↗
+          </span>
+          <p className="text-xs text-muted-foreground">Nenhuma entrada de caixa no período</p>
+          <Link
+            href="/transactions?new=1&type=income"
+            className="text-sm font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            + Adicionar receita
+          </Link>
+        </div>
+      ) : null}
     </Card>
   );
 }
+

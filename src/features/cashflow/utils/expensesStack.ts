@@ -3,7 +3,10 @@ import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics"
 import type { TransactionDTO } from "@/lib/types";
 import type { ExpensesStackedRow } from "@/src/features/cashflow/types";
 
-const OTHER_CATEGORY_KEY = "Other";
+const OTHER_CATEGORY_KEY = "Outras categorias";
+const MIN_CATEGORY_SHARE = 0.06;
+const MIN_CATEGORY_CENTS_FLOOR = 5_000;
+const MIN_FORCED_CATEGORIES = 2;
 
 type BuildMonthlyExpensesStackOptions = {
   topN?: number;
@@ -62,8 +65,16 @@ export function buildMonthlyExpensesStack(
     .map(([category, total]) => ({ category, total }))
     .sort((left, right) => right.total - left.total);
 
-  const topCategories = orderedCategories.slice(0, topN).map((item) => item.category);
-  const hasOther = orderedCategories.length > topN;
+  const overallExpenseCents = orderedCategories.reduce((sum, item) => sum + item.total, 0);
+  const minVisibleCategoryCents = Math.max(
+    MIN_CATEGORY_CENTS_FLOOR,
+    Math.round(overallExpenseCents * MIN_CATEGORY_SHARE)
+  );
+  const topCategories = orderedCategories
+    .filter((item, index) => index < MIN_FORCED_CATEGORIES || item.total >= minVisibleCategoryCents)
+    .slice(0, topN)
+    .map((item) => item.category);
+  const hasOther = orderedCategories.some((item) => !topCategories.includes(item.category));
   const categories = hasOther ? [...topCategories, OTHER_CATEGORY_KEY] : topCategories;
   const legendCategories = hasOther
     ? [...topCategories.slice(0, 5), OTHER_CATEGORY_KEY]

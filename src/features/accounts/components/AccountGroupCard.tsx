@@ -11,31 +11,33 @@ type AccountGroupCardProps = {
 
 export function AccountGroupCard({
   icon,
-  iconClassName = "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200",
+  iconClassName = "bg-secondary text-muted-foreground dark:bg-secondary dark:text-foreground",
   title,
   subtitle,
   totalLabel,
   children
 }: AccountGroupCardProps): React.JSX.Element {
   return (
-    <Card className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex flex-col gap-3 border-b border-slate-200/80 bg-slate-50/80 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900/50">
+    <Card className="overflow-hidden rounded-2xl border border-border bg-card p-0 shadow-sm dark:border-border dark:bg-card">
+      <div className="flex flex-col gap-3 border-b border-border/80 bg-secondary/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between dark:border-border dark:bg-secondary/40">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${iconClassName}`}>
             {icon}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
+            <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+            <p className="text-xs text-muted-foreground">{subtitle}</p>
           </div>
         </div>
         {totalLabel ? (
-          <p className="shrink-0 text-right text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-slate-100">
+          <p className="max-w-full shrink-0 break-words text-right text-xl font-semibold tracking-tight text-foreground sm:text-2xl dark:text-foreground">
             {totalLabel}
           </p>
         ) : null}
       </div>
-      <div className="divide-y divide-slate-200/70 dark:divide-slate-800">{children}</div>
+      <div className="divide-y divide-border/70 dark:divide-border">{children}</div>
     </Card>
   );
 }
+
+

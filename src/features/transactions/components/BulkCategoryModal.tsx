@@ -66,13 +66,13 @@ export function BulkCategoryModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="bulk-category-modal-title"
-        className="w-full max-w-md rounded-2xl border border-slate-200/70 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+        className="w-full max-w-md rounded-2xl border border-border/70 bg-card p-5 shadow-xl dark:border-border dark:bg-card"
       >
         <h2 id="bulk-category-modal-title" className="text-base font-semibold text-foreground">
           Definir categoria
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Aplicar categoria para {selectedCount} transacao(oes) selecionada(s).
+          Aplicar categoria para {selectedCount} transação(ões) selecionada(s).
         </p>
 
         <div className="mt-4">
@@ -119,3 +119,5 @@ export function BulkCategoryModal({
     </div>
   );
 }
+
+

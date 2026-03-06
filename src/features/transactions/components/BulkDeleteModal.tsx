@@ -65,13 +65,13 @@ export function BulkDeleteModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="bulk-delete-modal-title"
-        className="w-full max-w-md rounded-2xl border border-slate-200/70 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-950"
+        className="w-full max-w-md rounded-2xl border border-border/70 bg-card p-5 shadow-xl dark:border-border dark:bg-card"
       >
         <h2 id="bulk-delete-modal-title" className="text-base font-semibold text-foreground">
           Confirmar exclusao
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Esta acao removera {selectedCount} transacao(oes). Digite <span className="font-semibold">DELETE</span> para continuar.
+          Esta ação removerá {selectedCount} transação(ões). Digite <span className="font-semibold">DELETE</span> para continuar.
         </p>
 
         <form
@@ -116,3 +116,5 @@ export function BulkDeleteModal({
     </div>
   );
 }
+
+

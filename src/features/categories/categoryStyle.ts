@@ -1,4 +1,4 @@
-import { getCategoryChipClasses, getCategoryColor } from "@/src/features/categories/categoryColors";
+import { getCategoryChipClasses } from "@/src/features/categories/categoryColors";
 
 const ICON_BY_CATEGORY_KEYWORD: Array<{ keyword: string; icon: string }> = [
   { keyword: "moradia", icon: "🏠" },
@@ -29,10 +29,6 @@ function resolveCategoryIcon(categoryName: string): string | undefined {
   const normalized = normalizeCategoryName(categoryName);
   const match = ICON_BY_CATEGORY_KEYWORD.find((item) => normalized.includes(item.keyword));
   return match?.icon;
-}
-
-export function getCategoryColorKey(categoryName: string): string {
-  return getCategoryColor(categoryName);
 }
 
 export function getCategoryStyle(categoryName: string): {

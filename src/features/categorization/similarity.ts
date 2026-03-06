@@ -85,18 +85,6 @@ function jaccard(left: Set<string>, right: Set<string>): number {
   return intersection / union;
 }
 
-export function scoreSimilarity(left: string, right: string): number {
-  if (!left || !right) return 0;
-  if (left === right) return 1;
-
-  const leftSets = getSimilaritySets(left);
-  const rightSets = getSimilaritySets(right);
-
-  const tokenScore = jaccard(leftSets.tokenSet, rightSets.tokenSet);
-  const trigramScore = jaccard(leftSets.trigramSet, rightSets.trigramSet);
-  return clamp01(tokenScore * 0.55 + trigramScore * 0.45);
-}
-
 function indexPush<K>(map: Map<K, number[]>, key: K, value: number): void {
   const existing = map.get(key);
   if (existing) {

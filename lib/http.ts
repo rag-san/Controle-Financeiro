@@ -1,5 +1,5 @@
 export const privateCacheHeaders = {
-  "Cache-Control": "private, max-age=20, stale-while-revalidate=120"
+  "Cache-Control": "private, no-store, max-age=0, must-revalidate"
 };
 
 type DeprecatedApiHeadersInput = {

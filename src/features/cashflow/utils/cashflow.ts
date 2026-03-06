@@ -1,28 +1,21 @@
 import {
   differenceInCalendarDays,
-  eachMonthOfInterval,
   endOfDay,
-  format,
   startOfDay,
   startOfMonth,
   startOfYear,
   subDays,
   subMonths
 } from "date-fns";
-import { isDateInRangeByKey, toMonthKey } from "@/lib/finance/date-keys";
-import { absAmountCents, accumulateOfficialFlow, fromAmountCents } from "@/lib/finance/official-metrics";
+import { isDateInRangeByKey } from "@/lib/finance/date-keys";
+import { accumulateOfficialFlow } from "@/lib/finance/official-metrics";
 import type { TransactionDTO } from "@/lib/types";
-import {
-  formatDateRange,
-  formatMonthYearLabel
-} from "@/src/utils/format";
+import { formatDateRange } from "@/src/utils/format";
 import type {
   CashflowPeriodKey,
   CashflowPeriodOption,
   ComparisonMetric,
-  DateRange,
-  IncomeRow,
-  MonthlyAggregate
+  DateRange
 } from "@/src/features/cashflow/types";
 
 export const CASHFLOW_PERIOD_OPTIONS: CashflowPeriodOption[] = [
@@ -114,56 +107,6 @@ export function toComparisonMetric(current: number, previous: number): Compariso
   };
 }
 
-export function aggregateMonthly(
-  transactions: TransactionDTO[],
-  range: DateRange
-): MonthlyAggregate[] {
-  const baseMap = new Map<string, MonthlyAggregate>();
-  const months = eachMonthOfInterval({ start: range.from, end: range.to });
-
-  for (const monthDate of months) {
-    const monthKey = format(monthDate, "yyyy-MM");
-    baseMap.set(monthKey, {
-      monthKey,
-      monthLabel: formatMonthYearLabel(monthKey),
-      income: 0,
-      expense: 0,
-      net: 0
-    });
-  }
-
-  for (const transaction of transactions) {
-    const monthKey = toMonthKey(transaction.date);
-    if (!monthKey) continue;
-    const current = baseMap.get(monthKey);
-    if (!current) continue;
-
-    if (transaction.type === "income") {
-      current.income += fromAmountCents(absAmountCents(transaction.amount));
-    } else if (transaction.type === "expense") {
-      current.expense += fromAmountCents(absAmountCents(transaction.amount));
-    }
-  }
-
-  return [...baseMap.values()].map((entry) => ({
-    ...entry,
-    income: Number(entry.income.toFixed(2)),
-    expense: Number(entry.expense.toFixed(2)),
-    net: Number((entry.income - entry.expense).toFixed(2))
-  }));
-}
-
-export function toIncomeChartData(currentMonths: MonthlyAggregate[]): IncomeRow[] {
-  return currentMonths.map((month) => ({
-    month: month.monthKey,
-    income: month.income
-  }));
-}
-
 export function formatRange(range: DateRange): string {
   return formatDateRange(range.from, range.to);
-}
-
-export function toIsoDate(value: Date): string {
-  return format(value, "yyyy-MM-dd");
 }

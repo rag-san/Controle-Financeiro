@@ -26,18 +26,18 @@ export function SidebarItem({
       aria-current={isActive ? "page" : undefined}
       className={cn(
         "group flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         isActive
-          ? "bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
-          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-slate-100"
+          ? "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
+          : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
       )}
     >
       <span
         className={cn(
           "inline-flex h-5 w-5 items-center justify-center",
           isActive
-            ? "text-blue-600 dark:text-blue-300"
-            : "text-slate-400 transition-colors group-hover:text-slate-600 dark:text-slate-500 dark:group-hover:text-slate-300"
+            ? "text-primary"
+            : "text-muted-foreground/80 transition-colors group-hover:text-foreground"
         )}
         aria-hidden="true"
       >

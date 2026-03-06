@@ -46,7 +46,7 @@ function TabButton({
       className={`relative inline-flex items-center gap-2 rounded-md px-1 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
         active
           ? "text-emerald-600 dark:text-emerald-400"
-          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          : "text-muted-foreground hover:text-foreground dark:text-muted-foreground/80 dark:hover:text-foreground"
       }`}
     >
       <span>{label}</span>
@@ -54,7 +54,7 @@ function TabButton({
         className={`rounded-full px-1.5 py-0.5 text-xs transition-colors duration-200 ${
           active
             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-            : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+            : "bg-secondary text-muted-foreground dark:bg-secondary dark:text-muted-foreground"
         }`}
       >
         {count}
@@ -118,7 +118,7 @@ export function NetWorthTabs({
   };
 
   return (
-    <div className="border-b border-slate-200 dark:border-slate-800" role="tablist" aria-label="Selecionar tipo de patrimônio">
+    <div className="border-b border-border" role="tablist" aria-label="Selecionar tipo de patrimônio">
       <div ref={tabListRef} className="relative flex items-center gap-6">
         <TabButton
           id="assets"
@@ -154,3 +154,5 @@ export function NetWorthTabs({
     </div>
   );
 }
+
+

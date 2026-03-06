@@ -22,16 +22,19 @@ import type {
   NetWorthEntryDTO
 } from "@/src/features/accounts/types";
 
-export type DateInterval = {
+type DateInterval = {
   start: Date;
   end: Date;
 };
-export { normalizeDateKey };
 
 export function deriveAccountsSummary(accounts: AccountDTO[]): AccountsSummary {
   return accounts.reduce(
     (accumulator, account) => {
       const balance = account.currentBalance ?? 0;
+      if (account.type === "credit") {
+        accumulator.debts += Math.abs(balance);
+        return accumulator;
+      }
       if (balance >= 0) {
         accumulator.assets += balance;
       } else {
@@ -176,38 +179,59 @@ function buildPlaceholderDates(range: AccountsRangeKey, interval: DateInterval):
   );
 }
 
-export function buildPlaceholderSeries(
-  summary: AccountsSummary,
+export function buildSeriesFromHistory(
+  historicalSeries: AssetsDebtsPoint[],
+  fallback: AccountsSummary,
   range: AccountsRangeKey,
   interval: DateInterval
 ): AssetsDebtsPoint[] {
   const timeline = buildPlaceholderDates(range, interval);
   const normalizedTimeline = timeline.length > 0 ? timeline : [interval.end];
+  if (normalizedTimeline.length === 0) {
+    return [];
+  }
 
-  return normalizedTimeline.map((date) => ({
-    // TODO: Replace placeholder flat series with real historical account balances when available.
-    date: normalizeDateKey(date),
-    assets: Number(summary.assets.toFixed(2)),
-    debts: Number(summary.debts.toFixed(2))
-  }));
+  const sortedHistory = [...historicalSeries].sort((left, right) => left.date.localeCompare(right.date));
+  const firstKey = normalizeDateKey(normalizedTimeline[0]);
+  let historyIndex = 0;
+  let latestKnown: AssetsDebtsPoint | null = null;
+
+  while (historyIndex < sortedHistory.length && sortedHistory[historyIndex].date <= firstKey) {
+    latestKnown = sortedHistory[historyIndex];
+    historyIndex += 1;
+  }
+
+  return normalizedTimeline.map((date) => {
+    const dateKey = normalizeDateKey(date);
+    while (historyIndex < sortedHistory.length && sortedHistory[historyIndex].date <= dateKey) {
+      latestKnown = sortedHistory[historyIndex];
+      historyIndex += 1;
+    }
+
+    return {
+      date: dateKey,
+      assets: Number((latestKnown?.assets ?? fallback.assets).toFixed(2)),
+      debts: Number((latestKnown?.debts ?? fallback.debts).toFixed(2))
+    };
+  });
 }
 
-export function resolveComparisonFromSeries(
-  series: AssetsDebtsPoint[],
+export function resolveSummaryAtOrBeforeDate(
+  historicalSeries: AssetsDebtsPoint[],
+  referenceDate: Date,
   fallback: AccountsSummary
 ): AccountsSummary {
-  const latest = series[series.length - 1];
-  if (!latest) return fallback;
+  const referenceKey = normalizeDateKey(referenceDate);
+  const latest = [...historicalSeries]
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .findLast((point) => point.date <= referenceKey);
+
+  if (!latest) {
+    return fallback;
+  }
+
   return {
     assets: latest.assets,
     debts: latest.debts
   };
-}
-
-export function calculateDeltaPercent(current: number, previous: number): number | null {
-  if (previous === 0) {
-    return null;
-  }
-
-  return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(1));
 }

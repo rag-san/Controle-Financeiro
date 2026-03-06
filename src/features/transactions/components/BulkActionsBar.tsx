@@ -36,11 +36,11 @@ export function BulkActionsBar({
 
   return (
     <section
-      className="flex flex-col gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-secondary/65 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.1)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70 sm:flex-row sm:items-center sm:justify-between"
       aria-live="polite"
-      aria-label="Acoes em lote"
+      aria-label="Ações em lote"
     >
-      <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+      <p className="text-sm font-medium text-muted-foreground" role="status" aria-live="polite">
         {selectedCount} selecionada(s)
       </p>
 
@@ -116,3 +116,6 @@ export function BulkActionsBar({
     </section>
   );
 }
+
+
+

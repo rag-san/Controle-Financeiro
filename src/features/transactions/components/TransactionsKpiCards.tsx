@@ -5,31 +5,81 @@ import { cn } from "@/lib/utils";
 type TransactionsKpiCardsProps = {
   income: number;
   expense: number;
-  balance: number;
+  cashOutflow?: number;
+  periodBalance: number;
+  cashBalance: number;
   periodLabel: string;
+};
+
+type KpiCardTone = {
+  borderClassName: string;
+  glowClassName: string;
+  iconClassName: string;
+  iconContainerClassName: string;
+  valueClassName: string;
+  badgeClassName: string;
 };
 
 function KpiCard({
   title,
+  periodLabel,
   value,
+  valueHint,
   icon,
-  valueClassName,
-  periodLabel
+  tone
 }: {
   title: string;
-  value: string;
-  icon: React.ReactNode;
-  valueClassName?: string;
   periodLabel: string;
+  value: string;
+  valueHint: string;
+  icon: React.ReactNode;
+  tone: KpiCardTone;
 }): React.JSX.Element {
   return (
-    <article className="rounded-2xl border border-slate-200/70 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:p-4">
-      <div className="mb-1 flex items-center gap-2 text-sm text-muted-foreground">
-        {icon}
-        <span>{title}</span>
+    <article
+      className={cn(
+        "relative overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-secondary/70 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:from-card dark:via-card dark:to-secondary/65",
+        tone.borderClassName
+      )}
+    >
+      <div
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute -left-7 -top-8 h-24 w-24 rounded-full blur-2xl",
+          tone.glowClassName
+        )}
+      />
+
+      <div className="relative z-[1] flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            {title}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{periodLabel}</p>
+        </div>
+        <span
+          className={cn(
+            "inline-flex h-9 w-9 items-center justify-center rounded-xl border",
+            tone.iconContainerClassName
+          )}
+        >
+          <span className={tone.iconClassName}>{icon}</span>
+        </span>
       </div>
-      <p className="text-[11px] text-muted-foreground">{periodLabel}</p>
-      <p className={cn("mt-2 text-2xl font-semibold tracking-tight", valueClassName)}>{value}</p>
+
+      <p className={cn("relative z-[1] mt-3 text-[1.7rem] font-black tracking-tight", tone.valueClassName)}>
+        {value}
+      </p>
+      <div className="relative z-[1] mt-2">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            tone.badgeClassName
+          )}
+        >
+          {valueHint}
+        </span>
+      </div>
     </article>
   );
 }
@@ -37,37 +87,90 @@ function KpiCard({
 export function TransactionsKpiCards({
   income,
   expense,
-  balance,
+  cashOutflow,
+  periodBalance,
+  cashBalance,
   periodLabel
 }: TransactionsKpiCardsProps): React.JSX.Element {
+  const periodBalanceHint = `${periodBalance >= 0 ? "+" : "-"} ${formatMoney(Math.abs(periodBalance))}`;
+  const normalizedPeriodLabel = periodLabel.trim().length > 0 ? periodLabel : "período selecionado";
+  const outflowValue = cashOutflow ?? expense;
+
+  const sharedProps = { periodLabel };
+
   return (
     <section
       className="grid gap-3 md:grid-cols-3"
-      aria-label="Resumo financeiro do periodo selecionado"
+      aria-label="Resumo financeiro do período selecionado"
       role="status"
       aria-live="polite"
     >
       <KpiCard
+        {...sharedProps}
         title="Receitas"
         value={formatMoney(income)}
-        icon={<ArrowDownLeft className="h-4 w-4 text-emerald-600" />}
-        valueClassName="text-emerald-600"
-        periodLabel={periodLabel}
+        valueHint="Entradas classificadas (sem transferências)"
+        icon={<ArrowDownLeft className="h-4 w-4" />}
+        tone={{
+          borderClassName: "border-emerald-200/80 dark:border-emerald-900/60",
+          glowClassName: "bg-emerald-400/35 dark:bg-emerald-500/25",
+          iconClassName: "text-emerald-600 dark:text-emerald-300",
+          iconContainerClassName:
+            "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300",
+          valueClassName: "text-emerald-700 dark:text-emerald-300",
+          badgeClassName:
+            "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
+        }}
       />
+
       <KpiCard
-        title="Despesas"
-        value={formatMoney(expense)}
-        icon={<ArrowUpRight className="h-4 w-4 text-rose-600" />}
-        valueClassName="text-rose-600"
-        periodLabel={periodLabel}
+        {...sharedProps}
+        title="Saída real de caixa"
+        value={formatMoney(outflowValue)}
+        valueHint={`Despesas classificadas: ${formatMoney(expense)}`}
+        icon={<ArrowUpRight className="h-4 w-4" />}
+        tone={{
+          borderClassName: "border-rose-200/80 dark:border-rose-900/60",
+          glowClassName: "bg-rose-400/35 dark:bg-rose-500/25",
+          iconClassName: "text-rose-600 dark:text-rose-300",
+          iconContainerClassName:
+            "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300",
+          valueClassName: "text-rose-700 dark:text-rose-300",
+          badgeClassName: "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-200"
+        }}
       />
+
       <KpiCard
-        title="Saldo"
-        value={formatMoney(balance)}
-        icon={<Scale className={cn("h-4 w-4", balance >= 0 ? "text-emerald-600" : "text-rose-600")} />}
-        valueClassName={balance >= 0 ? "text-emerald-600" : "text-rose-600"}
-        periodLabel={periodLabel}
+        periodLabel="Saldo atual (todas as datas)"
+        title="Saldo em conta"
+        value={formatMoney(cashBalance)}
+        valueHint={`Variação real em ${normalizedPeriodLabel}: ${periodBalanceHint}`}
+        icon={<Scale className="h-4 w-4" />}
+        tone={{
+          borderClassName:
+            cashBalance >= 0
+              ? "border-primary/35 dark:border-primary/45"
+              : "border-orange-200/80 dark:border-orange-900/60",
+          glowClassName:
+            cashBalance >= 0 ? "bg-primary/30 dark:bg-primary/25" : "bg-orange-400/35 dark:bg-orange-500/25",
+          iconClassName:
+            cashBalance >= 0 ? "text-primary dark:text-primary" : "text-orange-600 dark:text-orange-300",
+          iconContainerClassName:
+            cashBalance >= 0
+              ? "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary"
+              : "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-300",
+          valueClassName:
+            cashBalance >= 0
+              ? "text-foreground dark:text-foreground"
+              : "text-orange-700 dark:text-orange-300",
+          badgeClassName:
+            cashBalance >= 0
+              ? "border border-primary/35 bg-primary/15 text-foreground dark:border-primary/45 dark:bg-primary/25 dark:text-foreground"
+              : "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200"
+        }}
       />
     </section>
   );
 }
+
+

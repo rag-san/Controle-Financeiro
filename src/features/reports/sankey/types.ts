@@ -27,4 +27,6 @@ export type SankeyModel = {
   totalIncome: number;
   totalExpense: number;
   netSaved: number;
+  hiddenOperationalExpense: number;
+  hiddenOperationalCount: number;
 };

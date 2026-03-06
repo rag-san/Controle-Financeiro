@@ -1,6 +1,7 @@
-import { endOfMonth, format, isSameMonth, startOfMonth, subMonths } from "date-fns";
+﻿import { endOfMonth, format, isSameMonth, startOfMonth, subMonths } from "date-fns";
 import { absAmountCents, accumulateOfficialFlowCents, fromAmountCents } from "@/lib/finance/official-metrics";
 import { categoriesRepo } from "@/lib/server/categories.repo";
+import { buildSpendingTrendSeries } from "@/lib/server/dashboard-spending-trend";
 import { netWorthRepo } from "@/lib/server/net-worth.repo";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
@@ -31,10 +32,6 @@ function monthKey(date: Date): string {
   return date.toISOString().slice(0, 7);
 }
 
-function dayOfMonth(date: Date): number {
-  return Number(date.toISOString().slice(8, 10));
-}
-
 function round2(value: number): number {
   return Number(value.toFixed(2));
 }
@@ -46,7 +43,9 @@ type FullDashboardOptions = {
 
 export const dashboardRepo = {
   async summaryByRange(userId: string, from: Date, to: Date) {
-    const txs = await transactionsRepo.listByDateRange(userId, from, to, true);
+    const txs = (await transactionsRepo.listByDateRange(userId, from, to, true)).filter(
+      (transaction) => !transaction.excluded
+    );
     const totals = accumulateOfficialFlowCents(txs.map((tx) => ({ type: tx.type, amount: tx.amount })));
     const byCategoryMap = new Map<string, { totalCents: number; name: string; color: string }>();
 
@@ -90,7 +89,7 @@ export const dashboardRepo = {
   },
 
   async fullDashboard(userId: string, now = new Date(), options?: FullDashboardOptions) {
-    const latestTransactionDate = await transactionsRepo.latestPostedAt(userId);
+    const latestTransactionDate = await transactionsRepo.latestPostedAt(userId, { excluded: false });
     const referenceDate = options?.forceReferenceDate
       ? options.referenceDate ?? now
       : latestTransactionDate ?? now;
@@ -100,9 +99,24 @@ export const dashboardRepo = {
     const previousMonthEnd = endOfMonth(subMonths(referenceDate, 1));
     const sixMonthsAgo = startOfMonth(subMonths(referenceDate, 5));
 
-    const currentTransactions = await transactionsRepo.listByDateRange(userId, currentMonthStart, currentMonthEnd, true);
-    const previousTransactions = await transactionsRepo.listByDateRange(userId, previousMonthStart, previousMonthEnd, true);
-    const monthlyTransactions = await transactionsRepo.listByDateRange(userId, sixMonthsAgo, currentMonthEnd, false);
+    const currentTransactions = (await transactionsRepo.listByDateRange(
+      userId,
+      currentMonthStart,
+      currentMonthEnd,
+      true
+    )).filter((transaction) => !transaction.excluded);
+    const previousTransactions = (await transactionsRepo.listByDateRange(
+      userId,
+      previousMonthStart,
+      previousMonthEnd,
+      true
+    )).filter((transaction) => !transaction.excluded);
+    const monthlyTransactions = (await transactionsRepo.listByDateRange(
+      userId,
+      sixMonthsAgo,
+      currentMonthEnd,
+      false
+    )).filter((transaction) => !transaction.excluded);
 
     const monthSummary = accumulateOfficialFlowCents(
       currentTransactions.map((tx) => ({ type: tx.type, amount: tx.amount }))
@@ -111,36 +125,13 @@ export const dashboardRepo = {
       previousTransactions.map((tx) => ({ type: tx.type, amount: tx.amount }))
     );
 
-    const maxDays = new Date(referenceDate.getFullYear(), referenceDate.getMonth() + 1, 0).getDate();
-    const currentDayTotals = new Map<number, number>();
-    const previousDayTotals = new Map<number, number>();
-
-    for (const tx of currentTransactions) {
-      if (tx.type !== "expense") continue;
-      const day = dayOfMonth(tx.date);
-      const current = currentDayTotals.get(day) ?? 0;
-      currentDayTotals.set(day, current + fromAmountCents(absAmountCents(tx.amount)));
-    }
-
-    for (const tx of previousTransactions) {
-      if (tx.type !== "expense") continue;
-      const day = dayOfMonth(tx.date);
-      const current = previousDayTotals.get(day) ?? 0;
-      previousDayTotals.set(day, current + fromAmountCents(absAmountCents(tx.amount)));
-    }
-
-    let runningCurrent = 0;
-    let runningPrevious = 0;
-    const spendingTrend: TrendPoint[] = Array.from({ length: maxDays }, (_, index) => {
-      const day = index + 1;
-      runningCurrent += currentDayTotals.get(day) ?? 0;
-      runningPrevious += previousDayTotals.get(day) ?? 0;
-      return {
-        day,
-        current: round2(runningCurrent),
-        previous: round2(runningPrevious)
-      };
+    const spendingTrendSeries = buildSpendingTrendSeries({
+      currentTransactions,
+      previousTransactions,
+      referenceDate,
+      now
     });
+    const spendingTrend: TrendPoint[] = spendingTrendSeries.accumulated;
 
     const categories = await categoriesRepo.listByUser(userId);
     const categoryById = new Map(categories.map((item) => [item.id, item]));
@@ -258,6 +249,10 @@ export const dashboardRepo = {
       netWorthDelta,
       netWorthSeries,
       spendingTrend,
+      spendingTrendDaily: spendingTrendSeries.daily,
+      spendingTrendMeta: {
+        compareUntilDay: spendingTrendSeries.compareUntilDay
+      },
       topCategories,
       cashflow
     };

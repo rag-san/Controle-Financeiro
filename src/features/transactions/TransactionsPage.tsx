@@ -1,9 +1,10 @@
 "use client";
 
 import { endOfMonth, format, startOfMonth, subDays, subMonths } from "date-fns";
-import { Plus, Upload } from "lucide-react";
+import { AlertTriangle, Plus, Upload } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR, { mutate as mutateCache } from "swr";
 import { ImportTransactionsModal } from "@/components/import/ImportTransactionsModal";
 import { PageShell } from "@/components/layout/PageShell";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
@@ -36,11 +37,13 @@ import {
 } from "@/src/features/transactions/TransactionForm";
 import {
   type TransactionsFiltersState,
+  type TransactionsPeriod,
   TransactionsFiltersBar
 } from "@/src/features/transactions/components/TransactionsFiltersBar";
 import { TransactionsKpiCards } from "@/src/features/transactions/components/TransactionsKpiCards";
 import { TransactionsTable } from "@/src/features/transactions/components/TransactionsTable";
 import { useSelection } from "@/src/features/transactions/hooks/useSelection";
+import { parseSharedFilters, resolveDefaultRange } from "@/src/features/filters/sharedFilters";
 
 type TransactionResponse = {
   items: TransactionDTO[];
@@ -48,6 +51,10 @@ type TransactionResponse = {
     income: number;
     expense: number;
     balance: number;
+    periodCashInflow?: number;
+    periodCashOutflow?: number;
+    periodCashFlow?: number;
+    cashBalance?: number;
   };
   pagination: {
     page: number;
@@ -68,14 +75,7 @@ type SortState = {
   direction: "asc" | "desc";
 };
 
-const initialFilters: TransactionsFiltersState = {
-  period: "30d",
-  accountId: "",
-  type: "",
-  categoryId: "",
-  from: "",
-  to: ""
-};
+type TransactionsSortQuery = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
 
 const initialDraft: NewTransactionDraft = {
   date: new Date().toISOString().slice(0, 10),
@@ -85,11 +85,90 @@ const initialDraft: NewTransactionDraft = {
   categoryId: ""
 };
 
-function formatDateToInput(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+const initialFilters: TransactionsFiltersState = {
+  period: "this-month",
+  accountId: "",
+  type: "",
+  excluded: "included",
+  categoryId: "",
+  from: "",
+  to: ""
+};
+
+export function resolveTransactionsRefreshMessage(input: {
+  refreshing: boolean;
+  page: number;
+  debouncedQuery: string;
+  filters: Pick<TransactionsFiltersState, "accountId" | "categoryId" | "type" | "period">;
+}): string {
+  if (!input.refreshing) {
+    return "";
+  }
+
+  if (input.page > 1) {
+    return "Atualizando transações e paginação...";
+  }
+
+  if (
+    input.debouncedQuery ||
+    input.filters.accountId ||
+    input.filters.categoryId ||
+    input.filters.type ||
+    input.filters.period === "custom"
+  ) {
+    return "Aplicando filtros e recalculando indicadores...";
+  }
+
+  return "Buscando transações e atualizando indicadores...";
+}
+
+function resolveSortStateFromQuery(value: string | null): SortState {
+  if (value === "date_asc") return { field: "date", direction: "asc" };
+  if (value === "amount_desc") return { field: "amount", direction: "desc" };
+  if (value === "amount_asc") return { field: "amount", direction: "asc" };
+  return { field: "date", direction: "desc" };
+}
+
+function serializeSortState(sort: SortState): TransactionsSortQuery {
+  if (sort.field === "amount") {
+    return sort.direction === "asc" ? "amount_asc" : "amount_desc";
+  }
+  return sort.direction === "asc" ? "date_asc" : "date_desc";
+}
+
+function resolvePeriodFromQuery(value: string | null): TransactionsFiltersState["period"] | null {
+  if (!value) return null;
+  if (value === "current-month") return "this-month";
+  if (
+    value === "7d" ||
+    value === "30d" ||
+    value === "90d" ||
+    value === "this-month" ||
+    value === "last-month" ||
+    value === "custom" ||
+    value === "all"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function resolvePeriodQuery(filters: TransactionsFiltersState): {
+  period: "all" | "7d" | "30d" | "90d" | "last-month" | "current-month" | "custom";
+  from?: string;
+  to?: string;
+} {
+  if (filters.period === "all") return { period: "all" };
+  if (filters.period === "7d") return { period: "7d" };
+  if (filters.period === "30d") return { period: "30d" };
+  if (filters.period === "90d") return { period: "90d" };
+  if (filters.period === "last-month") return { period: "last-month" };
+  if (filters.period === "this-month") return { period: "current-month" };
+  return {
+    period: "custom",
+    from: filters.from || undefined,
+    to: filters.to ? endOfDayIso(filters.to) : undefined
+  };
 }
 
 function endOfDayIso(dateInput: string): string {
@@ -143,114 +222,62 @@ async function runWithConcurrency<T>(
   };
 }
 
-function resolvePeriodQuery(filters: TransactionsFiltersState): {
-  period: "all" | "30d" | "current-month" | "custom";
-  from?: string;
-  to?: string;
-} {
-  if (filters.period === "all") {
-    return { period: "all" };
+async function fetchTransactionsResource(url: string): Promise<TransactionResponse> {
+  const response = await fetch(url, { cache: "no-store" });
+  const { data, errorMessage } = await parseApiResponse<TransactionResponse | { error?: unknown }>(response);
+
+  if (errorMessage) {
+    throw new Error(errorMessage);
   }
 
-  if (filters.period === "30d") {
-    return { period: "30d" };
+  if (!response.ok || !data || !("items" in data)) {
+    throw new Error(extractApiError(data, "Não foi possível carregar transações."));
   }
 
-  if (filters.period === "this-month") {
-    return { period: "current-month" };
-  }
-
-  if (filters.period === "7d") {
-    const to = new Date();
-    const from = subDays(to, 7);
-    return {
-      period: "custom",
-      from: formatDateToInput(from),
-      to: endOfDayIso(formatDateToInput(to))
-    };
-  }
-
-  if (filters.period === "90d") {
-    const to = new Date();
-    const from = subDays(to, 90);
-    return {
-      period: "custom",
-      from: formatDateToInput(from),
-      to: endOfDayIso(formatDateToInput(to))
-    };
-  }
-
-  if (filters.period === "last-month") {
-    const reference = subMonths(new Date(), 1);
-    const from = startOfMonth(reference);
-    const to = endOfMonth(reference);
-    return {
-      period: "custom",
-      from: formatDateToInput(from),
-      to: endOfDayIso(formatDateToInput(to))
-    };
-  }
-
-  if (filters.period === "custom" && (filters.from || filters.to)) {
-    return {
-      period: "custom",
-      from: filters.from || undefined,
-      to: filters.to ? endOfDayIso(filters.to) : undefined
-    };
-  }
-
-  return { period: "all" };
+  return data;
 }
 
-function resolveTypeFromQuery(value: string | null): TransactionsFiltersState["type"] {
-  if (value === "income" || value === "expense" || value === "transfer") {
-    return value;
-  }
-  return "";
+const periodOptions: Record<TransactionsPeriod, { label: string; resolver: (now: Date) => { from: string; to: string } }> = {
+  "7d": { label: "Últimos 7 dias", resolver: (now) => rangeDays(now, 7) },
+  "30d": { label: "Últimos 30 dias", resolver: (now) => rangeDays(now, 30) },
+  "90d": { label: "Últimos 90 dias", resolver: (now) => rangeDays(now, 90) },
+  "this-month": { label: "Este mês", resolver: (now) => resolveDefaultRange(now) },
+  "last-month": { label: "Mês passado", resolver: (now) => rangeLastMonth(now) },
+  custom: { label: "Personalizado", resolver: (now) => resolveDefaultRange(now) },
+  all: { label: "Todo período", resolver: (now) => resolveDefaultRange(now) }
+};
+
+function rangeDays(reference: Date, days: number): { from: string; to: string } {
+  const to = new Date(reference);
+  const from = subDays(to, days);
+  return { from: formatDateISO(from), to: endOfDayIso(formatDateISO(to)) };
 }
 
-function resolvePeriodFromQuery(value: string | null): TransactionsFiltersState["period"] | null {
-  if (!value) return null;
-  if (value === "current-month") return "this-month";
-  if (
-    value === "7d" ||
-    value === "30d" ||
-    value === "90d" ||
-    value === "this-month" ||
-    value === "last-month" ||
-    value === "custom" ||
-    value === "all"
-  ) {
-    return value;
-  }
-  return null;
+function rangeLastMonth(reference: Date): { from: string; to: string } {
+  const last = subMonths(reference, 1);
+  return {
+    from: formatDateISO(startOfMonth(last)),
+    to: endOfDayIso(formatDateISO(endOfMonth(last)))
+  };
 }
 
-function formatPeriodDateLabel(value: string): string {
-  if (!value) return "";
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return format(parsed, "dd/MM/yyyy");
+function formatDateISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function resolveTransactionsPeriodLabel(filters: Pick<TransactionsFiltersState, "period" | "from" | "to">): string {
-  if (filters.period === "7d") return "Ultimos 7 dias";
-  if (filters.period === "30d") return "Ultimos 30 dias";
-  if (filters.period === "90d") return "Ultimos 90 dias";
-  if (filters.period === "this-month") return "Este mes";
-  if (filters.period === "last-month") return "Mes passado";
-  if (filters.period === "all") return "Todo periodo";
-
-  if (filters.period === "custom") {
-    const fromLabel = filters.from ? formatPeriodDateLabel(filters.from) : "";
-    const toLabel = filters.to ? formatPeriodDateLabel(filters.to) : "";
-
-    if (fromLabel && toLabel) return `${fromLabel} a ${toLabel}`;
-    if (fromLabel) return `A partir de ${fromLabel}`;
-    if (toLabel) return `Ate ${toLabel}`;
-  }
-
-  return "Periodo atual";
+  const option = periodOptions[filters.period];
+  if (!option) return "Período atual";
+  if (filters.period !== "custom") return option.label;
+  const fromLabel = filters.from ? format(new Date(`${filters.from}T00:00:00`), "dd/MM/yyyy") : "";
+  const toLabel = filters.to ? format(new Date(`${filters.to}T00:00:00`), "dd/MM/yyyy") : "";
+  if (fromLabel && toLabel) return `${fromLabel} a ${toLabel}`;
+  if (fromLabel) return `A partir de ${fromLabel}`;
+  if (toLabel) return `Até ${toLabel}`;
+  return option.label;
 }
 
 function isUncategorizedTransaction(transaction: TransactionDTO): boolean {
@@ -265,6 +292,8 @@ export function TransactionsPage(): React.JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const now = useMemo(() => new Date(), []);
+  const defaultRange = useMemo(() => resolveDefaultRange(now), [now]);
   const { toast } = useToast();
   const {
     selectedIds,
@@ -279,8 +308,24 @@ export function TransactionsPage(): React.JSX.Element {
   const [accounts, setAccounts] = useState<AccountDTO[]>([]);
   const [categories, setCategories] = useState<CategoryDTO[]>([]);
   const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
-  const [summary, setSummary] = useState({ income: 0, expense: 0, balance: 0 });
-  const [filters, setFilters] = useState<TransactionsFiltersState>(initialFilters);
+  const [summary, setSummary] = useState({
+    income: 0,
+    expense: 0,
+    balance: 0,
+    periodCashInflow: 0,
+    periodCashOutflow: 0,
+    periodCashFlow: 0,
+    cashBalance: 0
+  });
+  const [filters, setFilters] = useState<TransactionsFiltersState>({
+    period: "this-month",
+    accountId: "",
+    type: "",
+    excluded: "included",
+    categoryId: "",
+    from: defaultRange.from,
+    to: defaultRange.to
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [pendingCategoryQuery, setPendingCategoryQuery] = useState("");
   const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
@@ -297,7 +342,6 @@ export function TransactionsPage(): React.JSX.Element {
     hasNextPage: false,
     hasPreviousPage: false
   });
-  const [loading, setLoading] = useState(true);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkCategorizing, setBulkCategorizing] = useState(false);
   const [bulkApplyingSuggestions, setBulkApplyingSuggestions] = useState(false);
@@ -310,34 +354,83 @@ export function TransactionsPage(): React.JSX.Element {
   const [showCreate, setShowCreate] = useState(false);
   const [actionError, setActionError] = useState("");
   const [createError, setCreateError] = useState("");
-  const shouldLoadMetaRef = useRef(true);
+  const didHydrateQueryRef = useRef(false);
+  const skipPageResetRef = useRef(true);
   const importButtonRef = useRef<HTMLButtonElement | null>(null);
   const [newTx, setNewTx] = useState<NewTransactionDraft>(initialDraft);
   const isImportOpen = searchParams.get("import") === "1";
+  const isCreateOpen = searchParams.get("new") === "1";
+  const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const manualTransactionAccounts = useMemo(
+    () => accounts.filter((account) => account.type !== "credit"),
+    [accounts]
+  );
+
+  const setQueryFlag = useCallback(
+    (key: "new" | "import", nextOpen: boolean): void => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (nextOpen) {
+        params.set(key, "1");
+      } else {
+        params.delete(key);
+      }
+
+      const queryString = params.toString();
+      router.push(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  const setCreatePanelOpen = useCallback(
+    (nextOpen: boolean): void => {
+      setShowCreate(nextOpen);
+      setQueryFlag("new", nextOpen);
+    },
+    [setQueryFlag]
+  );
+
+  const setImportModalOpen = useCallback(
+    (nextOpen: boolean): void => {
+      setQueryFlag("import", nextOpen);
+    },
+    [setQueryFlag]
+  );
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const queryType = resolveTypeFromQuery(params.get("type"));
-    const queryPeriod = resolvePeriodFromQuery(params.get("period") ?? params.get("range"));
-    const queryCategoryId = params.get("categoryId") ?? "";
-    const queryCategoryName = params.get("category") ?? "";
-    const queryFrom = params.get("from") ?? "";
-    const queryTo = params.get("to") ?? "";
-    const querySearch = params.get("q") ?? "";
+    if (didHydrateQueryRef.current) return;
+
+    const parsed = parseSharedFilters(searchParams, now);
+    const periodParam = searchParams.get("period") ?? searchParams.get("range");
+    const period = resolvePeriodFromQuery(periodParam) ?? "this-month";
+
+    skipPageResetRef.current = true;
 
     setFilters((previous) => ({
       ...previous,
-      ...(queryType ? { type: queryType } : {}),
-      ...(queryPeriod ? { period: queryPeriod } : {}),
-      ...(queryCategoryId ? { categoryId: queryCategoryId } : {}),
-      ...(queryFrom ? { from: queryFrom } : {}),
-      ...(queryTo ? { to: queryTo } : {})
+      period,
+      accountId: parsed.accountId,
+      type: parsed.type,
+      excluded: parsed.excluded,
+      categoryId: parsed.categoryId,
+      from: parsed.from,
+      to: parsed.to
     }));
 
-    if (querySearch) {
-      setSearchQuery(querySearch);
+    if (parsed.q) {
+      setSearchQuery(parsed.q);
+      setDebouncedQuery(parsed.q.trim());
     }
 
+    const queryPageValue = Number(searchParams.get("page"));
+    const querySortState = resolveSortStateFromQuery(searchParams.get("sort"));
+
+    if (Number.isFinite(queryPageValue) && queryPageValue > 0) {
+      setPage(Math.floor(queryPageValue));
+    }
+
+    setSortState(querySortState);
+
+    const queryCategoryName = searchParams.get("category") ?? "";
     if (queryCategoryName) {
       if (queryCategoryName.toLowerCase() === "uncategorized") {
         setUncategorizedOnly(true);
@@ -345,7 +438,13 @@ export function TransactionsPage(): React.JSX.Element {
         setPendingCategoryQuery(queryCategoryName);
       }
     }
-  }, []);
+
+    didHydrateQueryRef.current = true;
+  }, [now, searchParams]);
+
+  useEffect(() => {
+    setShowCreate(isCreateOpen);
+  }, [isCreateOpen]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -363,7 +462,7 @@ export function TransactionsPage(): React.JSX.Element {
     const handleEscape = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setShowCreate(false);
+        setCreatePanelOpen(false);
       }
     };
 
@@ -371,7 +470,7 @@ export function TransactionsPage(): React.JSX.Element {
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [showCreate]);
+  }, [setCreatePanelOpen, showCreate]);
 
   useEffect(() => {
     setMerchantMappings(getMappings());
@@ -433,87 +532,207 @@ export function TransactionsPage(): React.JSX.Element {
 
   const queryString = useMemo(() => {
     const params = new URLSearchParams();
+    const sortQuery = serializeSortState(sortState);
     const periodQuery = resolvePeriodQuery(filters);
 
     params.set("period", periodQuery.period);
     if (periodQuery.from) params.set("from", periodQuery.from);
     if (periodQuery.to) params.set("to", periodQuery.to);
-
-    if (filters.accountId) params.set("accountId", filters.accountId);
     if (filters.type) params.set("type", filters.type);
+    if (filters.accountId) params.set("accountId", filters.accountId);
     if (filters.categoryId) params.set("categoryId", filters.categoryId);
+    if (filters.excluded === "excluded") params.set("excluded", "true");
+    if (debouncedQuery) params.set("q", debouncedQuery);
+
     params.set("page", String(page));
     params.set("pageSize", String(pageSize));
-    if (debouncedQuery) params.set("q", debouncedQuery);
+    params.set("sort", sortQuery);
     return params.toString();
-  }, [filters, page, pageSize, debouncedQuery]);
+  }, [debouncedQuery, filters, page, pageSize, sortState]);
 
-  const loadTransactions = useCallback(
-    async (signal?: AbortSignal): Promise<void> => {
-      setLoading(true);
-      try {
-        const includeMeta = shouldLoadMetaRef.current ? "&includeMeta=1" : "";
-        const response = await fetch(`/api/transactions?${queryString}${includeMeta}`, {
-          signal,
-          cache: "no-store"
-        });
-        const { data, errorMessage } = await parseApiResponse<TransactionResponse | { error?: unknown }>(response);
+  const {
+    data: transactionsResponse,
+    error: transactionsError,
+    isLoading,
+    isValidating,
+    mutate: mutateTransactions
+  } = useSWR(`/api/transactions?${queryString}&includeMeta=1`, fetchTransactionsResource, {
+    revalidateOnFocus: false,
+    keepPreviousData: true
+  });
 
-        if (errorMessage) {
-          throw new Error(errorMessage);
-        }
-
-        if (!response.ok || !data || !("items" in data)) {
-          throw new Error(extractApiError(data, "Nao foi possivel carregar transacoes."));
-        }
-
-        setTransactions(data.items);
-        setSummary(data.summary);
-        setPagination(data.pagination);
-        setActionError("");
-
-        if (data.meta) {
-          setAccounts(data.meta.accounts);
-          setCategories(data.meta.categories);
-          setNewTx((previous) => {
-            if (previous.accountId || !data.meta?.accounts[0]) {
-              return previous;
-            }
-            return { ...previous, accountId: data.meta.accounts[0].id };
-          });
-          shouldLoadMetaRef.current = false;
-        }
-      } catch (error) {
-        if (!(error instanceof DOMException && error.name === "AbortError")) {
-          const message = error instanceof Error ? error.message : "Falha ao carregar transacoes.";
-          setActionError(message);
-        }
-      } finally {
-        setLoading(false);
-      }
-    },
-    [queryString]
-  );
+  const loading = isLoading && !transactionsResponse;
+  const refreshing = isValidating && Boolean(transactionsResponse) && !loading;
+  const refreshMessage = resolveTransactionsRefreshMessage({
+    refreshing,
+    page,
+    debouncedQuery,
+    filters
+  });
 
   useEffect(() => {
+    if (!transactionsResponse) return;
+
+    setTransactions(transactionsResponse.items);
+    setSummary({
+      income: transactionsResponse.summary.income,
+      expense: transactionsResponse.summary.expense,
+      balance: transactionsResponse.summary.balance,
+      periodCashInflow: transactionsResponse.summary.periodCashInflow ?? transactionsResponse.summary.income,
+      periodCashOutflow: transactionsResponse.summary.periodCashOutflow ?? transactionsResponse.summary.expense,
+      periodCashFlow: transactionsResponse.summary.periodCashFlow ?? transactionsResponse.summary.balance,
+      cashBalance: transactionsResponse.summary.cashBalance ?? transactionsResponse.summary.balance
+    });
+    setPagination(transactionsResponse.pagination);
+
+    if (transactionsResponse.meta) {
+      setAccounts(transactionsResponse.meta.accounts);
+      setCategories(transactionsResponse.meta.categories);
+    }
+
+    setActionError("");
+  }, [transactionsResponse]);
+
+  useEffect(() => {
+    if (!transactionsError) return;
+    const message = transactionsError instanceof Error ? transactionsError.message : "Falha ao carregar transações.";
+    setActionError(message);
+  }, [transactionsError]);
+
+  useEffect(() => {
+    if (!manualTransactionAccounts.length) return;
+    setNewTx((previous) => {
+      if (previous.accountId && manualTransactionAccounts.some((account) => account.id === previous.accountId)) {
+        return previous;
+      }
+      return { ...previous, accountId: manualTransactionAccounts[0].id };
+    });
+  }, [manualTransactionAccounts]);
+
+  useEffect(() => {
+    if (skipPageResetRef.current) {
+      skipPageResetRef.current = false;
+      return;
+    }
+
     setPage(1);
   }, [
-    filters.period,
+    debouncedQuery,
     filters.accountId,
-    filters.type,
     filters.categoryId,
+    filters.excluded,
     filters.from,
+    filters.period,
     filters.to,
-    debouncedQuery
+    filters.type,
+    sortState.direction,
+    sortState.field
   ]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void loadTransactions(controller.signal);
-    return () => {
-      controller.abort();
-    };
+    if (!didHydrateQueryRef.current) return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    const periodQuery = resolvePeriodQuery(filters);
+    const sortQuery = serializeSortState(sortState);
+    const fromValue = periodQuery.from ? periodQuery.from.slice(0, 10) : "";
+    const toValue = periodQuery.to ? periodQuery.to.slice(0, 10) : "";
+
+    params.set("period", periodQuery.period);
+
+    if (fromValue) params.set("from", fromValue);
+    else params.delete("from");
+
+    if (toValue) params.set("to", toValue);
+    else params.delete("to");
+
+    if (filters.accountId) params.set("accountId", filters.accountId);
+    else params.delete("accountId");
+
+    if (filters.type) params.set("type", filters.type);
+    else params.delete("type");
+
+    if (filters.excluded === "included") params.set("excluded", "false");
+    else if (filters.excluded === "excluded") params.set("excluded", "true");
+    else params.delete("excluded");
+
+    if (filters.categoryId) params.set("categoryId", filters.categoryId);
+    else params.delete("categoryId");
+
+    if (debouncedQuery) params.set("q", debouncedQuery);
+    else params.delete("q");
+
+    if (sortQuery !== "date_desc") params.set("sort", sortQuery);
+    else params.delete("sort");
+
+    if (page > 1) params.set("page", String(page));
+    else params.delete("page");
+
+    params.delete("range");
+    if (!uncategorizedOnly) {
+      params.delete("category");
+    }
+
+    const nextQuery = params.toString();
+    const currentQuery = searchParams.toString();
+    if (nextQuery === currentQuery) return;
+
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [
+    debouncedQuery,
+    filters,
+    page,
+    pathname,
+    router,
+    searchParams,
+    sortState,
+    uncategorizedOnly
+  ]);
+
+  const loadTransactions = useCallback(async (): Promise<void> => {
+    await mutateTransactions();
+  }, [mutateTransactions]);
+
+  const refreshFinanceData = useCallback(async (): Promise<void> => {
+    await loadTransactions();
+    await Promise.all([
+      mutateCache(
+        (key) => typeof key === "string" && key.startsWith("/api/dashboard/"),
+        undefined,
+        { revalidate: true }
+      ),
+      mutateCache(
+        (key) => typeof key === "string" && key.startsWith("/api/metrics/official"),
+        undefined,
+        { revalidate: true }
+      ),
+      mutateCache(
+        (key) => typeof key === "string" && key.startsWith("/api/accounts"),
+        undefined,
+        { revalidate: true }
+      ),
+      mutateCache(
+        (key) => typeof key === "string" && key.startsWith("/api/net-worth"),
+        undefined,
+        { revalidate: true }
+      ),
+      mutateCache(
+        (key) => typeof key === "string" && key.startsWith("/api/reports"),
+        undefined,
+        { revalidate: true }
+      ),
+      mutateCache(
+        (key) => typeof key === "string" && key.startsWith("/api/reconcile/review"),
+        undefined,
+        { revalidate: true }
+      )
+    ]);
   }, [loadTransactions]);
+
+  const refreshFinanceDataAndRoute = useCallback(async (): Promise<void> => {
+    await refreshFinanceData();
+    router.refresh();
+  }, [refreshFinanceData, router]);
 
   useEffect(() => {
     if (selectedCount > 0) return;
@@ -521,32 +740,24 @@ export function TransactionsPage(): React.JSX.Element {
     setShowBulkDeleteModal(false);
   }, [selectedCount]);
 
-  const sortedTransactions = useMemo(() => {
-    const ordered = [...transactions];
-    const multiplier = sortState.direction === "asc" ? 1 : -1;
-
-    ordered.sort((left, right) => {
-      if (sortState.field === "amount") {
-        if (left.amount === right.amount) return 0;
-        return left.amount > right.amount ? multiplier : -multiplier;
-      }
-
-      const leftDate = new Date(left.date).getTime();
-      const rightDate = new Date(right.date).getTime();
-      if (leftDate === rightDate) return 0;
-      return leftDate > rightDate ? multiplier : -multiplier;
-    });
-
-    return ordered;
-  }, [transactions, sortState]);
-
   const visibleTransactions = useMemo(() => {
     if (!uncategorizedOnly) {
-      return sortedTransactions;
+      return transactions;
     }
 
-    return sortedTransactions.filter((transaction) => isUncategorizedTransaction(transaction));
-  }, [sortedTransactions, uncategorizedOnly]);
+    return transactions.filter((transaction) => isUncategorizedTransaction(transaction));
+  }, [transactions, uncategorizedOnly]);
+
+  const uncategorizedStats = useMemo(() => {
+    const total = transactions.length;
+    const count = transactions.filter((transaction) => isUncategorizedTransaction(transaction)).length;
+
+    return {
+      total,
+      count,
+      percentage: total > 0 ? Math.round((count / total) * 100) : 0
+    };
+  }, [transactions]);
 
   useEffect(() => {
     syncWithAvailableIds(visibleTransactions.map((transaction) => transaction.id));
@@ -617,10 +828,18 @@ export function TransactionsPage(): React.JSX.Element {
 
   const handleCreate = async (): Promise<void> => {
     const trimmedDescription = newTx.description.trim();
+    const selectedAccount = accountById.get(newTx.accountId);
+
     if (!trimmedDescription || !newTx.amount.trim() || !newTx.accountId) {
-      const message = "Preencha descricao, valor e conta para criar uma transacao.";
+      const message = "Preencha descrição, valor e conta para criar uma transação.";
       setCreateError(message);
-      toast({ variant: "error", title: "Campos obrigatorios", description: message });
+      toast({ variant: "error", title: "Campos obrigatórios", description: message });
+      return;
+    }
+    if (!selectedAccount || selectedAccount.type === "credit") {
+      const message = "Selecione uma conta corrente/caixa/investimento. Conta de cartão aceita apenas fatura/transferência.";
+      setCreateError(message);
+      toast({ variant: "error", title: "Conta inválida", description: message });
       return;
     }
 
@@ -645,17 +864,17 @@ export function TransactionsPage(): React.JSX.Element {
       }
 
       if (!response.ok || !data || !("id" in data)) {
-        throw new Error(extractApiError(data, "Falha ao criar transacao."));
+        throw new Error(extractApiError(data, "Falha ao criar transação."));
       }
 
       setNewTx((previous) => ({ ...previous, description: "", amount: "", categoryId: "" }));
-      setShowCreate(false);
-      await loadTransactions();
-      toast({ variant: "success", title: "Transacao criada", description: "A lista foi atualizada." });
+      setCreatePanelOpen(false);
+      await refreshFinanceData();
+      toast({ variant: "success", title: "Transação criada", description: "A lista foi atualizada." });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao criar transacao.";
+      const message = error instanceof Error ? error.message : "Falha ao criar transação.";
       setCreateError(message);
-      toast({ variant: "error", title: "Erro ao criar transacao", description: message });
+      toast({ variant: "error", title: "Erro ao criar transação", description: message });
     } finally {
       setCreating(false);
     }
@@ -707,7 +926,7 @@ export function TransactionsPage(): React.JSX.Element {
         }
       }
 
-      await loadTransactions();
+      await refreshFinanceData();
 
       if (options?.showSuccessToast) {
         toast({
@@ -737,15 +956,15 @@ export function TransactionsPage(): React.JSX.Element {
       }
 
       if (!response.ok || !data?.success) {
-        throw new Error(extractApiError(data, "Falha ao excluir transacao."));
+        throw new Error(extractApiError(data, "Falha ao excluir transação."));
       }
 
-      await loadTransactions();
-      toast({ variant: "success", title: "Transacao excluida", description: "Lancamento removido com sucesso." });
+      await refreshFinanceDataAndRoute();
+      toast({ variant: "success", title: "Transação excluída", description: "Lançamento removido com sucesso." });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir transacao.";
+      const message = error instanceof Error ? error.message : "Falha ao excluir transação.";
       setActionError(message);
-      toast({ variant: "error", title: "Erro ao excluir transacao", description: message });
+      toast({ variant: "error", title: "Erro ao excluir transação", description: message });
     }
   };
 
@@ -778,21 +997,21 @@ export function TransactionsPage(): React.JSX.Element {
       }
 
       if (!response.ok || !data || !("success" in data)) {
-        throw new Error(extractApiError(data, "Falha ao excluir transacoes selecionadas."));
+        throw new Error(extractApiError(data, "Falha ao excluir transações selecionadas."));
       }
 
       clearSelection();
       setShowBulkDeleteModal(false);
-      await loadTransactions();
+      await refreshFinanceDataAndRoute();
       toast({
         variant: "success",
-        title: "Exclusao concluida",
-        description: `${data.deletedCount} transacao(oes) removida(s).`
+        title: "Exclusão concluída",
+        description: `${data.deletedCount} transação(ões) removida(s).`
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir transacoes selecionadas.";
+      const message = error instanceof Error ? error.message : "Falha ao excluir transações selecionadas.";
       setActionError(message);
-      toast({ variant: "error", title: "Erro na exclusao em massa", description: message });
+      toast({ variant: "error", title: "Erro na exclusão em massa", description: message });
     } finally {
       setBulkDeleting(false);
     }
@@ -827,23 +1046,23 @@ export function TransactionsPage(): React.JSX.Element {
         setShowBulkCategoryModal(false);
       }
 
-      await loadTransactions();
+      await refreshFinanceData();
 
       if (result.failureCount === 0) {
         toast({
           variant: "success",
           title: "Categoria aplicada",
-          description: `${result.successCount} transacao(oes) atualizada(s) para ${categoryLabel}.`
+          description: `${result.successCount} transação(ões) atualizada(s) para ${categoryLabel}.`
         });
       } else {
         toast({
           variant: "error",
-          title: "Atualizacao parcial",
+          title: "Atualização parcial",
           description: `${result.successCount} atualizada(s) e ${result.failureCount} com falha.`
         });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao categorizar transacoes selecionadas.";
+      const message = error instanceof Error ? error.message : "Falha ao categorizar transações selecionadas.";
       setActionError(message);
       toast({ variant: "error", title: "Erro ao categorizar em lote", description: message });
     } finally {
@@ -863,14 +1082,14 @@ export function TransactionsPage(): React.JSX.Element {
         toast({
           variant: "info",
           title: "Nada para exportar",
-          description: "Nenhuma transacao selecionada no conjunto atual."
+          description: "Nenhuma transação selecionada no conjunto atual."
         });
         return;
       }
 
       const csvRows = [
         [
-          "Descricao",
+          "Descrição",
           "Categoria",
           "Conta",
           "Data",
@@ -908,11 +1127,11 @@ export function TransactionsPage(): React.JSX.Element {
 
       toast({
         variant: "success",
-        title: "Exportacao concluida",
-        description: `${rows.length} transacao(oes) exportada(s).`
+        title: "Exportação concluída",
+        description: `${rows.length} transação(ões) exportada(s).`
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao exportar transacoes selecionadas.";
+      const message = error instanceof Error ? error.message : "Falha ao exportar transações selecionadas.";
       setActionError(message);
       toast({ variant: "error", title: "Erro ao exportar", description: message });
     } finally {
@@ -972,13 +1191,13 @@ export function TransactionsPage(): React.JSX.Element {
         clearSelection();
       }
 
-      await loadTransactions();
+      await refreshFinanceData();
 
       if (result.failureCount === 0) {
         toast({
           variant: "success",
           title: "Sugestões aplicadas",
-          description: `${result.successCount} transacao(oes) categorizada(s) automaticamente.`
+          description: `${result.successCount} transação(ões) categorizada(s) automaticamente.`
         });
       } else {
         toast({
@@ -998,42 +1217,39 @@ export function TransactionsPage(): React.JSX.Element {
   };
 
   const refreshMetaAndData = async (): Promise<void> => {
-    shouldLoadMetaRef.current = true;
-    await loadTransactions();
+    await refreshFinanceData();
   };
 
   const clearAllFilters = useCallback(() => {
     setFilters(initialFilters);
+    setSortState({ field: "date", direction: "desc" });
+    setPage(1);
     setSearchQuery("");
+    setDebouncedQuery("");
     setPendingCategoryQuery("");
     setUncategorizedOnly(false);
   }, []);
 
-  const setImportModalOpen = useCallback(
-    (nextOpen: boolean): void => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (nextOpen) {
-        params.set("import", "1");
-      } else {
-        params.delete("import");
-      }
-
-      const queryString = params.toString();
-      router.push(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParams]
-  );
+  const organizeUncategorized = useCallback(() => {
+    setUncategorizedOnly(true);
+    setFilters((previous) => ({ ...previous, categoryId: "" }));
+    setPage(1);
+  }, []);
 
   const actions = (
     <>
-      <Button variant="outline" onClick={() => setShowCreate((prev) => !prev)} className="flex-1 sm:flex-none">
+      <Button
+        variant="outline"
+        onClick={() => setCreatePanelOpen(!showCreate)}
+        className="flex-1 border-border/90 bg-card/90 text-foreground shadow-sm hover:bg-secondary dark:border-border dark:bg-secondary/60 dark:text-foreground dark:hover:bg-secondary sm:flex-none"
+      >
         <Plus className="h-4 w-4" />
         {showCreate ? "Fechar" : "Nova"}
       </Button>
       <Button
         ref={importButtonRef}
         onClick={() => setImportModalOpen(true)}
-        className="flex-1 sm:flex-none"
+        className="flex-1 border border-primary/35 bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 sm:flex-none"
       >
         <Upload className="h-4 w-4" />
         Importar extrato
@@ -1052,7 +1268,7 @@ export function TransactionsPage(): React.JSX.Element {
   );
 
   return (
-    <PageShell title="Transações" subtitle="Lancamentos, filtros e categorizacao manual" actions={actions}>
+    <PageShell title="Transações" subtitle="Lançamentos, filtros e categorização manual" actions={actions}>
       <ImportTransactionsModal
         open={isImportOpen}
         accounts={accounts}
@@ -1064,24 +1280,55 @@ export function TransactionsPage(): React.JSX.Element {
         }}
         onAccountsRefresh={() => refreshMetaAndData()}
       />
-      <div className="space-y-4">
+      <div className="space-y-5">
         <TransactionsKpiCards
           income={summary.income}
           expense={summary.expense}
-          balance={summary.balance}
+          cashOutflow={summary.periodCashOutflow}
+          periodBalance={summary.periodCashFlow}
+          cashBalance={summary.cashBalance}
           periodLabel={periodLabel}
         />
+
+        {uncategorizedStats.count > 0 && !uncategorizedOnly ? (
+          <section className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50/90 via-amber-50/60 to-card px-4 py-3 shadow-sm dark:border-amber-900/60 dark:from-amber-950/30 dark:via-card dark:to-card sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                <AlertTriangle className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm text-amber-900 dark:text-amber-100">
+                  <span className="font-semibold">Transações sem categoria:</span> você tem{" "}
+                  <span className="font-semibold">{uncategorizedStats.count}</span> lançamento(s) sem categoria no
+                  período atual.
+                </p>
+                <p className="text-xs text-amber-700/90 dark:text-amber-300/90">
+                  Isso representa {uncategorizedStats.percentage}% das transações carregadas.
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950/50"
+              onClick={organizeUncategorized}
+            >
+              Organizar agora
+            </Button>
+          </section>
+        ) : null}
 
         {showCreate ? (
           <TransactionForm
             values={newTx}
-            accounts={accounts}
+            accounts={manualTransactionAccounts}
             categories={categories}
             busy={creating}
             error={createError}
             onChange={(next) => setNewTx((previous) => ({ ...previous, ...next }))}
             onSubmit={() => handleCreate()}
-            onCancel={() => setShowCreate(false)}
+            onCancel={() => setCreatePanelOpen(false)}
           />
         ) : null}
 
@@ -1111,6 +1358,12 @@ export function TransactionsPage(): React.JSX.Element {
           onExport={() => void handleExportSelected()}
           onApplySuggestions={() => void handleApplySuggestionsBulk()}
         />
+
+        {refreshMessage ? (
+          <FeedbackMessage variant="info" data-testid="transactions-refresh-feedback">
+            {refreshMessage}
+          </FeedbackMessage>
+        ) : null}
 
         {actionError ? <FeedbackMessage variant="error">{actionError}</FeedbackMessage> : null}
 
@@ -1150,12 +1403,12 @@ export function TransactionsPage(): React.JSX.Element {
           onEdit={() => {
             toast({
               variant: "info",
-              title: "Edicao em breve",
-              description: "A edicao completa da transacao sera disponibilizada nas proximas iteracoes."
+              title: "Edição em breve",
+              description: "A edição completa da transação será disponibilizada nas próximas iterações."
             });
           }}
           onClearFilters={clearAllFilters}
-          onCreateTransaction={() => setShowCreate(true)}
+          onCreateTransaction={() => setCreatePanelOpen(true)}
           onImportStatement={() => setImportModalOpen(true)}
         />
 
@@ -1183,14 +1436,14 @@ export function TransactionsPage(): React.JSX.Element {
           onConfirm={() => handleDeleteSelected()}
         />
 
-        <div className="flex flex-col gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-secondary/70 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.08)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">
-              Mostrando <span className="font-semibold text-foreground">{visibleTransactions.length}</span> de{" "}
-              <span className="font-semibold text-foreground">{pagination.totalCount}</span> resultado(s)
+              Exibindo <span className="font-semibold text-foreground">{visibleTransactions.length}</span> de{" "}
+              <span className="font-semibold text-foreground">{pagination.totalCount}</span> transação(ões)
             </p>
             <p className="text-xs text-muted-foreground">
-              Pagina {pagination.page} de {pagination.totalPages}
+              Página {pagination.page} de {pagination.totalPages}
             </p>
           </div>
           <div className="flex w-full gap-2 sm:w-auto">
@@ -1210,7 +1463,7 @@ export function TransactionsPage(): React.JSX.Element {
               disabled={!pagination.hasNextPage || loading}
               onClick={() => setPage((previous) => previous + 1)}
             >
-              Proxima
+              Próxima
             </Button>
           </div>
         </div>
@@ -1218,3 +1471,5 @@ export function TransactionsPage(): React.JSX.Element {
     </PageShell>
   );
 }
+
+

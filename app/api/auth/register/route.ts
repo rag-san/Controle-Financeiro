@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { consumeRateLimit } from "@/lib/rate-limit";
@@ -12,7 +12,7 @@ const registerSchema = z
     confirmPassword: z.string().min(6).max(120)
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "As senhas nao conferem",
+    message: "As senhas não conferem",
     path: ["confirmPassword"]
   });
 
@@ -96,5 +96,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json(responsePayload, { status: 201 });
 }
+
 
 

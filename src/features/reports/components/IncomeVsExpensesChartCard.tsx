@@ -49,20 +49,20 @@ function TrendTooltip({
   const net = income - expense;
 
   return (
-    <div className="min-w-[12rem] rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-xl dark:border-slate-700 dark:bg-slate-900">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{String(label ?? "")}</p>
+    <div className="min-w-[12rem] rounded-xl border border-border bg-card p-3 text-sm shadow-xl dark:border-border dark:bg-secondary/60">
+      <p className="text-xs text-muted-foreground">{String(label ?? "")}</p>
       <div className="mt-1 space-y-1 text-xs">
         <p className="flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400">Receitas</span>
+          <span className="text-muted-foreground">Receitas</span>
           <span className="tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">{formatBRL(income)}</span>
         </p>
         <p className="flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400">Despesas</span>
+          <span className="text-muted-foreground">Despesas</span>
           <span className="tabular-nums font-semibold text-rose-600 dark:text-rose-400">{formatBRL(expense)}</span>
         </p>
         <p className="flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400">Saldo</span>
-          <span className="tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatBRL(net)}</span>
+          <span className="text-muted-foreground">Saldo</span>
+          <span className="tabular-nums font-semibold text-foreground">{formatBRL(net)}</span>
         </p>
       </div>
     </div>
@@ -80,16 +80,16 @@ export function IncomeVsExpensesChartCard({ data }: IncomeVsExpensesChartCardPro
 
   return (
     <Card className="p-4">
-      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
         Receitas x Despesas
       </h3>
 
       {chartData.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-200 px-3 py-6 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        <p className="rounded-xl border border-dashed border-border px-3 py-6 text-sm text-muted-foreground dark:border-border dark:text-muted-foreground/80">
           Sem histórico suficiente para este período.
         </p>
       ) : (
-        <div className="h-[280px] w-full">
+        <div className="h-[240px] w-full sm:h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 10, right: 12, left: 8, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.18)" />
@@ -120,4 +120,6 @@ export function IncomeVsExpensesChartCard({ data }: IncomeVsExpensesChartCardPro
     </Card>
   );
 }
+
+
 

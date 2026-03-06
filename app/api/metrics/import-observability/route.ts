@@ -161,7 +161,7 @@ function buildAlerts(input: {
       metric: "parser_unavailable_total",
       value: parserUnavailableTotal,
       threshold: input.thresholds.parserUnavailableThreshold,
-      message: "Erros de parser acima do limite no periodo analisado."
+      message: "Erros de parser acima do limite no período analisado."
     });
   }
 
@@ -192,13 +192,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const from = parseDate(parsed.data.from);
     const to = parseDate(parsed.data.to);
     if (parsed.data.from && !from) {
-      return NextResponse.json({ error: "Parametro from invalido." }, { status: 400 });
+      return NextResponse.json({ error: "Parâmetro from inválido." }, { status: 400 });
     }
     if (parsed.data.to && !to) {
-      return NextResponse.json({ error: "Parametro to invalido." }, { status: 400 });
+      return NextResponse.json({ error: "Parâmetro to inválido." }, { status: 400 });
     }
     if (from && to && from.getTime() > to.getTime()) {
-      return NextResponse.json({ error: "Parametro from deve ser menor ou igual a to." }, { status: 400 });
+      return NextResponse.json({ error: "Parâmetro from deve ser menor ou igual a to." }, { status: 400 });
     }
 
     const bySourcePhase = await importObservabilityRepo.summarizeBySource({
@@ -240,3 +240,4 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
   });
 }
+

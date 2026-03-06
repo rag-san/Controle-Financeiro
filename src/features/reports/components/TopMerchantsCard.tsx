@@ -27,43 +27,43 @@ export function TopMerchantsCard({
 
   return (
     <Card className="p-4">
-      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
         Maiores estabelecimentos
       </h3>
 
       {topRows.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-200 px-3 py-6 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        <p className="rounded-xl border border-dashed border-border px-3 py-6 text-sm text-muted-foreground dark:border-border dark:text-muted-foreground/80">
           Sem despesas de estabelecimentos no período.
         </p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="overflow-hidden rounded-xl border border-border">
           <table className="w-full border-collapse text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-900/60">
+            <thead className="bg-secondary/60">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Estabelecimento
                 </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Qtd
                 </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Total
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+            <tbody className="divide-y divide-border dark:divide-border">
               {topRows.map((row) => (
-                <tr key={row.merchantKey} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
-                  <td className="px-3 py-2 text-slate-800 dark:text-slate-100">
+                <tr key={row.merchantKey} className="hover:bg-secondary/70 dark:hover:bg-secondary/45">
+                  <td className="px-3 py-2 text-foreground">
                     <Link
                       href={buildMerchantHref(row.merchantKey, period)}
-                      className="line-clamp-1 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      className="line-clamp-1 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                       {row.merchantLabel}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{row.count}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-900 dark:text-slate-100">
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{row.count}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-foreground">
                     {formatBRL(row.total)}
                   </td>
                 </tr>
@@ -75,4 +75,6 @@ export function TopMerchantsCard({
     </Card>
   );
 }
+
+
 

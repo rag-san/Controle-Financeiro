@@ -1,11 +1,12 @@
 import * as React from "react";
 import { Button as BaseButton, type ButtonProps as BaseButtonProps } from "@/components/ui/button";
 
-type ButtonVariant = "primary" | "outline" | "ghost" | "danger";
+type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger";
 type ButtonSize = "sm" | "md" | "lg" | "icon";
 
 const variantMap: Record<ButtonVariant, NonNullable<BaseButtonProps["variant"]>> = {
   primary: "default",
+  secondary: "secondary",
   outline: "outline",
   ghost: "ghost",
   danger: "destructive"

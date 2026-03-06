@@ -9,6 +9,7 @@ import { accountsRepo } from "@/lib/server/accounts.repo";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { categoryRulesRepo } from "@/lib/server/category-rules.repo";
 import { importsRepo } from "@/lib/server/imports.repo";
+import { syncLedgerFromImportBatch } from "@/lib/server/ledger-sync.service";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 export const MAX_IMPORT_COMMIT_ROWS = 5000;
@@ -16,11 +17,11 @@ export const MAX_IMPORT_COMMIT_ROWS = 5000;
 const CARD_PAYMENT_STATEMENT_PATTERN =
   /\b(?:PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|FATURA\s+CARTAO|PAGAMENTO\s+DE\s+FATURA|CREDIT\s+CARD\s+PAYMENT|PAYMENT\s+OF\s+(?:THE\s+)?CREDIT\s+CARD|FATURA)\b/i;
 const CARD_PAYMENT_INVOICE_SKIP_PATTERN =
-  /\b(?:PAGAMENTO\s+RECEBIDO|PAGAMENTO\s+EM|PGTO\s+EM|PAGTO\s+EM|PAGAMENTO\s+(?:DA\s+)?FATURA|PGTO\s+(?:DA\s+)?FATURA|PAGTO\s+(?:DA\s+)?FATURA|PAGAMENTO\s+(?:DO\s+)?CARTAO|PGTO\s+CARTAO|PAGTO\s+CARTAO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CREDIT\s+CARD\s+PAYMENT|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
-const CARD_NAME_HINT_PATTERN = /CARTAO|CREDITO|CREDIT/i;
+  /\b(?:PAGAMENTO\s+RECEBIDO|CREDITO\s+DE\s+PAGAMENTO|PAYMENT\s+RECEIVED|CARD\s+PAYMENT\s+CREDIT|PAGAMENTO\s+ON(?:\s*|-)?LINE|PAGTO\s+ON(?:\s*|-)?LINE|PGTO\s+ON(?:\s*|-)?LINE)\b/i;
 const INTERNAL_TRANSFER_KEYWORD_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER)\b/i;
 const INTERNAL_TRANSFER_DESCRIPTION_HINT_PATTERN = /\b(?:PIX|TED|DOC|TRANSFERENCIA|TRANSFER|ENVIO|RECEBIDO)\b/i;
-const INTERNAL_TRANSFER_MAX_DATE_DIFF_MS = 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const INTERNAL_TRANSFER_MAX_DATE_DIFF_MS = ONE_DAY_MS;
 const INTERNAL_TRANSFER_SCORE_WEIGHTS = {
   amount: 0.5,
   date: 0.3,
@@ -30,6 +31,9 @@ const INTERNAL_TRANSFER_MIN_DESCRIPTION_SCORE = 0.35;
 const INTERNAL_TRANSFER_MIN_TOTAL_SCORE = 0.75;
 const INTERNAL_TRANSFER_REVIEW_MIN_TOTAL_SCORE = 0.55;
 const MAX_TRANSFER_REVIEW_SUGGESTIONS = 20;
+const MIN_OPENING_BALANCE_ADJUSTMENT = 0.01;
+const OPENING_BALANCE_EXTERNAL_ID_PREFIX = "OPENING_BALANCE";
+const OPENING_BALANCE_DESCRIPTION_PREFIX = "Saldo inicial importado";
 
 const INTERNAL_TRANSFER_STOPWORDS = new Set([
   "PIX",
@@ -131,13 +135,16 @@ function isCheckingLikeAccount(accountType: UserAccount["type"]): boolean {
 
 function shouldDetectCardPaymentFromStatement(input: {
   accountType: UserAccount["type"];
-  amount: number;
   normalizedDescription: string;
 }): boolean {
+  const hasFatura = input.normalizedDescription.includes("FATURA");
+  const hasPaymentHint = /\b(?:PAGAMENTO|PAGTO|PGTO|PAG)\b/.test(input.normalizedDescription);
+  const hasCardHint = /\bCART[A-Z]*\b/.test(input.normalizedDescription);
+
   return (
     isCheckingLikeAccount(input.accountType) &&
-    input.amount < 0 &&
-    CARD_PAYMENT_STATEMENT_PATTERN.test(input.normalizedDescription)
+    (CARD_PAYMENT_STATEMENT_PATTERN.test(input.normalizedDescription) ||
+      (hasFatura && (hasPaymentHint || hasCardHint)))
   );
 }
 
@@ -148,6 +155,11 @@ function shouldSkipCardPaymentOnCreditImport(input: {
   skipCardPaymentLines: boolean;
 }): boolean {
   if (!input.skipCardPaymentLines || input.accountType !== "credit") {
+    return false;
+  }
+
+  // Em faturas de cartão, pagamento costuma vir como crédito/entrada.
+  if (input.amount < 0) {
     return false;
   }
 
@@ -204,9 +216,7 @@ function resolveCardPaymentTargetAccountId(input: {
 
     const accountInstitution = account.institution?.trim();
     if (!accountInstitution) return false;
-    if (normalizeDescription(accountInstitution) !== normalizedInstitution) return false;
-
-    return CARD_NAME_HINT_PATTERN.test(normalizeDescription(account.name));
+    return normalizeDescription(accountInstitution) === normalizedInstitution;
   });
 
   if (sameInstitutionCards.length === 1) {
@@ -478,6 +488,7 @@ type ImportDraftRow = {
   transferFromAccountId?: string | null;
   transferToAccountId?: string | null;
   status: "posted";
+  excluded?: boolean;
   externalId?: string | null;
   importedHash: string;
   raw: Record<string, unknown>;
@@ -501,12 +512,77 @@ type InternalTransferReviewSuggestion = {
   counterpartDescription: string;
 };
 
+type OpeningBalanceCandidate = {
+  accountId: string;
+  date: Date;
+  amount: number;
+  balanceAfter: number;
+  sourceType: ImportCommitPayload["sourceType"];
+};
+
 function directionFromAmount(amount: number): "in" | "out" {
   return amount >= 0 ? "in" : "out";
 }
 
 function toAbsoluteCents(amount: number): number {
   return Math.round(Math.abs(amount) * 100);
+}
+
+function truncateToDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+}
+
+function dayBefore(date: Date): Date {
+  return new Date(date.getTime() - ONE_DAY_MS);
+}
+
+function tryTrackOpeningBalanceCandidate(
+  target: Map<string, OpeningBalanceCandidate>,
+  input: {
+    account: UserAccount;
+    date: Date;
+    amount: number;
+    balanceAfter: number | null | undefined;
+    sourceType: ImportCommitPayload["sourceType"];
+  }
+) {
+  if (!isCheckingLikeAccount(input.account.type)) {
+    return;
+  }
+  if (!Number.isFinite(input.balanceAfter) || !Number.isFinite(input.amount)) {
+    return;
+  }
+
+  const candidateDate = truncateToDay(input.date);
+  const nextCandidate: OpeningBalanceCandidate = {
+    accountId: input.account.id,
+    date: candidateDate,
+    amount: Number(input.amount),
+    balanceAfter: Number(input.balanceAfter),
+    sourceType: input.sourceType
+  };
+  const existing = target.get(input.account.id);
+
+  if (!existing) {
+    target.set(input.account.id, nextCandidate);
+    return;
+  }
+
+  if (candidateDate.getTime() < existing.date.getTime()) {
+    target.set(input.account.id, nextCandidate);
+  }
+}
+
+function inferOpeningBalanceAmount(candidate: OpeningBalanceCandidate): number {
+  return Number((candidate.balanceAfter - candidate.amount).toFixed(2));
+}
+
+function buildOpeningBalanceExternalId(accountId: string, firstDate: Date): string {
+  return `${OPENING_BALANCE_EXTERNAL_ID_PREFIX}:${accountId}:${firstDate.toISOString().slice(0, 10)}`;
+}
+
+function buildOpeningBalanceDescription(accountName: string): string {
+  return `${OPENING_BALANCE_DESCRIPTION_PREFIX} (${accountName})`;
 }
 
 function normalizeExternalIdentity(value: string | null | undefined): string | null {
@@ -636,9 +712,11 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   let totalCardPaymentsNotConverted = 0;
   let totalTransfersCreated = 0;
   let totalInternalTransfersAutoMatched = 0;
+  let openingBalanceAdjustmentsCreated = 0;
   const warnings: string[] = [];
   let cardPaymentNotConvertedWarnings = 0;
   const autoCreatedCreditByParentId = new Map<string, string>();
+  const openingBalanceCandidateByAccountId = new Map<string, OpeningBalanceCandidate>();
 
   const importRows: ImportDraftRow[] = [];
   const transferRows: Array<{
@@ -763,15 +841,17 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       canonical.type === "transfer" || Boolean(row.transferToAccountId) || Boolean(row.transferFromAccountId);
     const detectedCardPayment = shouldDetectCardPaymentFromStatement({
       accountType: resolvedAccount.type,
-      amount: canonical.amount,
       normalizedDescription: canonical.normalizedDescription
     });
+    const normalizedCardPaymentAmount = detectedCardPayment ? -Math.abs(canonical.amount) : canonical.amount;
+    const shouldConvertDetectedCardPayment =
+      detectedCardPayment && mappingOptions.convertCardPaymentsToTransfer;
 
     if (detectedCardPayment) {
       totalCardPaymentsDetected += 1;
     }
 
-    if (wantsExplicitTransfer || detectedCardPayment) {
+    if (wantsExplicitTransfer || shouldConvertDetectedCardPayment) {
       const fromAccountId = row.transferFromAccountId?.trim() || resolvedAccountId;
       const fromAccount = accountById.get(fromAccountId);
 
@@ -816,10 +896,18 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           continue;
         }
 
+        tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
+          account: fromAccount,
+          date: canonical.date,
+          amount: normalizedCardPaymentAmount,
+          balanceAfter: canonical.balanceAfter,
+          sourceType: payload.sourceType
+        });
+
         const transferHashBase = createTransferKeyHash({
           userId,
           date: canonical.date,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           normalizedDescription: canonical.normalizedDescription,
           fromAccountId: fromAccount.id,
           toAccountId: toAccount.id,
@@ -835,7 +923,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           date: canonical.date,
           description: canonical.description,
           normalizedDescription: canonical.normalizedDescription,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           status: "posted",
           transferHashBase,
           externalIdBase: canonicalExternalId,
@@ -863,11 +951,19 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       }
 
       if (detectedCardPayment) {
+        tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
+          account: fromAccount,
+          date: canonical.date,
+          amount: normalizedCardPaymentAmount,
+          balanceAfter: canonical.balanceAfter,
+          sourceType: payload.sourceType
+        });
+
         const importedHash = createImportedHash({
           userId,
           sourceType: payload.sourceType,
           date: canonical.date,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           normalizedDescription: canonical.normalizedDescription,
           accountId: fromAccount.id,
           externalId: canonicalExternalId
@@ -880,7 +976,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           date: canonical.date,
           description: canonical.description,
           normalizedDescription: canonical.normalizedDescription,
-          amount: canonical.amount,
+          amount: normalizedCardPaymentAmount,
           type: "transfer",
           direction: "out",
           isInternalTransfer: true,
@@ -909,12 +1005,31 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       }
     }
 
+    const canonicalForClassification =
+      detectedCardPayment && !mappingOptions.convertCardPaymentsToTransfer
+        ? {
+            ...canonical,
+            amount: normalizedCardPaymentAmount,
+            type: "expense" as const
+          }
+        : canonical;
+
+    tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
+      account: resolvedAccount,
+      date: canonicalForClassification.date,
+      amount: canonicalForClassification.amount,
+      balanceAfter: canonicalForClassification.balanceAfter,
+      sourceType: payload.sourceType
+    });
+
     const canonicalType =
-      canonical.type === "transfer" ? (canonical.amount >= 0 ? "income" : "expense") : canonical.type;
+      canonicalForClassification.type === "transfer"
+        ? (canonicalForClassification.amount >= 0 ? "income" : "expense")
+        : canonicalForClassification.type;
 
     const deterministic = shouldApplyDeterministic
       ? categorizeImportRowDeterministic({
-          row: canonical,
+          row: canonicalForClassification,
           accountId: resolvedAccountId,
           userRules: rules,
           categories: categoryRefs
@@ -934,7 +1049,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       userId,
       sourceType: payload.sourceType,
       date: canonical.date,
-      amount: canonical.amount,
+      amount: canonicalForClassification.amount,
       normalizedDescription: canonical.normalizedDescription,
       accountId: resolvedAccountId,
       externalId: canonicalExternalId
@@ -947,9 +1062,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       date: canonical.date,
       description: canonical.description,
       normalizedDescription: canonical.normalizedDescription,
-      amount: canonical.amount,
+      amount: canonicalForClassification.amount,
       type: canonicalType,
-      direction: directionFromAmount(canonical.amount),
+      direction: directionFromAmount(canonicalForClassification.amount),
       isInternalTransfer: false,
       transferFromAccountId: null,
       transferToAccountId: null,
@@ -1133,6 +1248,71 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     }
   }
 
+  if (openingBalanceCandidateByAccountId.size > 0) {
+    const openingBalanceCandidates = [...openingBalanceCandidateByAccountId.values()].sort(
+      (left, right) => left.date.getTime() - right.date.getTime()
+    );
+
+    for (const candidate of openingBalanceCandidates) {
+      const openingAmount = inferOpeningBalanceAmount(candidate);
+      if (Math.abs(openingAmount) < MIN_OPENING_BALANCE_ADJUSTMENT) {
+        continue;
+      }
+
+      const hasHistoryBeforeWindow =
+        (await transactionsRepo.countByAccountBeforeDate(userId, candidate.accountId, candidate.date)) > 0;
+      if (hasHistoryBeforeWindow) {
+        continue;
+      }
+
+      const account = accountById.get(candidate.accountId);
+      if (!account) {
+        continue;
+      }
+
+      const openingDate = dayBefore(candidate.date);
+      const description = buildOpeningBalanceDescription(account.name);
+      const normalizedDescription = normalizeDescription(description);
+      const externalId = buildOpeningBalanceExternalId(candidate.accountId, candidate.date);
+      const importedHash = createImportedHash({
+        userId,
+        sourceType: candidate.sourceType,
+        date: openingDate,
+        amount: openingAmount,
+        normalizedDescription,
+        accountId: candidate.accountId,
+        externalId
+      });
+
+      importRows.push({
+        userId,
+        accountId: candidate.accountId,
+        categoryId: null,
+        date: openingDate,
+        description,
+        normalizedDescription,
+        amount: openingAmount,
+        type: openingAmount >= 0 ? "income" : "expense",
+        direction: directionFromAmount(openingAmount),
+        isInternalTransfer: false,
+        transferFromAccountId: null,
+        transferToAccountId: null,
+        status: "posted",
+        excluded: true,
+        externalId,
+        importedHash,
+        raw: {
+          sourceType: candidate.sourceType,
+          openingBalanceAdjustment: true,
+          openingBalanceFirstDate: candidate.date.toISOString().slice(0, 10),
+          openingBalanceAfterFirstRow: candidate.balanceAfter,
+          openingBalanceFirstAmount: candidate.amount
+        }
+      });
+      openingBalanceAdjustmentsCreated += 1;
+    }
+  }
+
   const batch = await importsRepo.createBatch({
     userId,
     sourceType: payload.sourceType,
@@ -1311,6 +1491,26 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     totalSkipped
   });
 
+  let ledgerSync:
+    | {
+        processed: number;
+        created: number;
+        deduped: number;
+        skipped: number;
+      }
+    | null = null;
+
+  try {
+    ledgerSync = await syncLedgerFromImportBatch({
+      userId,
+      importBatchId: batch.id,
+      fileName: payload.fileName
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "falha desconhecida";
+    warnings.push(`Não foi possível sincronizar o ledger para este lote (${message}).`);
+  }
+
   return {
     batchId: batch.id,
     totalImported,
@@ -1322,6 +1522,11 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     totalCardPaymentsDetected,
     totalCardPaymentsNotConverted,
     warnings: [
+      ...(openingBalanceAdjustmentsCreated > 0
+        ? [
+            `${openingBalanceAdjustmentsCreated} ajuste(s) de saldo inicial foram adicionados automaticamente como lançamento excluído.`
+          ]
+        : []),
       ...(cardPaymentNotConvertedWarnings > 0
         ? [
             `${cardPaymentNotConvertedWarnings} pagamento(s) de fatura foram registrados como transferencia sem conta destino definida.`
@@ -1335,7 +1540,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         : []),
       ...(creditInvoiceRowsNotRouted > 0
         ? [
-            `${creditInvoiceRowsNotRouted} linha(s) de fatura nao foram importadas porque nao foi possivel definir a conta de cartao de credito.`
+            `${creditInvoiceRowsNotRouted} linha(s) de fatura não foram importadas porque não foi possível definir a conta de cartão de crédito.`
           ]
         : []),
       ...(creditInvoiceRowsReassigned > 0
@@ -1343,12 +1548,12 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         : []),
       ...(creditInvoiceAccountsAutoCreated > 0
         ? [
-            `${creditInvoiceAccountsAutoCreated} conta(s) de cartao foram criadas automaticamente a partir da conta bancaria vinculada.`
+            `${creditInvoiceAccountsAutoCreated} conta(s) de cartão foram criadas automaticamente a partir da conta bancária vinculada.`
           ]
         : []),
       ...(transferReviewSuggestionsCount > 0
         ? [
-            `${transferReviewSuggestionsCount} possivel(is) transferencia(s) interna(s) com confianca media foram detectadas para revisao manual.`
+            `${transferReviewSuggestionsCount} possível(is) transferência(s) interna(s) com confiança média foram detectadas para revisão manual.`
           ]
         : []),
       ...warnings
@@ -1385,6 +1590,8 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
             from: new Date(minTimestamp).toISOString(),
             to: new Date(maxTimestamp).toISOString()
           }
-        : null
+        : null,
+    ledgerSync
   };
 }
+

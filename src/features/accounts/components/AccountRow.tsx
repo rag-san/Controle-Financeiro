@@ -10,6 +10,8 @@ type AccountRowProps = {
   metaRight?: string;
   icon?: React.ReactNode;
   iconClassName?: string;
+  actionSlot?: React.ReactNode;
+  hiddenAmount?: boolean;
 };
 
 function formatAmount(amount: number, sign: AccountRowProps["amountSign"]): string {
@@ -27,10 +29,10 @@ function formatAmount(amount: number, sign: AccountRowProps["amountSign"]): stri
 }
 
 const amountToneClassMap: Record<NonNullable<AccountRowProps["amountTone"]>, string> = {
-  default: "text-slate-900 dark:text-slate-100",
+  default: "text-foreground",
   positive: "text-emerald-600 dark:text-emerald-400",
   negative: "text-rose-600 dark:text-rose-400",
-  muted: "text-slate-500 dark:text-slate-400"
+  muted: "text-muted-foreground"
 };
 
 export function AccountRow({
@@ -41,26 +43,33 @@ export function AccountRow({
   amountTone = "default",
   metaRight,
   icon,
-  iconClassName = "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300"
+  iconClassName = "bg-secondary text-muted-foreground dark:bg-secondary dark:text-muted-foreground",
+  actionSlot,
+  hiddenAmount = false
 }: AccountRowProps): React.JSX.Element {
+  const amountText = hiddenAmount ? "••••••" : formatAmount(amount, amountSign);
+
   return (
-    <div className="flex flex-col gap-2 px-4 py-3 transition hover:bg-slate-50/70 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-slate-900/35">
+    <div className="flex flex-col gap-2 px-4 py-3 transition hover:bg-secondary/70 sm:flex-row sm:items-center sm:justify-between dark:hover:bg-secondary/40">
       <div className="flex min-w-0 items-center gap-3">
         <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${iconClassName}`}>
           {icon ?? <Building2 className="h-4 w-4" aria-hidden="true" />}
         </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{name}</p>
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>
+          <p className="truncate text-sm font-medium text-foreground">{name}</p>
+          <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
         </div>
       </div>
 
-      <div className="w-full text-left sm:w-auto sm:shrink-0 sm:text-right">
-        <p className={`text-sm font-semibold ${amountToneClassMap[amountTone]}`}>
-          {formatAmount(amount, amountSign)}
-        </p>
-        {metaRight ? <p className="text-xs text-slate-500 dark:text-slate-400">{metaRight}</p> : null}
+      <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
+        <div className="min-w-0 text-left sm:text-right">
+          <p className={`text-sm font-semibold ${amountToneClassMap[amountTone]}`}>{amountText}</p>
+          {metaRight ? <p className="truncate text-xs text-muted-foreground">{metaRight}</p> : null}
+        </div>
+        {actionSlot ? <div className="shrink-0">{actionSlot}</div> : null}
       </div>
     </div>
   );
 }
+
+

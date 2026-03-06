@@ -10,7 +10,7 @@ const moneyInputSchema = z
   .union([z.number(), z.string()])
   .transform((value) => parseStrictMoneyInput(value))
   .refine((value): value is number => value !== null, {
-    message: "Valor invalido"
+    message: "Valor inválido"
   });
 
 const updateRecurringSchema = z.object({
@@ -40,7 +40,7 @@ export async function PATCH(
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
   }
   const parsed = updateRecurringSchema.safeParse(payload);
 
@@ -65,7 +65,7 @@ export async function PATCH(
   });
 
   if (!recurring) {
-    return NextResponse.json({ error: "Item recorrente nao encontrado" }, { status: 404 });
+    return NextResponse.json({ error: "Item recorrente não encontrado" }, { status: 404 });
   }
 
   invalidateFinanceCaches(auth.userId);
@@ -86,5 +86,4 @@ export async function DELETE(
 
   return NextResponse.json({ success: true });
 }
-
 

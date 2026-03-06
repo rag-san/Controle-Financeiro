@@ -22,7 +22,7 @@ function resolveMonthDate(referenceDate: Date, dueDay: number): Date {
   return new Date(monthStart.getFullYear(), monthStart.getMonth(), safeDueDay);
 }
 
-export function resolveRecurringFlow(amount: number): RecurringFlowTab {
+function resolveRecurringFlow(amount: number): RecurringFlowTab {
   return amount >= 0 ? "expenses" : "income";
 }
 

@@ -16,12 +16,12 @@ export function ConnectionRow({
   disconnectDisabled = false
 }: ConnectionRowProps): React.JSX.Element {
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50/70 dark:hover:bg-slate-900/35">
+    <div className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-secondary/70 dark:hover:bg-secondary/40">
       <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{institution}</p>
+        <p className="truncate text-sm font-medium text-foreground">{institution}</p>
         <div className="mt-1 flex items-center gap-2">
           <Badge value={statusLabel} variant="positive" className="px-2 py-0.5 text-[10px] tracking-wide" />
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-xs text-muted-foreground">
             {accountCount} conta{accountCount === 1 ? "" : "s"}
           </span>
         </div>
@@ -38,3 +38,4 @@ export function ConnectionRow({
     </div>
   );
 }
+

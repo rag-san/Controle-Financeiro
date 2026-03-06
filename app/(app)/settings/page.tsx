@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { PageShell } from "@/components/layout/PageShell";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
 import { getRequiredUserId } from "@/lib/auth";
 import { usersRepo } from "@/lib/server/users.repo";
 

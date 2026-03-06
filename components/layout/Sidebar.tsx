@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
   BarChart3,
+  ClipboardCheck,
   FileText,
   Landmark,
   LayoutDashboard,
@@ -34,7 +35,8 @@ const MAIN_NAV_ITEMS: NavItem[] = [
   { href: "/net-worth", label: "Patrimônio", icon: LineChart },
   { href: "/recurring", label: "Recorrentes", icon: Repeat2 },
   { href: "/categories", label: "Categorias", icon: Tags },
-  { href: "/reports", label: "Relatórios", icon: FileText }
+  { href: "/reports", label: "Relatórios", icon: FileText },
+  { href: "/review", label: "Revisão", icon: ClipboardCheck }
 ];
 
 const FOOTER_NAV_ITEMS: NavItem[] = [
@@ -57,10 +59,10 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }): React.JSX.
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center gap-2 border-b border-border px-5">
-        <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
+        <div className="grid h-8 w-8 place-items-center rounded-lg bg-primary/15 text-primary dark:bg-primary/20">
           <WalletCards className="h-4 w-4" />
         </div>
-        <span className="text-lg font-semibold tracking-wide text-slate-900 dark:text-slate-100">Finance Control</span>
+        <span className="text-lg font-semibold tracking-wide text-foreground">Finance Control</span>
       </div>
 
       <nav className="flex-1 space-y-1 p-3" aria-label="Navegação principal">
@@ -98,12 +100,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }): React.JSX.
 
         <button
           type="button"
-          className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-slate-100"
+          className="flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           onClick={() => {
             signOut({ callbackUrl: "/login" });
           }}
         >
-          <LogOut className="h-4 w-4 text-slate-400 dark:text-slate-500" aria-hidden="true" />
+          <LogOut className="h-4 w-4 text-muted-foreground/80" aria-hidden="true" />
           Sair
         </button>
       </div>
@@ -123,7 +125,7 @@ export function Sidebar({ open, onClose }: SidebarProps): React.JSX.Element {
           <button aria-label="Fechar menu" className="absolute inset-0 bg-black/40" onClick={onClose} />
           <aside className="absolute left-0 top-0 h-screen w-[85vw] max-w-72 border-r border-border bg-card shadow-xl">
             <div className="flex h-16 items-center justify-between border-b border-border px-4">
-              <span className="font-semibold text-slate-900 dark:text-slate-100">Menu</span>
+              <span className="font-semibold text-foreground">Menu</span>
               <IconButton aria-label="Fechar menu lateral" onClick={onClose} icon={<X className="h-4 w-4" />} />
             </div>
             <SidebarContent onNavigate={onClose} />

@@ -25,8 +25,8 @@ export function MiniWeightBar({
             className={cn(
               "h-3 w-1.5 rounded-sm transition-all duration-300 ease-out",
               filled
-                ? "bg-slate-400"
-                : "bg-slate-200 dark:bg-slate-700"
+                ? "bg-muted-foreground"
+                : "bg-secondary/70 dark:bg-secondary"
             )}
             style={filled ? { backgroundColor: color, transitionDelay: `${index * 20}ms` } : undefined}
           />
@@ -35,3 +35,4 @@ export function MiniWeightBar({
     </div>
   );
 }
+

@@ -4,6 +4,11 @@ import { requireUser } from "@/lib/api-auth";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { isValidFlexibleDate, normalizeDescription, parseFlexibleDate } from "@/lib/normalize";
 import { parseMoneyInput } from "@/lib/money";
+import { accountsRepo } from "@/lib/server/accounts.repo";
+import {
+  deleteLedgerForLegacyTransactions,
+  syncLedgerForLegacyTransactions
+} from "@/lib/server/ledger-sync.service";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 const updateTransactionSchema = z.object({
@@ -33,7 +38,7 @@ export async function PATCH(
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
   }
   const parsed = updateTransactionSchema.safeParse(payload);
 
@@ -44,16 +49,32 @@ export async function PATCH(
   const existing = await transactionsRepo.findByIdForUser(id, auth.userId);
 
   if (!existing) {
-    return NextResponse.json({ error: "Transacao nao encontrada" }, { status: 404 });
+    return NextResponse.json({ error: "Transação não encontrada" }, { status: 404 });
   }
 
   if (existing.type === "transfer") {
     return NextResponse.json(
       {
-        error: "Transacoes de transferencia nao podem ser editadas. Exclua e recrie o par."
+        error: "Transações de transferência não podem ser editadas. Exclua e recrie o par."
       },
       { status: 409 }
     );
+  }
+
+  if (parsed.data.accountId) {
+    const nextAccount = await accountsRepo.findByIdForUser(parsed.data.accountId, auth.userId);
+    if (!nextAccount) {
+      return NextResponse.json({ error: "Conta informada não foi encontrada." }, { status: 400 });
+    }
+    if (nextAccount.type === "credit") {
+      return NextResponse.json(
+        {
+          error:
+            "Transações manuais não podem ser movidas para conta de cartão de crédito. Use importação de fatura ou transferência."
+        },
+        { status: 400 }
+      );
+    }
   }
 
   let amount = parsed.data.amount !== undefined ? parseMoneyInput(parsed.data.amount) : existing.amount;
@@ -81,8 +102,13 @@ export async function PATCH(
   });
 
   if (!transaction) {
-    return NextResponse.json({ error: "Transacao nao encontrada" }, { status: 404 });
+    return NextResponse.json({ error: "Transação não encontrada" }, { status: 404 });
   }
+
+  await syncLedgerForLegacyTransactions({
+    userId: auth.userId,
+    transactionIds: [transaction.id]
+  });
 
   invalidateFinanceCaches(auth.userId);
 
@@ -97,11 +123,14 @@ export async function DELETE(
   if (auth instanceof NextResponse) return auth;
   const { id } = await params;
 
+  const cascadeIds = await transactionsRepo.resolveCascadeDeleteIdsForUser([id], auth.userId);
   await transactionsRepo.deleteByIdForUser(id, auth.userId);
+  await deleteLedgerForLegacyTransactions({
+    userId: auth.userId,
+    transactionIds: cascadeIds
+  });
 
   invalidateFinanceCaches(auth.userId);
 
   return NextResponse.json({ success: true });
 }
-
-

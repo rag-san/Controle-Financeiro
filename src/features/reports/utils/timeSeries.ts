@@ -1,5 +1,5 @@
 import { format, startOfMonth, startOfWeek } from "date-fns";
-import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
+import { fromAmountCents } from "@/lib/finance/official-metrics";
 import type { ReportPreparedTransaction, ReportsPeriodRange, ReportsTimeSeriesPoint } from "@/src/features/reports/types";
 
 type SeriesBucket = {
@@ -46,12 +46,8 @@ export function buildIncomeExpenseSeries(
       expenseCents: 0
     };
 
-    const absCents = absAmountCents(transaction.absAmount);
-    if (transaction.type === "income") {
-      bucket.incomeCents += absCents;
-    } else if (transaction.type === "expense") {
-      bucket.expenseCents += absCents;
-    }
+    bucket.incomeCents += transaction.incomeCents;
+    bucket.expenseCents += transaction.expenseCents;
 
     if (transaction.date > bucket.to) {
       bucket.to = transaction.date;
@@ -72,4 +68,3 @@ export function buildIncomeExpenseSeries(
       net: round2(fromAmountCents(bucket.incomeCents - bucket.expenseCents))
     }));
 }
-

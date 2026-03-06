@@ -215,7 +215,11 @@ export function ReportsPage(): React.JSX.Element {
             />
           ) : (
             <>
-              <KpiGrid current={model.currentTotals} previous={model.previousTotals} />
+              <KpiGrid
+                current={model.currentTotals}
+                previous={model.previousTotals}
+                cash={model.cashSummary}
+              />
 
               <div className="grid gap-4 xl:grid-cols-2">
                 <SpendingByCategoryCard items={model.categorySpending} />

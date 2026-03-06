@@ -26,12 +26,14 @@ export type TransactionDTO = {
   amount: number;
   type: "income" | "expense" | "transfer";
   direction?: "in" | "out";
+  excluded?: boolean;
   isInternalTransfer?: boolean;
   status: "posted" | "pending";
   transferGroupId?: string | null;
   transferPeerTxId?: string | null;
   transferFromAccountId?: string | null;
   transferToAccountId?: string | null;
+  raw?: Record<string, unknown> | null;
   account: AccountDTO;
   category?: CategoryDTO | null;
 };

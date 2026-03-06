@@ -10,7 +10,7 @@ const moneyInputSchema = z
   .union([z.number(), z.string()])
   .transform((value) => parseStrictMoneyInput(value))
   .refine((value): value is number => value !== null, {
-    message: "Valor invalido"
+    message: "Valor inválido"
   });
 
 const updateSchema = z.object({
@@ -38,7 +38,7 @@ export async function PATCH(
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Payload JSON invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Payload JSON inválido" }, { status: 400 });
   }
   const parsed = updateSchema.safeParse(payload);
 
@@ -57,7 +57,7 @@ export async function PATCH(
   });
 
   if (!updated) {
-    return NextResponse.json({ error: "Registro nao encontrado" }, { status: 404 });
+    return NextResponse.json({ error: "Registro não encontrado" }, { status: 404 });
   }
 
   invalidateFinanceCaches(auth.userId);
@@ -77,5 +77,4 @@ export async function DELETE(
   invalidateFinanceCaches(auth.userId);
   return NextResponse.json({ success: true });
 }
-
 

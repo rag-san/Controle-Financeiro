@@ -21,7 +21,7 @@ function renderTrendText(trend: KpiTrend): string {
 function resolveTrendTone(trend: KpiTrend): string {
   if (trend.direction === "up") return "text-emerald-600 dark:text-emerald-400";
   if (trend.direction === "down") return "text-rose-600 dark:text-rose-400";
-  return "text-slate-500 dark:text-slate-400";
+  return "text-muted-foreground";
 }
 
 function TrendIcon({ trend }: { trend: KpiTrend }): React.JSX.Element {
@@ -43,11 +43,11 @@ export function KpiCard({
       ? "text-emerald-600 dark:text-emerald-400"
       : tone === "expense"
         ? "text-rose-600 dark:text-rose-400"
-        : "text-slate-900 dark:text-slate-100";
+        : "text-foreground";
 
   return (
     <Card className="p-4">
-      <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className={`mt-2 tabular-nums text-3xl font-semibold ${valueClassName}`}>
         {valueType === "percent" ? formatPercent(value) : formatBRL(value)}
       </p>
@@ -56,8 +56,9 @@ export function KpiCard({
         <TrendIcon trend={trend} />
         <span>{renderTrendText(trend)}</span>
       </div>
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{helpText}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{helpText}</p>
     </Card>
   );
 }
+
 

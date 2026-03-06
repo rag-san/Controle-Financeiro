@@ -10,6 +10,7 @@ type ExpensesCardProps = {
   dateRangeLabel: string;
   totalExpense: number;
   previousTotalExpense: number;
+  classifiedExpense?: number;
   chartData: ExpensesStackedChartData;
   isLoading?: boolean;
 };
@@ -51,6 +52,7 @@ export function ExpensesCard({
   dateRangeLabel,
   totalExpense,
   previousTotalExpense,
+  classifiedExpense,
   chartData,
   isLoading = false
 }: ExpensesCardProps): React.JSX.Element {
@@ -58,39 +60,46 @@ export function ExpensesCard({
 
   return (
     <Card
-      className="space-y-4 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="flex h-full flex-col space-y-4 text-foreground"
       aria-busy={isLoading}
+      data-testid="cashflow-expenses-card"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">GASTOS</p>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{dateRangeLabel}</p>
-          <p className="text-3xl font-semibold text-rose-600 dark:text-rose-400">{formatBRL(totalExpense)}</p>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">SAÍDA REAL DE CAIXA</p>
+          <p className="break-words text-[1.55rem] font-black tracking-tight text-rose-700 dark:text-rose-300 sm:text-[1.75rem]">
+            {formatBRL(totalExpense)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge
               value={delta.badgeValue}
               variant={delta.badgeVariant}
-              className="border border-current/20 px-2 py-0.5 text-xs"
+              className="border border-border bg-secondary/70 px-2 py-0.5 text-xs font-bold text-foreground"
             />
             <span>vs {formatBRL(previousTotalExpense)} no período anterior</span>
           </div>
+          {typeof classifiedExpense === "number" ? (
+            <p className="text-xs text-muted-foreground">
+              Despesas classificadas no período: {formatBRL(classifiedExpense)}
+            </p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">{dateRangeLabel}</p>
         </div>
         <Link
           href="/transactions?type=expense"
-          className="text-xs font-medium text-slate-500 transition hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-slate-400 dark:hover:text-slate-200"
+          className="self-start text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Ver mais sobre gastos"
         >
           Ver mais ↗
         </Link>
       </div>
 
-      <div className="mt-2">
-        <ExpensesStackedChart
-          data={chartData}
-          loading={isLoading}
-          a11ySummary={`Gráfico de gastos mensais empilhados por categoria para ${periodLabel}.`}
-        />
-      </div>
+      <ExpensesStackedChart
+        data={chartData}
+        loading={isLoading}
+        a11ySummary={`Gráfico de gastos mensais empilhados por categoria para ${periodLabel}.`}
+      />
     </Card>
   );
 }
+

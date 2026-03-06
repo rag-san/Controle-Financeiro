@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import {
   CartesianGrid,
   Legend,
@@ -57,8 +58,8 @@ function MarkerBubble({ x = 0, y = 0, value = "", viewBox }: MarkerBubbleProps):
         height={24}
         rx={8}
         ry={8}
-        fill="#f59e0b"
-        stroke="#d97706"
+        fill="#10b981"
+        stroke="#047857"
         strokeWidth={1}
       />
       <text x={x} y={y - 20} textAnchor="middle" fill="#ffffff" fontSize={12} fontWeight={600}>
@@ -114,10 +115,10 @@ export function SpendingPaceChart({
   const dayTicks = getWeeklyTicks(data);
 
   return (
-    <div className="h-[280px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="h-[220px] min-h-[220px] w-full min-w-0">
+      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
         <LineChart data={data} margin={{ top: 24, right: 10, left: 10, bottom: 10 }}>
-          <CartesianGrid vertical={false} strokeDasharray="4 4" strokeOpacity={0.18} />
+          <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="rgba(100,116,139,0.28)" />
           <XAxis
             dataKey="day"
             ticks={dayTicks}
@@ -136,7 +137,7 @@ export function SpendingPaceChart({
             tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
           />
           <Tooltip content={<DefaultChartTooltip titleFormatter={(value) => `Dia ${value ?? ""}`.trim()} />} />
-          <Legend verticalAlign="bottom" align="left" iconType="line" wrapperStyle={{ paddingTop: 14 }} />
+          <Legend verticalAlign="bottom" align="left" iconType="line" wrapperStyle={{ paddingTop: 10, fontSize: 11 }} />
           <Line
             type="monotone"
             dataKey="previous"
@@ -159,12 +160,12 @@ export function SpendingPaceChart({
           />
           {markerPoint ? (
             <>
-              <ReferenceLine x={markerPoint.day} stroke="#86efac" strokeDasharray="3 3" strokeOpacity={0.6} />
+              <ReferenceLine x={markerPoint.day} stroke="#6ee7b7" strokeDasharray="3 3" strokeOpacity={0.75} />
               <ReferenceDot
                 x={markerPoint.day}
                 y={markerPoint.current}
                 r={6}
-                fill="#22c55e"
+                fill="#10b981"
                 stroke="#ffffff"
                 strokeWidth={2}
                 label={<MarkerBubble value={markerLabel} />}

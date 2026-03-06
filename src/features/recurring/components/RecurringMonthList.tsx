@@ -39,16 +39,16 @@ export function RecurringMonthList({
   onTogglePaid
 }: RecurringMonthListProps): React.JSX.Element {
   return (
-    <Card className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <Card className="rounded-2xl border border-border bg-card p-5 shadow-sm dark:border-border dark:bg-card">
       <div className="mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           ESTE MÊS
         </p>
       </div>
 
       {groups.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-8 text-center dark:border-slate-700">
-          <p className="text-sm text-slate-500 dark:text-slate-400">Nenhum item recorrente por enquanto.</p>
+        <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center dark:border-border">
+          <p className="text-sm text-muted-foreground">Nenhum item recorrente por enquanto.</p>
           <Button type="button" size="sm" className="mt-3" onClick={onCreateNew}>
             Criar Novo
           </Button>
@@ -57,7 +57,7 @@ export function RecurringMonthList({
         <div className="space-y-5">
           {groups.map((group) => (
             <section key={`group-${group.dueDay}`} className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {formatGroupLabel(group.date)}
               </p>
               <div className="space-y-1">
@@ -77,3 +77,5 @@ export function RecurringMonthList({
     </Card>
   );
 }
+
+

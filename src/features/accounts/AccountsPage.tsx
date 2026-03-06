@@ -1,9 +1,9 @@
 "use client";
 
-import { CreditCard, Eye, Link2, RefreshCcw, Wallet } from "lucide-react";
+import { CreditCard, Eye, EyeOff, Link2, RefreshCcw, Trash2, Wallet } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import type { AccountDTO } from "@/lib/types";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
@@ -14,14 +14,16 @@ import { AccountGroupCard } from "@/src/features/accounts/components/AccountGrou
 import { AccountRow } from "@/src/features/accounts/components/AccountRow";
 import { ConnectAccountButton } from "@/src/features/accounts/components/ConnectAccountButton";
 import { ConnectAccountModal } from "@/src/features/accounts/components/ConnectAccountModal";
+import { DeleteAccountModal } from "@/src/features/accounts/components/DeleteAccountModal";
 import { ConnectionRow } from "@/src/features/accounts/components/ConnectionRow";
 import type { AccountsRangeKey, NetWorthEntryDTO } from "@/src/features/accounts/types";
 import {
+  buildSeriesFromHistory,
   buildConnections,
   buildHistoricalAssetsDebtsSeries,
-  buildPlaceholderSeries,
   deriveAccountsSummary,
   filterSeriesByInterval,
+  resolveSummaryAtOrBeforeDate,
   resolvePreviousInterval,
   resolveRangeInterval,
   splitAccountGroups
@@ -46,12 +48,12 @@ function EmptyGroupRow({
   onAction: () => void;
 }): React.JSX.Element {
   return (
-    <div className="flex flex-col items-start gap-3 px-4 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
+    <div className="flex flex-col items-start gap-3 px-4 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between dark:text-muted-foreground/80">
       <span>{message}</span>
       <button
         type="button"
         onClick={onAction}
-        className="rounded-md px-2 py-1 font-medium text-blue-600 transition hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:bg-blue-950/30 dark:hover:text-blue-300"
+        className="rounded-md px-2 py-1 font-medium text-primary transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-primary-foreground dark:hover:bg-primary/25 dark:hover:text-primary-foreground"
       >
         {ctaLabel}
       </button>
@@ -69,6 +71,9 @@ export function AccountsPage(): React.JSX.Element {
   const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [savingAccount, setSavingAccount] = useState(false);
   const [connectErrorMessage, setConnectErrorMessage] = useState("");
+  const [hideBalances, setHideBalances] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const loadAccountsData = useCallback(
     async (signal?: AbortSignal): Promise<void> => {
@@ -90,7 +95,7 @@ export function AccountsPage(): React.JSX.Element {
         }
 
         if (!accountsResponse.ok || !accountsData || !Array.isArray(accountsData)) {
-          throw new Error(extractApiError(accountsData, "Nao foi possivel carregar contas."));
+          throw new Error(extractApiError(accountsData, "Não foi possível carregar contas."));
         }
 
         const { data: netWorthData } = await parseApiResponse<NetWorthEntryDTO[] | { error?: unknown }>(
@@ -109,7 +114,7 @@ export function AccountsPage(): React.JSX.Element {
         setAccounts([]);
         setNetWorthEntries([]);
         setErrorMessage(
-          loadError instanceof Error ? loadError.message : "Nao foi possivel carregar dados das contas."
+          loadError instanceof Error ? loadError.message : "Não foi possível carregar dados das contas."
         );
       } finally {
         setLoading(false);
@@ -151,7 +156,7 @@ export function AccountsPage(): React.JSX.Element {
       return historicalSlice;
     }
 
-    return buildPlaceholderSeries(summary, selectedRange, currentInterval);
+    return buildSeriesFromHistory(historicalSeries, summary, selectedRange, currentInterval);
   }, [currentInterval, historicalSeries, selectedRange, summary]);
 
   const previousSummary = useMemo(() => {
@@ -161,8 +166,7 @@ export function AccountsPage(): React.JSX.Element {
       return { assets: latest.assets, debts: latest.debts };
     }
 
-    // TODO: Replace fallback with true previous-period account snapshots when available.
-    return summary;
+    return resolveSummaryAtOrBeforeDate(historicalSeries, previousInterval.end, summary);
   }, [historicalSeries, previousInterval, summary]);
 
   const { creditCards, bankAccounts } = useMemo(() => splitAccountGroups(accounts), [accounts]);
@@ -192,11 +196,7 @@ export function AccountsPage(): React.JSX.Element {
   const connections = useMemo(() => buildConnections(accounts), [accounts]);
 
   const totalCreditDebt = useMemo(
-    () =>
-      creditCards.reduce(
-        (total, account) => total + Math.abs(Math.min(account.currentBalance ?? 0, 0)),
-        0
-      ),
+    () => creditCards.reduce((total, account) => total + Math.abs(account.currentBalance ?? 0), 0),
     [creditCards]
   );
   const totalBankAssets = useMemo(
@@ -207,7 +207,11 @@ export function AccountsPage(): React.JSX.Element {
   const actions = useMemo(
     () => (
       <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-        <IconButton aria-label="Visualizar contas conectadas" icon={<Eye className="h-4 w-4" />} />
+        <IconButton
+          aria-label={hideBalances ? "Mostrar valores" : "Ocultar valores"}
+          onClick={() => setHideBalances((previous) => !previous)}
+          icon={hideBalances ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        />
         <IconButton
           aria-label="Atualizar dados de contas"
           onClick={() => void loadAccountsData()}
@@ -216,7 +220,7 @@ export function AccountsPage(): React.JSX.Element {
         <ConnectAccountButton onClick={() => setConnectModalOpen(true)} />
       </div>
     ),
-    [loadAccountsData]
+    [hideBalances, loadAccountsData]
   );
 
   const handleCreateManualAccount = useCallback(
@@ -249,7 +253,7 @@ export function AccountsPage(): React.JSX.Element {
         }
 
         if (!response.ok || !data || Array.isArray(data) || !("id" in data) || !("name" in data)) {
-          throw new Error(extractApiError(data, "Nao foi possivel criar a conta."));
+          throw new Error(extractApiError(data, "Não foi possível criar a conta."));
         }
 
         const createdAccount = data as AccountDTO;
@@ -273,6 +277,46 @@ export function AccountsPage(): React.JSX.Element {
     [loadAccountsData, toast]
   );
 
+  const handleDeleteAccount = useCallback(async (): Promise<void> => {
+    if (!deleteTarget) return;
+
+    setDeletingAccount(true);
+    try {
+      const response = await fetch(`/api/accounts/${deleteTarget.id}`, { method: "DELETE" });
+      const { data, errorMessage } = await parseApiResponse<
+        { success?: boolean; deletedTransactions?: number } | { error?: unknown }
+      >(response);
+
+      if (errorMessage) {
+        throw new Error(errorMessage);
+      }
+      if (!response.ok) {
+        throw new Error(extractApiError(data, "Não foi possível excluir a conta."));
+      }
+
+      toast({
+        variant: "success",
+        title: "Conta excluída",
+        description:
+          data && "deletedTransactions" in data && typeof data.deletedTransactions === "number"
+            ? `${deleteTarget.name} foi removida com sucesso. ${data.deletedTransactions} transação(ões) apagada(s).`
+            : `${deleteTarget.name} foi removida com sucesso.`
+      });
+
+      setDeleteTarget(null);
+      await loadAccountsData();
+    } catch (deleteError) {
+      const message = deleteError instanceof Error ? deleteError.message : "Falha ao excluir conta.";
+      toast({
+        variant: "error",
+        title: "Não foi possível excluir",
+        description: message
+      });
+    } finally {
+      setDeletingAccount(false);
+    }
+  }, [deleteTarget, loadAccountsData, toast]);
+
   return (
     <PageShell title="Contas" subtitle="Acompanhe ativos, dívidas e conexões financeiras" actions={actions}>
       {loading ? (
@@ -283,7 +327,7 @@ export function AccountsPage(): React.JSX.Element {
           <Skeleton className="h-[150px] rounded-2xl" />
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-x-hidden">
           {errorMessage ? <FeedbackMessage variant="error">{errorMessage}</FeedbackMessage> : null}
 
           <AssetsDebtsCard
@@ -295,6 +339,7 @@ export function AccountsPage(): React.JSX.Element {
             selectedRange={selectedRange}
             onRangeChange={setSelectedRange}
             loading={loading}
+            hideValues={hideBalances}
           />
 
           <AccountGroupCard
@@ -302,7 +347,7 @@ export function AccountsPage(): React.JSX.Element {
             iconClassName="bg-rose-100 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300"
             title="Cartões de Crédito"
             subtitle={`${creditCards.length} contas`}
-            totalLabel={`-${formatBRL(totalCreditDebt)}`}
+            totalLabel={hideBalances ? "••••••" : `-${formatBRL(totalCreditDebt)}`}
           >
             {creditCards.length === 0 ? (
               <EmptyGroupRow
@@ -315,14 +360,14 @@ export function AccountsPage(): React.JSX.Element {
                 const parentRow = group.parent ? (
                   <div
                     key={`parent-${group.parent.id}`}
-                    className="border-b border-slate-200/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400"
+                    className="border-b border-border/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground dark:border-border dark:text-muted-foreground/80"
                   >
                     {group.parent.name}
                   </div>
                 ) : null;
 
                 const cardRows = group.cards.map((account) => {
-                  const debt = Math.abs(Math.min(account.currentBalance ?? 0, 0));
+                  const debt = Math.abs(account.currentBalance ?? 0);
                   const institutionLabel = account.institution?.trim() || "Instituição";
 
                   return (
@@ -335,6 +380,17 @@ export function AccountsPage(): React.JSX.Element {
                       amountTone={debt > 0 ? "negative" : "muted"}
                       metaRight={group.parent ? `Conta mãe: ${group.parent.name}` : "Sem conta mãe"}
                       iconClassName="bg-rose-100 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300"
+                      hiddenAmount={hideBalances}
+                      actionSlot={
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget({ id: account.id, name: account.name })}
+                          className="rounded-md p-1.5 text-muted-foreground/80 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
+                          aria-label={`Excluir conta ${account.name}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      }
                     />
                   );
                 });
@@ -349,7 +405,7 @@ export function AccountsPage(): React.JSX.Element {
             iconClassName="bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"
             title="Contas Bancárias"
             subtitle={`${bankAccounts.length} contas`}
-            totalLabel={formatBRL(totalBankAssets)}
+            totalLabel={hideBalances ? "••••••" : formatBRL(totalBankAssets)}
           >
             {bankAccounts.length === 0 ? (
               <EmptyGroupRow
@@ -373,6 +429,17 @@ export function AccountsPage(): React.JSX.Element {
                     amountSign={amountSign}
                     amountTone={amountTone}
                     iconClassName="bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    hiddenAmount={hideBalances}
+                    actionSlot={
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget({ id: account.id, name: account.name })}
+                        className="rounded-md p-1.5 text-muted-foreground/80 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
+                        aria-label={`Excluir conta ${account.name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    }
                   />
                 );
               })
@@ -381,7 +448,7 @@ export function AccountsPage(): React.JSX.Element {
 
           <AccountGroupCard
             icon={<Link2 className="h-4 w-4" aria-hidden="true" />}
-            iconClassName="bg-blue-100 text-blue-600 dark:bg-blue-950/40 dark:text-blue-300"
+            iconClassName="bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
             title="Conexões"
             subtitle={`${connections.length} instituições conectadas`}
           >
@@ -423,6 +490,20 @@ export function AccountsPage(): React.JSX.Element {
         }}
         onSubmitManual={handleCreateManualAccount}
       />
+
+      <DeleteAccountModal
+        open={Boolean(deleteTarget)}
+        accountName={deleteTarget?.name ?? ""}
+        busy={deletingAccount}
+        onClose={() => {
+          if (deletingAccount) return;
+          setDeleteTarget(null);
+        }}
+        onConfirm={handleDeleteAccount}
+      />
     </PageShell>
   );
 }
+
+
+

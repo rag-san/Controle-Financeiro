@@ -75,7 +75,7 @@ export function NetWorthSummaryCard({
 
   return (
     <Card
-      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-200 hover:shadow-md dark:border-slate-800 dark:bg-slate-950"
+      className="rounded-2xl border border-border bg-card p-5 shadow-sm transition-all duration-200 hover:shadow-md dark:border-border dark:bg-card"
       aria-busy={loading}
     >
       {loading ? (
@@ -91,10 +91,10 @@ export function NetWorthSummaryCard({
         </div>
       ) : (
         <div className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             PATRIMÔNIO LÍQUIDO
           </p>
-          <p className="tabular-nums whitespace-nowrap text-4xl font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+          <p className="tabular-nums break-words text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             {formatBRL(animatedNetWorth)}
           </p>
           <Badge
@@ -105,18 +105,18 @@ export function NetWorthSummaryCard({
             }`}
           />
 
-          <div className="border-t border-slate-200 dark:border-slate-800" />
+          <div className="border-t border-border" />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1">
-              <p className="text-xs text-slate-500 dark:text-slate-400">Total em Ativos</p>
-              <p className="tabular-nums text-2xl font-semibold text-slate-900 dark:text-slate-100">
+              <p className="text-xs text-muted-foreground">Total em Ativos</p>
+              <p className="tabular-nums break-words text-xl font-semibold text-foreground sm:text-2xl">
                 {formatBRL(animatedAssets)}
               </p>
             </div>
             <div className="space-y-1">
-              <p className="text-xs text-slate-500 dark:text-slate-400">Total em Dívidas</p>
-              <p className="tabular-nums text-2xl font-semibold text-slate-900 dark:text-slate-100">
+              <p className="text-xs text-muted-foreground">Total em Dívidas</p>
+              <p className="tabular-nums break-words text-xl font-semibold text-foreground sm:text-2xl">
                 {formatBRL(animatedDebts)}
               </p>
             </div>
@@ -126,3 +126,5 @@ export function NetWorthSummaryCard({
     </Card>
   );
 }
+
+

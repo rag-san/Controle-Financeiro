@@ -56,23 +56,25 @@ export function NetWorthComparisonTooltip({
   const dateLabel = typeof label === "string" ? formatDateLong(label) : String(label ?? "");
 
   return (
-    <div className="min-w-[14rem] rounded-xl border border-slate-200 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/95">
-      <p className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{dateLabel}</p>
+    <div className="min-w-[14rem] rounded-xl border border-border bg-card/95 p-3 text-xs shadow-xl backdrop-blur-sm dark:border-border dark:bg-secondary/95">
+      <p className="mb-2 text-sm font-semibold text-foreground">{dateLabel}</p>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400">Patrimônio</span>
-          <span className="tabular-nums font-semibold text-slate-900 dark:text-slate-100">
+          <span className="text-muted-foreground">Patrimônio</span>
+          <span className="tabular-nums font-semibold text-foreground">
             {formatBRL(currentValue)}
           </span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-slate-500 dark:text-slate-400">Período anterior</span>
-          <span className="tabular-nums font-medium text-slate-700 dark:text-slate-200">
+          <span className="text-muted-foreground">Período anterior</span>
+          <span className="tabular-nums font-medium text-foreground">
             {previousValue === null ? "—" : formatBRL(previousValue)}
           </span>
         </div>
-        <p className="pt-1 text-slate-500 dark:text-slate-400">{resolveDeltaText(currentValue, previousValue)}</p>
+        <p className="pt-1 text-muted-foreground">{resolveDeltaText(currentValue, previousValue)}</p>
       </div>
     </div>
   );
 }
+
+

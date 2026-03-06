@@ -16,7 +16,7 @@ export function PageShell({ title, subtitle, actions, children }: PageShellProps
   const [openSidebar, setOpenSidebar] = useState(false);
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       <Sidebar open={openSidebar} onClose={() => setOpenSidebar(false)} />
 
       <div className="md:pl-72">
@@ -27,7 +27,7 @@ export function PageShell({ title, subtitle, actions, children }: PageShellProps
           onOpenSidebar={() => setOpenSidebar(true)}
         />
 
-        <main>
+        <main className="overflow-x-hidden">
           <PageContainer>{children}</PageContainer>
         </main>
       </div>

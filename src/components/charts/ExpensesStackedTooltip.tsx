@@ -51,7 +51,7 @@ export function ExpensesStackedTooltip({
   const title = typeof label === "string" ? formatMonthLabel(label) : String(label ?? "");
 
   return (
-    <div className="min-w-[14rem] rounded-xl border border-border bg-card p-3 text-sm shadow-xl">
+    <div className="min-w-[14rem] rounded-xl border border-border bg-card/95 p-3 text-xs text-foreground shadow-xl backdrop-blur dark:bg-secondary/85">
       <p className="mb-2 font-semibold text-foreground">{title}</p>
       <ul className="space-y-1.5">
         {items.map((item) => (
@@ -68,7 +68,7 @@ export function ExpensesStackedTooltip({
           </li>
         ))}
       </ul>
-      <div className="mt-2 border-t border-border/80 pt-2">
+      <div className="mt-2 border-t border-border/90 pt-2">
         <div className="flex items-center justify-between">
           <span className="font-medium text-muted-foreground">Total</span>
           <span className="font-semibold text-foreground">{formatBRL(total)}</span>
@@ -77,3 +77,4 @@ export function ExpensesStackedTooltip({
     </div>
   );
 }
+

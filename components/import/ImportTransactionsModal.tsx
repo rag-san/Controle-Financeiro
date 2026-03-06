@@ -166,6 +166,7 @@ export function ImportTransactionsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-transactions-modal-title"
+        data-testid="import-transactions-modal"
         className="relative z-[131] flex h-[100dvh] w-full max-w-none flex-col overflow-hidden border border-border bg-card shadow-2xl sm:h-[min(90vh,900px)] sm:max-w-5xl sm:rounded-2xl"
       >
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-6">
@@ -186,7 +187,7 @@ export function ImportTransactionsModal({
           </Button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700">
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:[&::-webkit-scrollbar-thumb]:bg-border">
           <ImportTransactionsContent
             ref={contentRef}
             accounts={accounts}
@@ -232,3 +233,4 @@ export function ImportTransactionsModal({
     document.body
   );
 }
+

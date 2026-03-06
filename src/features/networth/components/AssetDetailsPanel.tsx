@@ -45,9 +45,9 @@ function SparklineTooltip({
   const labelValue = typeof label === "string" ? formatDateLong(label) : String(label ?? "");
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
-      <p className="font-medium text-slate-700 dark:text-slate-200">{labelValue}</p>
-      <p className="tabular-nums font-semibold text-slate-900 dark:text-slate-100">{formatBRL(value)}</p>
+    <div className="rounded-lg border border-border bg-card px-2.5 py-2 text-xs shadow-lg dark:border-border dark:bg-secondary/60">
+      <p className="font-medium text-foreground">{labelValue}</p>
+      <p className="tabular-nums font-semibold text-foreground">{formatBRL(value)}</p>
     </div>
   );
 }
@@ -149,7 +149,7 @@ export function AssetDetailsPanel({
       <button
         type="button"
         onClick={onClose}
-        className={`absolute inset-0 bg-slate-950/40 transition-opacity duration-300 ${
+        className={`absolute inset-0 bg-black/45 transition-opacity duration-300 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
         aria-label="Fechar painel de detalhes"
@@ -160,17 +160,17 @@ export function AssetDetailsPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="asset-details-title"
-        className={`absolute right-0 top-0 h-full w-full max-w-md transform border-l border-slate-200 bg-white p-5 shadow-2xl transition-transform duration-300 dark:border-slate-800 dark:bg-slate-950 ${
+        className={`absolute right-0 top-0 h-full w-full max-w-md transform border-l border-border bg-card p-5 shadow-2xl transition-transform duration-300 dark:border-border dark:bg-card ${
           isVisible ? "translate-x-0" : "translate-x-full"
         }`}
       >
         <div className="flex h-full flex-col">
           <div className="flex items-start justify-between gap-3">
             <div className="space-y-1">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {title}
               </p>
-              <h3 id="asset-details-title" className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+              <h3 id="asset-details-title" className="text-xl font-semibold text-foreground">
                 {item.name}
               </h3>
             </div>
@@ -178,7 +178,7 @@ export function AssetDetailsPanel({
               ref={closeButtonRef}
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:hover:bg-secondary dark:hover:text-foreground"
               aria-label={`Fechar detalhes de ${item.name}`}
             >
               <X className="h-4 w-4" />
@@ -186,20 +186,20 @@ export function AssetDetailsPanel({
           </div>
 
           <div className="mt-5 space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-              <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Valor total</p>
-              <p className="tabular-nums whitespace-nowrap text-3xl font-semibold text-slate-900 dark:text-slate-100">
+            <div className="rounded-xl border border-border bg-secondary/50 p-4 dark:border-border dark:bg-secondary/45">
+              <p className="text-xs uppercase tracking-wider text-muted-foreground">Valor total</p>
+              <p className="tabular-nums whitespace-nowrap text-3xl font-semibold text-foreground">
                 {formatBRL(item.value)}
               </p>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{sharePercent.toFixed(2)}% da carteira</p>
+              <p className="mt-2 text-sm text-muted-foreground">{sharePercent.toFixed(2)}% da carteira</p>
             </div>
 
-            <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <div className="rounded-xl border border-border p-4 dark:border-border">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Histórico
               </p>
               {history.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   Histórico detalhado ficará disponível com mais pontos de dados.
                 </p>
               ) : (
@@ -231,21 +231,21 @@ export function AssetDetailsPanel({
               )}
             </div>
 
-            <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <div className="rounded-xl border border-border p-4 dark:border-border">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Composição
               </p>
 
               {breakdownItems.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm text-muted-foreground">
                   Sem detalhamento adicional para este item.
                 </p>
               ) : (
                 <ul className="space-y-2">
                   {breakdownItems.map((detail) => (
                     <li key={detail.id} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate text-slate-700 dark:text-slate-200">{detail.label}</span>
-                      <span className="tabular-nums font-medium text-slate-900 dark:text-slate-100">
+                      <span className="truncate text-foreground">{detail.label}</span>
+                      <span className="tabular-nums font-medium text-foreground">
                         {formatBRL(detail.value)}
                       </span>
                     </li>
@@ -266,3 +266,5 @@ export function AssetDetailsPanel({
     </div>
   );
 }
+
+

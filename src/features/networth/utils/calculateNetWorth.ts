@@ -39,11 +39,3 @@ export function getLatestSnapshot(points: NetWorthPoint[], fallback: NetWorthSna
     net: toSafeNumber(latest.net)
   };
 }
-
-export function calculateDeltaPercent(current: number, previous: number): number | null {
-  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous === 0) {
-    return null;
-  }
-
-  return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(2));
-}

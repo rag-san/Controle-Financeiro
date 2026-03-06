@@ -1,12 +1,3 @@
-export function sum(values: number[]): number {
-  let total = 0;
-  for (const value of values) {
-    if (!Number.isFinite(value)) continue;
-    total += value;
-  }
-  return total;
-}
-
 export function median(values: number[]): number {
   const filtered = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
   if (filtered.length === 0) return 0;

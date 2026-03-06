@@ -66,7 +66,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const from = parseDate(parsed.data.from, startOfMonth(now));
     const to = parseDate(parsed.data.to, endOfMonth(now));
     if (from.getTime() > to.getTime()) {
-      return NextResponse.json({ error: "Periodo invalido: from maior que to." }, { status: 400 });
+      return NextResponse.json({ error: "Período inválido: from maior que to." }, { status: 400 });
     }
 
     const rows = await transactionsRepo.listAll({
@@ -154,3 +154,4 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
   });
 }
+

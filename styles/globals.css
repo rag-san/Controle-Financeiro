@@ -3,44 +3,54 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 20% 96%;
-  --foreground: 223 22% 15%;
+  --background: 214 48% 96%;
+  --foreground: 222 34% 14%;
   --card: 0 0% 100%;
-  --card-foreground: 223 22% 15%;
-  --primary: 212 88% 56%;
+  --card-foreground: 222 34% 14%;
+  --primary: 206 90% 52%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 210 16% 93%;
-  --secondary-foreground: 223 22% 20%;
-  --muted: 210 14% 92%;
-  --muted-foreground: 215 15% 41%;
-  --accent: 159 42% 46%;
+  --secondary: 213 34% 92%;
+  --secondary-foreground: 222 30% 20%;
+  --muted: 213 30% 90%;
+  --muted-foreground: 217 16% 40%;
+  --accent: 160 46% 42%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 53%;
   --destructive-foreground: 0 0% 100%;
-  --border: 214 18% 88%;
-  --input: 214 18% 88%;
-  --ring: 212 88% 56%;
+  --border: 214 31% 82%;
+  --input: 214 31% 82%;
+  --ring: 206 90% 52%;
   --radius: 0.9rem;
+  --shell-bg-start: 210 84% 97%;
+  --shell-bg-mid: 213 78% 94%;
+  --shell-bg-end: 220 66% 90%;
+  --shell-glow: 197 95% 64%;
+  --shell-glow-alt: 217 92% 68%;
 }
 
 .dark {
-  --background: 223 25% 10%;
+  --background: 223 52% 8%;
   --foreground: 210 24% 94%;
-  --card: 222 21% 14%;
+  --card: 223 43% 11%;
   --card-foreground: 210 24% 94%;
-  --primary: 207 92% 62%;
-  --primary-foreground: 224 24% 12%;
-  --secondary: 223 17% 22%;
+  --primary: 199 93% 60%;
+  --primary-foreground: 224 25% 10%;
+  --secondary: 223 34% 17%;
   --secondary-foreground: 210 24% 94%;
-  --muted: 223 18% 21%;
-  --muted-foreground: 214 12% 64%;
-  --accent: 160 52% 42%;
+  --muted: 223 30% 19%;
+  --muted-foreground: 214 13% 64%;
+  --accent: 160 49% 44%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 53%;
   --destructive-foreground: 0 0% 100%;
-  --border: 223 16% 23%;
-  --input: 223 16% 23%;
-  --ring: 207 92% 62%;
+  --border: 222 30% 26%;
+  --input: 222 30% 26%;
+  --ring: 199 93% 60%;
+  --shell-bg-start: 224 56% 8%;
+  --shell-bg-mid: 223 49% 9%;
+  --shell-bg-end: 224 43% 12%;
+  --shell-glow: 197 100% 43%;
+  --shell-glow-alt: 224 82% 60%;
 }
 
 * {
@@ -54,6 +64,29 @@ body {
 
 body {
   min-height: 100vh;
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(1000px 460px at 88% -8%, hsl(var(--shell-glow) / 0.16), transparent 56%),
+    radial-gradient(760px 360px at -12% 105%, hsl(var(--shell-glow-alt) / 0.14), transparent 60%),
+    linear-gradient(
+      180deg,
+      hsl(var(--shell-bg-start)) 0%,
+      hsl(var(--shell-bg-mid)) 48%,
+      hsl(var(--shell-bg-end)) 100%
+    );
+  background-attachment: fixed;
+}
+
+.dark body {
+  background-image:
+    radial-gradient(1040px 500px at 88% -8%, hsl(var(--shell-glow) / 0.2), transparent 58%),
+    radial-gradient(780px 380px at -10% 105%, hsl(var(--shell-glow-alt) / 0.16), transparent 62%),
+    linear-gradient(
+      180deg,
+      hsl(var(--shell-bg-start)) 0%,
+      hsl(var(--shell-bg-mid)) 52%,
+      hsl(var(--shell-bg-end)) 100%
+    );
 }
 
 a {
@@ -64,6 +97,52 @@ a {
 @layer components {
   .surface-card {
     @apply rounded-2xl border border-border bg-card;
+  }
+
+  .app-surface-panel {
+    border-color: hsl(var(--border) / 0.75);
+    background-color: hsl(var(--card) / 0.8);
+    backdrop-filter: blur(14px);
+  }
+
+  .dark .app-surface-panel {
+    border-color: hsl(var(--border) / 0.88);
+    background-color: hsl(var(--card) / 0.72);
+  }
+
+  .app-surface-card {
+    border: 1px solid hsl(var(--border) / 0.74);
+    background:
+      linear-gradient(
+        145deg,
+        hsl(var(--card)) 0%,
+        hsl(var(--secondary) / 0.56) 100%
+      );
+    box-shadow:
+      0 14px 34px -24px rgba(15, 23, 42, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.58);
+  }
+
+  .dark .app-surface-card {
+    border-color: hsl(var(--border) / 0.88);
+    background:
+      linear-gradient(
+        145deg,
+        hsl(var(--card)) 0%,
+        hsl(var(--secondary) / 0.4) 100%
+      );
+    box-shadow:
+      0 20px 38px -28px rgba(2, 6, 23, 0.85),
+      inset 0 1px 0 rgba(148, 163, 184, 0.08);
+  }
+
+  .app-surface-inset {
+    border: 1px solid hsl(var(--border) / 0.72);
+    background-color: hsl(var(--background) / 0.5);
+  }
+
+  .dark .app-surface-inset {
+    background-color: hsl(var(--background) / 0.36);
   }
 
   .feedback-message {

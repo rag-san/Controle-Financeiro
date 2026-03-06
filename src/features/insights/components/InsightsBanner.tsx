@@ -34,12 +34,12 @@ export function InsightsBanner({
       return "border-rose-200 bg-rose-50/80 text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100";
     }
 
-    return "border-blue-200 bg-blue-50/80 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100";
+    return "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary-foreground";
   };
 
   return (
     <section
-      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-950"
+      className="rounded-2xl border border-border bg-card px-4 py-3 shadow-sm dark:border-border dark:bg-card"
       aria-label="Insights rápidos"
     >
       <ul className="flex flex-col gap-2">
@@ -57,7 +57,7 @@ export function InsightsBanner({
             {insight.cta ? (
               <Link
                 href={insight.cta.href}
-                className="text-xs font-semibold underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="text-xs font-semibold underline-offset-2 transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {insight.cta.label}
               </Link>
@@ -68,3 +68,5 @@ export function InsightsBanner({
     </section>
   );
 }
+
+

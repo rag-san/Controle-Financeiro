@@ -129,13 +129,13 @@ export function NotificationsBell({
         className={cn(
           "relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition",
           "hover:bg-slate-100 hover:text-slate-700",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
         )}
       >
         <Bell className="h-4 w-4" />
         {activeCount > 0 ? (
-          <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold leading-none text-white">
+          <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
             {activeCount > 9 ? "9+" : activeCount}
           </span>
         ) : null}
@@ -156,4 +156,6 @@ export function NotificationsBell({
     </div>
   );
 }
+
+
 

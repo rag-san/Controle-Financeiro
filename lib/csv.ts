@@ -554,7 +554,7 @@ export function analyzeCsvRows(rows: Record<string, string>[], mapping: CsvMappi
         line,
         status: "error",
         reason: "invalid_amount",
-        message: "Linha com erro: valor invalido.",
+        message: "Linha com erro: valor inválido.",
         raw
       });
       errorRows += 1;
@@ -678,3 +678,4 @@ export function analyzeCsvRows(rows: Record<string, string>[], mapping: CsvMappi
     }
   };
 }
+
