@@ -71,7 +71,7 @@ export function IncomeChart({
   }
 
   return (
-    <div className="h-[230px] w-full">
+    <div className="h-[210px] w-full sm:h-[230px]">
       <p className="sr-only">{a11ySummary}</p>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 8, right: 5, left: 0, bottom: 0 }}>

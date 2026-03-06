@@ -387,6 +387,8 @@ async function runMigrations(): Promise<void> {
       fingerprint TEXT NOT NULL,
       transfer_group_id TEXT,
       reconciliation_status TEXT NOT NULL DEFAULT 'unmatched',
+      excluded BOOLEAN NOT NULL DEFAULT FALSE,
+      is_balance_adjustment BOOLEAN NOT NULL DEFAULT FALSE,
       transfer_fee_cents INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -454,6 +456,8 @@ async function runMigrations(): Promise<void> {
   await ensureColumn("transactions", "excluded", "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("transactions", "is_internal_transfer", "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("import_events", "internal_transfer_auto_matched", "INTEGER");
+  await ensureColumn("ledger_entries", "excluded", "BOOLEAN NOT NULL DEFAULT FALSE");
+  await ensureColumn("ledger_entries", "is_balance_adjustment", "BOOLEAN NOT NULL DEFAULT FALSE");
   await ensureColumn("ledger_entries", "transfer_fee_cents", "INTEGER NOT NULL DEFAULT 0");
 
   await ensurePostgresTransactionTypeEnum();
@@ -473,9 +477,75 @@ async function runMigrations(): Promise<void> {
     WHERE excluded IS NULL;
   `);
   await db.exec(`
+    UPDATE ledger_entries
+    SET excluded = FALSE
+    WHERE excluded IS NULL;
+  `);
+  await db.exec(`
+    UPDATE ledger_entries
+    SET is_balance_adjustment = FALSE
+    WHERE is_balance_adjustment IS NULL;
+  `);
+  await db.exec(`
     UPDATE transactions
     SET is_internal_transfer = CASE WHEN type = 'transfer' THEN TRUE ELSE FALSE END
     WHERE is_internal_transfer IS DISTINCT FROM CASE WHEN type = 'transfer' THEN TRUE ELSE FALSE END;
+  `);
+  await db.exec(`
+    UPDATE ledger_entries
+    SET
+      excluded = COALESCE(
+        (
+          SELECT t.excluded
+          FROM transactions t
+          WHERE t.user_id = ledger_entries.user_id
+            AND ledger_entries.external_ref = ('LEGACY_TX:' || t.id)
+          LIMIT 1
+        ),
+        excluded
+      ),
+      is_balance_adjustment = COALESCE(
+        (
+          SELECT CASE
+            WHEN t.raw_json IS NOT NULL
+             AND t.raw_json LIKE '%"openingBalanceAdjustment":true%'
+            THEN TRUE
+            ELSE FALSE
+          END
+          FROM transactions t
+          WHERE t.user_id = ledger_entries.user_id
+            AND ledger_entries.external_ref = ('LEGACY_TX:' || t.id)
+          LIMIT 1
+        ),
+        is_balance_adjustment
+      )
+    WHERE external_ref LIKE 'LEGACY_TX:%';
+  `);
+  await db.exec(`
+    UPDATE ledger_entries
+    SET excluded = TRUE
+    WHERE excluded = FALSE
+      AND raw_transaction_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM transaction_raw tr
+        WHERE tr.id = ledger_entries.raw_transaction_id
+          AND tr.meta_json IS NOT NULL
+          AND tr.meta_json LIKE '%"excluded":true%'
+      );
+  `);
+  await db.exec(`
+    UPDATE ledger_entries
+    SET is_balance_adjustment = TRUE
+    WHERE is_balance_adjustment = FALSE
+      AND raw_transaction_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM transaction_raw tr
+        WHERE tr.id = ledger_entries.raw_transaction_id
+          AND tr.meta_json IS NOT NULL
+          AND tr.meta_json LIKE '%"openingBalanceAdjustment":true%'
+      );
   `);
   await db.exec(`
     UPDATE transactions AS t
@@ -522,6 +592,8 @@ async function runMigrations(): Promise<void> {
       WHERE external_id IS NOT NULL AND BTRIM(external_id) <> '';
     CREATE INDEX IF NOT EXISTS idx_accounts_user_institution_id
       ON accounts(user_id, institution_id);
+    CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_excluded
+      ON ledger_entries(user_id, excluded, is_balance_adjustment);
   `);
 
   if (db.dialect === "postgres") {
@@ -553,7 +625,14 @@ async function runMigrations(): Promise<void> {
 }
 
 export async function migrate(): Promise<void> {
-  await runMigrations();
+  const runWithLock = db.transaction(async () => {
+    await db
+      .prepare("SELECT pg_advisory_xact_lock(?, ?)")
+      .get(4_211, 17);
+    await runMigrations();
+  });
+
+  await runWithLock();
 }
 
 

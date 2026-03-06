@@ -60,7 +60,7 @@ export function SpendingPaceCard({
   const deltaClass = resolveDeltaBadgeClass(variationPercent);
 
   return (
-    <Card className="h-full">
+    <Card className="h-full" data-testid="dashboard-spending-pace-card">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-muted-foreground">
@@ -81,8 +81,8 @@ export function SpendingPaceCard({
 
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <p className="break-words text-4xl font-black tracking-tight text-foreground">
-            {headlineValue} <span className={cn("text-2xl", headlineLabelClass)}>{headlineLabel}</span>
+          <p className="break-words text-3xl font-black tracking-tight text-foreground sm:text-4xl">
+            {headlineValue} <span className={cn("text-xl sm:text-2xl", headlineLabelClass)}>{headlineLabel}</span>
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-bold", deltaClass)}>

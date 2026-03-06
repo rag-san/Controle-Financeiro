@@ -89,7 +89,7 @@ export function IncomeVsExpensesChartCard({ data }: IncomeVsExpensesChartCardPro
           Sem histórico suficiente para este período.
         </p>
       ) : (
-        <div className="h-[280px] w-full">
+        <div className="h-[240px] w-full sm:h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartData} margin={{ top: 10, right: 12, left: 8, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="rgba(148,163,184,0.18)" />

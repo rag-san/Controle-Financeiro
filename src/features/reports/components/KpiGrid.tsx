@@ -1,14 +1,15 @@
 import { KpiCard } from "@/src/features/reports/components/KpiCard";
 import { buildReportKpis } from "@/src/features/reports/utils/kpis";
-import type { ReportsTotals } from "@/src/features/reports/types";
+import type { ReportsCashSummary, ReportsTotals } from "@/src/features/reports/types";
 
 type KpiGridProps = {
   current: ReportsTotals;
   previous: ReportsTotals;
+  cash: ReportsCashSummary;
 };
 
-export function KpiGrid({ current, previous }: KpiGridProps): React.JSX.Element {
-  const kpis = buildReportKpis({ current, previous });
+export function KpiGrid({ current, previous, cash }: KpiGridProps): React.JSX.Element {
+  const kpis = buildReportKpis({ current, previous, cash });
 
   return (
     <div className={`grid gap-4 ${kpis.length > 3 ? "lg:grid-cols-4 md:grid-cols-2" : "md:grid-cols-3"}`}>
@@ -16,7 +17,7 @@ export function KpiGrid({ current, previous }: KpiGridProps): React.JSX.Element 
         const tone =
           kpi.id === "income"
             ? "income"
-            : kpi.id === "expense"
+            : kpi.id === "expense" || kpi.id === "cash-outflow"
               ? "expense"
               : "neutral";
 
@@ -27,7 +28,7 @@ export function KpiGrid({ current, previous }: KpiGridProps): React.JSX.Element 
             value={kpi.value}
             trend={kpi.trend}
             helpText={kpi.helpText}
-            valueType={kpi.id === "savings-rate" ? "percent" : "currency"}
+            valueType="currency"
             tone={tone}
           />
         );
@@ -35,4 +36,3 @@ export function KpiGrid({ current, previous }: KpiGridProps): React.JSX.Element 
     </div>
   );
 }
-

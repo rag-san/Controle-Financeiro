@@ -116,14 +116,14 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }): React.JSX.
 export function Sidebar({ open, onClose }: SidebarProps): React.JSX.Element {
   return (
     <>
-      <aside className="app-surface-panel fixed left-0 top-0 z-30 hidden h-screen w-72 border-r md:block">
+      <aside className="fixed left-0 top-0 z-30 hidden h-screen w-72 border-r border-border bg-card md:block">
         <SidebarContent />
       </aside>
 
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden">
           <button aria-label="Fechar menu" className="absolute inset-0 bg-black/40" onClick={onClose} />
-          <aside className="app-surface-panel absolute left-0 top-0 h-screen w-[85vw] max-w-72 border-r shadow-xl">
+          <aside className="absolute left-0 top-0 h-screen w-[85vw] max-w-72 border-r border-border bg-card shadow-xl">
             <div className="flex h-16 items-center justify-between border-b border-border px-4">
               <span className="font-semibold text-foreground">Menu</span>
               <IconButton aria-label="Fechar menu lateral" onClick={onClose} icon={<X className="h-4 w-4" />} />

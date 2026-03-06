@@ -154,16 +154,18 @@ export function TransactionsKpiCards({
           glowClassName:
             cashBalance >= 0 ? "bg-primary/30 dark:bg-primary/25" : "bg-orange-400/35 dark:bg-orange-500/25",
           iconClassName:
-            cashBalance >= 0 ? "text-primary dark:text-primary-foreground" : "text-orange-600 dark:text-orange-300",
+            cashBalance >= 0 ? "text-primary dark:text-primary" : "text-orange-600 dark:text-orange-300",
           iconContainerClassName:
             cashBalance >= 0
-              ? "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary-foreground"
+              ? "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary"
               : "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-300",
           valueClassName:
-            cashBalance >= 0 ? "text-primary dark:text-primary-foreground" : "text-orange-700 dark:text-orange-300",
+            cashBalance >= 0
+              ? "text-foreground dark:text-foreground"
+              : "text-orange-700 dark:text-orange-300",
           badgeClassName:
             cashBalance >= 0
-              ? "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
+              ? "border border-primary/35 bg-primary/15 text-foreground dark:border-primary/45 dark:bg-primary/25 dark:text-foreground"
               : "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200"
         }}
       />

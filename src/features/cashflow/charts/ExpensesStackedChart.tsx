@@ -68,7 +68,7 @@ export function ExpensesStackedChart({
     <div className="space-y-3">
       <p className="sr-only">{a11ySummary}</p>
       <CompactLegend categories={data.legendCategories} />
-      <div className="h-[250px] w-full overflow-x-auto">
+      <div className="h-[220px] w-full overflow-x-auto sm:h-[250px]">
         <div className="h-full min-w-[460px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -102,7 +102,7 @@ export function ExpensesStackedChart({
                   stackId="expenses"
                   fill={getCategoryColor(category)}
                   name={category}
-                  radius={[8, 8, 0, 0]}
+                  radius={[0, 0, 0, 0]}
                   maxBarSize={40}
                 />
               ))}

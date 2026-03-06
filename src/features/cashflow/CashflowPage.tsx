@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { PageShell } from "@/components/layout/PageShell";
 import { Skeleton } from "@/src/components/ui/Skeleton";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
@@ -12,15 +12,23 @@ import { useCashflowData } from "@/src/features/cashflow/hooks/useCashflowData";
 import type { CashflowPeriodKey } from "@/src/features/cashflow/types";
 import { CASHFLOW_PERIOD_OPTIONS } from "@/src/features/cashflow/utils/cashflow";
 
-function CashflowLoading(): React.JSX.Element {
+export function CashflowLoading(): React.JSX.Element {
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-testid="cashflow-loading">
       <Skeleton className="h-[430px] rounded-2xl" />
       <div className="grid gap-4 xl:grid-cols-5">
         <Skeleton className="h-[410px] rounded-2xl xl:col-span-3" />
         <Skeleton className="h-[410px] rounded-2xl xl:col-span-2" />
       </div>
     </div>
+  );
+}
+
+export function CashflowErrorState({ message }: { message?: string }): React.JSX.Element {
+  return (
+    <FeedbackMessage variant="error" data-testid="cashflow-error">
+      {message || "Não foi possível carregar os dados de fluxo de caixa."}
+    </FeedbackMessage>
   );
 }
 
@@ -53,15 +61,14 @@ export function CashflowPage(): React.JSX.Element {
       {loading ? (
         <CashflowLoading />
       ) : !data ? (
-        <FeedbackMessage variant="error">
-          {error || "Não foi possível carregar os dados de fluxo de caixa."}
-        </FeedbackMessage>
+        <CashflowErrorState message={error} />
       ) : (
         <div className="space-y-5">
           <NetResultCard
             dateRangeLabel={data.currentRangeLabel}
-            totalNet={data.netResult.current}
-            previousTotalNet={data.netResult.previous}
+            cashBalance={data.cashBalance}
+            periodCashFlow={data.netResult.current}
+            previousPeriodCashFlow={data.netResult.previous}
             chartData={data.netChart}
             isLoading={loading}
           />
@@ -73,6 +80,7 @@ export function CashflowPage(): React.JSX.Element {
                 dateRangeLabel={data.currentRangeLabel}
                 totalExpense={data.expense.current}
                 previousTotalExpense={data.expense.previous}
+                classifiedExpense={data.classifiedExpense?.current}
                 chartData={data.expensesChart}
                 isLoading={loading}
               />
@@ -82,6 +90,7 @@ export function CashflowPage(): React.JSX.Element {
                 dateRangeLabel={data.currentRangeLabel}
                 totalIncome={data.income.current}
                 previousTotalIncome={data.income.previous}
+                classifiedIncome={data.classifiedIncome?.current}
                 chartData={data.incomeChart}
                 isLoading={loading}
               />

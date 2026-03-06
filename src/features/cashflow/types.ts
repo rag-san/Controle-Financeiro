@@ -51,9 +51,12 @@ export type ExpensesStackedChartData = {
 export type CashflowViewData = {
   currentRangeLabel: string;
   previousRangeLabel: string;
+  cashBalance: number;
   netResult: ComparisonMetric;
   income: ComparisonMetric;
   expense: ComparisonMetric;
+  classifiedIncome?: ComparisonMetric;
+  classifiedExpense?: ComparisonMetric;
   netChart: NetResultRow[];
   incomeChart: IncomeRow[];
   expensesChart: ExpensesStackedChartData;

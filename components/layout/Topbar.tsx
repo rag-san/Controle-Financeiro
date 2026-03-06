@@ -26,7 +26,7 @@ export function Topbar({ title, subtitle, actions, onOpenSidebar }: TopbarProps)
   );
 
   return (
-    <header className="app-surface-panel sticky top-0 z-20 border-b">
+    <header className="sticky top-0 z-20 border-b border-border/70 bg-background/95 backdrop-blur">
       <div className="px-4 py-3 md:px-6 md:py-3 xl:px-8">
         <div className="flex items-start gap-3">
           <IconButton

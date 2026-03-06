@@ -43,7 +43,7 @@ export function PartialResultCard({
   const monthResultLabel = resultadoAtual >= 0 ? "economia no mes" : "deficit no mes";
 
   return (
-    <Card className="h-full">
+    <Card className="h-full" data-testid="dashboard-partial-result-card">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-muted-foreground">
@@ -62,7 +62,7 @@ export function PartialResultCard({
 
       <CardContent className="space-y-5">
         <div className="space-y-2">
-          <p className="text-4xl font-black tracking-tight text-foreground">
+          <p className="break-words text-3xl font-black tracking-tight text-foreground sm:text-4xl">
             {formatBRL(resultadoAtual)}
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

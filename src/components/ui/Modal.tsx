@@ -37,6 +37,18 @@ export function Modal({
   React.useEffect(() => {
     if (!open) return;
 
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+
     previousFocusRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
@@ -95,7 +107,7 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/45 p-4" role="presentation">
+    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/45 sm:items-center sm:p-4" role="presentation">
       <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar modal" />
       <div
         ref={dialogRef}
@@ -103,11 +115,12 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="modal-title"
         className={cn(
-          "app-surface-card relative z-[121] w-full max-w-lg rounded-2xl p-5 shadow-xl",
+          "app-surface-card relative z-[121] flex h-[100dvh] w-full max-w-none flex-col overflow-hidden border-0 rounded-none shadow-xl",
+          "sm:h-auto sm:max-h-[min(90dvh,42rem)] sm:max-w-lg sm:rounded-2xl sm:border",
           className
         )}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border/70 bg-card/95 px-4 py-4 backdrop-blur sm:px-5">
           <div className="space-y-1">
             <h2 id="modal-title" className="text-lg font-semibold text-foreground">
               {title}
@@ -125,9 +138,13 @@ export function Modal({
           </button>
         </div>
 
-        <div>{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
 
-        {footer ? <div className="mt-5 flex items-center justify-end gap-2">{footer}</div> : null}
+        {footer ? (
+          <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-border/70 bg-card/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-5">
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );

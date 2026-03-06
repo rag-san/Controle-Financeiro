@@ -837,7 +837,11 @@ export const ImportTransactionsContent = forwardRef<
       <CardContent className="space-y-4" aria-busy={loading || creatingAccount}>
         {steps === "upload" ? <FileDropzone onSelect={handleUpload} /> : null}
         {steps === "upload" && file ? (
-          <FeedbackMessage variant={isPdfUpload ? "warning" : "info"} className="space-y-3 p-4">
+          <FeedbackMessage
+            variant={isPdfUpload ? "warning" : "info"}
+            className="space-y-3 p-4"
+            data-testid="import-file-selected-feedback"
+          >
             <div className="space-y-1">
               <p className="font-medium">Arquivo selecionado: {file.name}</p>
               <p className="text-sm text-muted-foreground">
@@ -1252,7 +1256,7 @@ export const ImportTransactionsContent = forwardRef<
         ) : null}
 
         {result ? (
-          <FeedbackMessage variant="success" className="space-y-1 p-4">
+          <FeedbackMessage variant="success" className="space-y-1 p-4" data-testid="import-result-feedback">
             <p>
               Importação concluída: {result.totalImported} novas transações e {result.totalSkipped} ignoradas.
             </p>
@@ -1321,7 +1325,9 @@ export const ImportTransactionsContent = forwardRef<
           </FeedbackMessage>
         ) : null}
 
-        {error ? <FeedbackMessage variant="error">{error}</FeedbackMessage> : null}
+        <div data-testid="import-error-feedback">
+          {error ? <FeedbackMessage variant="error">{error}</FeedbackMessage> : null}
+        </div>
       </CardContent>
     </Card>
   );

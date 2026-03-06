@@ -57,9 +57,25 @@ type LedgerEntryRow = {
   fingerprint: string;
   transfer_group_id: string | null;
   reconciliation_status: ReconciliationStatus;
+  excluded: number | boolean;
+  is_balance_adjustment: number | boolean;
   transfer_fee_cents: number;
   created_at: string;
   updated_at: string;
+};
+
+type LedgerAnalyticsRow = LedgerEntryRow & {
+  account_name: string | null;
+  account_type: "checking" | "credit" | "cash" | "investment" | null;
+  account_institution: string | null;
+  account_currency: string | null;
+  account_parent_account_id: string | null;
+  credit_card_name: string | null;
+  credit_card_currency: string | null;
+  category_name: string | null;
+  category_color: string | null;
+  category_icon: string | null;
+  category_parent_id: string | null;
 };
 
 type TransferSuggestionRow = {
@@ -133,10 +149,46 @@ function mapLedgerEntry(row: LedgerEntryRow) {
     fingerprint: row.fingerprint,
     transferGroupId: row.transfer_group_id,
     reconciliationStatus: row.reconciliation_status,
+    excluded: row.excluded === true || row.excluded === 1,
+    isBalanceAdjustment: row.is_balance_adjustment === true || row.is_balance_adjustment === 1,
     transferFee: Number((row.transfer_fee_cents / 100).toFixed(2)),
     transferFeeCents: row.transfer_fee_cents,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at)
+  };
+}
+
+function mapLedgerAnalyticsEntry(row: LedgerAnalyticsRow) {
+  const base = mapLedgerEntry(row);
+
+  return {
+    ...base,
+    account: row.account_name
+      ? {
+          id: base.accountId ?? "",
+          name: row.account_name,
+          type: row.account_type ?? "checking",
+          institution: row.account_institution ?? null,
+          currency: row.account_currency ?? "BRL",
+          parentAccountId: row.account_parent_account_id ?? null
+        }
+      : null,
+    creditCardAccount: row.credit_card_name
+      ? {
+          id: base.creditCardAccountId ?? "",
+          name: row.credit_card_name,
+          currency: row.credit_card_currency ?? "BRL"
+        }
+      : null,
+    category: row.category_name
+      ? {
+          id: base.categoryId ?? "",
+          name: row.category_name,
+          color: row.category_color ?? "#94a3b8",
+          icon: row.category_icon ?? null,
+          parentId: row.category_parent_id ?? null
+        }
+      : null
   };
 }
 
@@ -186,6 +238,43 @@ function buildDateFilters(input?: { from?: Date; to?: Date }): { sql: string; pa
     sql: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "",
     params
   };
+}
+
+function buildLedgerVisibilityClause(
+  alias: string,
+  options?: { includeBalanceAdjustments?: boolean }
+): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+
+  if (options?.includeBalanceAdjustments) {
+    return `(${scoped}excluded = FALSE OR ${scoped}is_balance_adjustment = TRUE)`;
+  }
+
+  return `${scoped}excluded = FALSE`;
+}
+
+function ledgerNetExpenseCase(alias = ""): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+  return `CASE
+    WHEN ${scoped}type IN ('expense', 'cc_purchase', 'fee') THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'refund' THEN -${scoped}amount_cents
+    ELSE 0
+  END`;
+}
+
+function ledgerCashDeltaCase(alias = ""): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+  return `CASE
+    WHEN ${scoped}type = 'income' THEN ${scoped}amount_cents
+    WHEN ${scoped}type IN ('expense', 'fee') THEN -${scoped}amount_cents
+    WHEN ${scoped}type = 'transfer' AND ${scoped}direction = 'IN' THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'transfer' AND ${scoped}direction = 'OUT' THEN -${scoped}amount_cents
+    WHEN ${scoped}type = 'cc_payment' AND ${scoped}direction = 'OUT' THEN -${scoped}amount_cents
+    WHEN ${scoped}type = 'cc_payment' AND ${scoped}direction = 'IN' THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'refund' AND ${scoped}direction = 'IN' THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'refund' AND ${scoped}direction = 'OUT' THEN -${scoped}amount_cents
+    ELSE 0
+  END`;
 }
 
 export const ledgerRepo = {
@@ -261,6 +350,68 @@ export const ledgerRepo = {
       .all(userId)) as CreditCardAccountRow[];
 
     return rows.map(mapCreditCardAccount);
+  },
+
+  async latestVisiblePostedAt(input: {
+    userId: string;
+    accountId?: string;
+    categoryId?: string;
+  }): Promise<Date | null> {
+    const clauses = ["user_id = ?", buildLedgerVisibilityClause("", { includeBalanceAdjustments: false })];
+    const params: unknown[] = [input.userId];
+
+    if (input.accountId) {
+      clauses.push("(account_id = ? OR credit_card_account_id = ?)");
+      params.push(input.accountId, input.accountId);
+    }
+
+    if (input.categoryId) {
+      clauses.push("category_id = ?");
+      params.push(input.categoryId);
+    }
+
+    const row = (await db
+      .prepare(
+        `SELECT posted_at
+         FROM ledger_entries
+         WHERE ${clauses.join(" AND ")}
+         ORDER BY posted_at DESC
+         LIMIT 1`
+      )
+      .get(...params)) as { posted_at: string | null } | undefined;
+
+    return row?.posted_at ? new Date(row.posted_at) : null;
+  },
+
+  async oldestVisiblePostedAt(input: {
+    userId: string;
+    accountId?: string;
+    categoryId?: string;
+  }): Promise<Date | null> {
+    const clauses = ["user_id = ?", buildLedgerVisibilityClause("", { includeBalanceAdjustments: false })];
+    const params: unknown[] = [input.userId];
+
+    if (input.accountId) {
+      clauses.push("(account_id = ? OR credit_card_account_id = ?)");
+      params.push(input.accountId, input.accountId);
+    }
+
+    if (input.categoryId) {
+      clauses.push("category_id = ?");
+      params.push(input.categoryId);
+    }
+
+    const row = (await db
+      .prepare(
+        `SELECT posted_at
+         FROM ledger_entries
+         WHERE ${clauses.join(" AND ")}
+         ORDER BY posted_at ASC
+         LIMIT 1`
+      )
+      .get(...params)) as { posted_at: string | null } | undefined;
+
+    return row?.posted_at ? new Date(row.posted_at) : null;
   },
 
   async createCreditCardAccount(input: {
@@ -385,6 +536,8 @@ export const ledgerRepo = {
     fingerprint: string;
     transferGroupId?: string | null;
     reconciliationStatus?: ReconciliationStatus;
+    excluded?: boolean;
+    isBalanceAdjustment?: boolean;
     transferFee?: number;
   }): Promise<{ entry: ReturnType<typeof mapLedgerEntry>; created: boolean }> {
     const now = nowIso();
@@ -395,12 +548,14 @@ export const ledgerRepo = {
       `INSERT INTO ledger_entries (
          id, user_id, posted_at, amount_cents, direction, type, description_normalized, merchant_normalized,
          account_id, credit_card_account_id, category_id, import_source_id, raw_transaction_id, external_ref,
-         fingerprint, transfer_group_id, reconciliation_status, transfer_fee_cents, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         fingerprint, transfer_group_id, reconciliation_status, excluded, is_balance_adjustment, transfer_fee_cents,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (user_id, fingerprint) DO NOTHING
        RETURNING id, user_id, posted_at, amount_cents, direction, type, description_normalized, merchant_normalized,
                  account_id, credit_card_account_id, category_id, import_source_id, raw_transaction_id, external_ref,
-                 fingerprint, transfer_group_id, reconciliation_status, transfer_fee_cents, created_at, updated_at`,
+                 fingerprint, transfer_group_id, reconciliation_status, excluded, is_balance_adjustment,
+                 transfer_fee_cents, created_at, updated_at`,
       [
         createId(),
         input.userId,
@@ -419,6 +574,8 @@ export const ledgerRepo = {
         input.fingerprint,
         input.transferGroupId ?? null,
         input.reconciliationStatus ?? "unmatched",
+        input.excluded ?? false,
+        input.isBalanceAdjustment ?? false,
         transferFeeCents,
         now,
         now
@@ -436,7 +593,8 @@ export const ledgerRepo = {
       .prepare(
         `SELECT id, user_id, posted_at, amount_cents, direction, type, description_normalized, merchant_normalized,
                 account_id, credit_card_account_id, category_id, import_source_id, raw_transaction_id, external_ref,
-                fingerprint, transfer_group_id, reconciliation_status, transfer_fee_cents, created_at, updated_at
+                fingerprint, transfer_group_id, reconciliation_status, excluded, is_balance_adjustment,
+                transfer_fee_cents, created_at, updated_at
          FROM ledger_entries
          WHERE user_id = ? AND fingerprint = ?
          LIMIT 1`
@@ -458,7 +616,8 @@ export const ledgerRepo = {
       .prepare(
         `SELECT id, user_id, posted_at, amount_cents, direction, type, description_normalized, merchant_normalized,
                 account_id, credit_card_account_id, category_id, import_source_id, raw_transaction_id, external_ref,
-                fingerprint, transfer_group_id, reconciliation_status, transfer_fee_cents, created_at, updated_at
+                fingerprint, transfer_group_id, reconciliation_status, excluded, is_balance_adjustment,
+                transfer_fee_cents, created_at, updated_at
          FROM ledger_entries
          WHERE user_id = ? AND id = ?
          LIMIT 1`
@@ -476,7 +635,8 @@ export const ledgerRepo = {
       .prepare(
         `SELECT id, user_id, posted_at, amount_cents, direction, type, description_normalized, merchant_normalized,
                 account_id, credit_card_account_id, category_id, import_source_id, raw_transaction_id, external_ref,
-                fingerprint, transfer_group_id, reconciliation_status, transfer_fee_cents, created_at, updated_at
+                fingerprint, transfer_group_id, reconciliation_status, excluded, is_balance_adjustment,
+                transfer_fee_cents, created_at, updated_at
          FROM ledger_entries
          WHERE user_id = ? AND external_ref = ?
          ORDER BY created_at DESC
@@ -509,6 +669,8 @@ export const ledgerRepo = {
             le.fingerprint,
             le.transfer_group_id,
             le.reconciliation_status,
+            le.excluded,
+            le.is_balance_adjustment,
             le.transfer_fee_cents,
             le.created_at,
             le.updated_at
@@ -517,6 +679,7 @@ export const ledgerRepo = {
            AND le.type IN ('income', 'expense')
            AND le.account_id IS NOT NULL
            AND le.transfer_group_id IS NULL
+           AND ${buildLedgerVisibilityClause("le")}
            AND NOT EXISTS (
              SELECT 1
              FROM reconciliation_denials rd
@@ -690,10 +853,12 @@ export const ledgerRepo = {
       .prepare(
         `SELECT id, user_id, posted_at, amount_cents, direction, type, description_normalized, merchant_normalized,
                 account_id, credit_card_account_id, category_id, import_source_id, raw_transaction_id, external_ref,
-                fingerprint, transfer_group_id, reconciliation_status, transfer_fee_cents, created_at, updated_at
+                fingerprint, transfer_group_id, reconciliation_status, excluded, is_balance_adjustment,
+                transfer_fee_cents, created_at, updated_at
          FROM ledger_entries
          WHERE user_id = ?
            AND type = 'cc_payment'
+           AND ${buildLedgerVisibilityClause("")}
            AND (credit_card_account_id IS NULL OR reconciliation_status <> 'matched')
          ORDER BY posted_at DESC, created_at DESC`
       )
@@ -730,6 +895,7 @@ export const ledgerRepo = {
          FROM ledger_entries
          WHERE user_id = ?
            AND credit_card_account_id = ?
+           AND ${buildLedgerVisibilityClause("")}
            AND posted_at >= ?
            AND posted_at <= ?`
       )
@@ -762,11 +928,17 @@ export const ledgerRepo = {
     }>;
   }> {
     const range = buildDateFilters({ from: input.from, to: input.to });
+    const metricsVisibilityClause = buildLedgerVisibilityClause("");
+    const balanceVisibilityClause = buildLedgerVisibilityClause("le", {
+      includeBalanceAdjustments: true
+    });
+    const cardDebtVisibilityClause = buildLedgerVisibilityClause("le");
     const countRow = (await db
       .prepare(
         `SELECT COUNT(*) AS count
          FROM ledger_entries
          WHERE user_id = ?
+           AND ${metricsVisibilityClause}
            ${range.sql}`
       )
       .get(input.userId, ...range.params)) as { count: number | string | null } | undefined;
@@ -786,9 +958,10 @@ export const ledgerRepo = {
       .prepare(
         `SELECT
            COALESCE(SUM(CASE WHEN type = 'income' THEN amount_cents ELSE 0 END), 0) AS income_cents,
-           COALESCE(SUM(CASE WHEN type IN ('expense', 'cc_purchase') THEN amount_cents ELSE 0 END), 0) AS spending_cents
+           COALESCE(SUM(${ledgerNetExpenseCase()}), 0) AS spending_cents
          FROM ledger_entries
          WHERE user_id = ?
+           AND ${metricsVisibilityClause}
            ${range.sql}`
       )
       .get(input.userId, ...range.params)) as
@@ -801,27 +974,12 @@ export const ledgerRepo = {
            a.id AS account_id,
            a.name AS account_name,
            a.currency AS currency,
-           COALESCE(
-             SUM(
-               CASE
-                 WHEN le.type = 'income' THEN le.amount_cents
-                 WHEN le.type = 'expense' THEN -le.amount_cents
-                 WHEN le.type = 'transfer' AND le.direction = 'IN' THEN le.amount_cents
-                 WHEN le.type = 'transfer' AND le.direction = 'OUT' THEN -le.amount_cents
-                 WHEN le.type = 'cc_payment' AND le.direction = 'OUT' THEN -le.amount_cents
-                 WHEN le.type = 'cc_payment' AND le.direction = 'IN' THEN le.amount_cents
-                 WHEN le.type = 'fee' THEN -le.amount_cents
-                 WHEN le.type = 'refund' AND le.direction = 'IN' THEN le.amount_cents
-                 WHEN le.type = 'refund' AND le.direction = 'OUT' THEN -le.amount_cents
-                 ELSE 0
-               END
-             ),
-             0
-           ) AS total_cents
+           COALESCE(SUM(${ledgerCashDeltaCase("le")}), 0) AS total_cents
          FROM accounts a
          LEFT JOIN ledger_entries le
            ON le.user_id = a.user_id
           AND le.account_id = a.id
+          AND ${balanceVisibilityClause}
           ${range.sql}
          WHERE a.user_id = ?
            AND a.type IN ('checking', 'cash')
@@ -856,9 +1014,10 @@ export const ledgerRepo = {
          LEFT JOIN ledger_entries le
            ON le.user_id = cca.user_id
           AND le.credit_card_account_id = cca.id
+          AND ${cardDebtVisibilityClause}
           AND (${input.to ? "le.posted_at <= ?" : "TRUE"})
-         WHERE cca.user_id = ?
-         GROUP BY cca.id, cca.name, cca.currency
+        WHERE cca.user_id = ?
+        GROUP BY cca.id, cca.name, cca.currency
          ORDER BY cca.name ASC`
       )
       .all(...(input.to ? [input.to.toISOString()] : []), input.userId)) as Array<{
@@ -887,6 +1046,69 @@ export const ledgerRepo = {
     };
   },
 
+  async listAnalyticsEntries(input: {
+    userId: string;
+    from?: Date;
+    to?: Date;
+    accountId?: string;
+    categoryId?: string;
+  }) {
+    const range = buildDateFilters({ from: input.from, to: input.to });
+    const clauses = [
+      "le.user_id = ?",
+      buildLedgerVisibilityClause("le", { includeBalanceAdjustments: false }),
+      "le.is_balance_adjustment = FALSE"
+    ];
+    const params: unknown[] = [input.userId];
+
+    if (input.accountId) {
+      clauses.push("(le.account_id = ? OR le.credit_card_account_id = ?)");
+      params.push(input.accountId, input.accountId);
+    }
+
+    if (input.categoryId) {
+      clauses.push("le.category_id = ?");
+      params.push(input.categoryId);
+    }
+
+    const rows = (await db
+      .prepare(
+        `SELECT
+           le.id, le.user_id, le.posted_at, le.amount_cents, le.direction, le.type,
+           le.description_normalized, le.merchant_normalized,
+           le.account_id, le.credit_card_account_id, le.category_id, le.import_source_id, le.raw_transaction_id,
+           le.external_ref, le.fingerprint, le.transfer_group_id, le.reconciliation_status,
+           le.excluded, le.is_balance_adjustment, le.transfer_fee_cents, le.created_at, le.updated_at,
+           a.name AS account_name,
+           a.type AS account_type,
+           a.institution AS account_institution,
+           a.currency AS account_currency,
+           a.parent_account_id AS account_parent_account_id,
+           cca.name AS credit_card_name,
+           cca.currency AS credit_card_currency,
+           c.name AS category_name,
+           c.color AS category_color,
+           c.icon AS category_icon,
+           c.parent_id AS category_parent_id
+         FROM ledger_entries le
+         LEFT JOIN accounts a
+           ON a.id = le.account_id
+          AND a.user_id = le.user_id
+         LEFT JOIN credit_card_accounts cca
+           ON cca.id = le.credit_card_account_id
+          AND cca.user_id = le.user_id
+         LEFT JOIN categories c
+           ON c.id = le.category_id
+          AND c.user_id = le.user_id
+         WHERE ${clauses.join(" AND ")}
+           ${range.sql}
+         ORDER BY le.posted_at ASC, le.created_at ASC`
+      )
+      .all(...params, ...range.params)) as LedgerAnalyticsRow[];
+
+    return rows.map(mapLedgerAnalyticsEntry);
+  },
+
   async getReviewInbox(userId: string) {
     const suggestions = await this.listTransferSuggestions(userId, 200);
     const ccPayments = await this.listUnmatchedCcPayments(userId);
@@ -904,7 +1126,8 @@ export const ledgerRepo = {
         .prepare(
           `SELECT id, user_id, posted_at, amount_cents, direction, type, description_normalized, merchant_normalized,
                   account_id, credit_card_account_id, category_id, import_source_id, raw_transaction_id, external_ref,
-                  fingerprint, transfer_group_id, reconciliation_status, transfer_fee_cents, created_at, updated_at
+                  fingerprint, transfer_group_id, reconciliation_status, excluded, is_balance_adjustment,
+                  transfer_fee_cents, created_at, updated_at
            FROM ledger_entries
            WHERE user_id = ? AND id IN (${placeholders})`
         )

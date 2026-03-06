@@ -94,7 +94,7 @@ export function NetWorthSummaryCard({
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             PATRIMÔNIO LÍQUIDO
           </p>
-          <p className="tabular-nums whitespace-nowrap text-4xl font-semibold tracking-tight text-foreground">
+          <p className="tabular-nums break-words text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             {formatBRL(animatedNetWorth)}
           </p>
           <Badge
@@ -107,16 +107,16 @@ export function NetWorthSummaryCard({
 
           <div className="border-t border-border" />
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">Total em Ativos</p>
-              <p className="tabular-nums text-2xl font-semibold text-foreground">
+              <p className="tabular-nums break-words text-xl font-semibold text-foreground sm:text-2xl">
                 {formatBRL(animatedAssets)}
               </p>
             </div>
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">Total em Dívidas</p>
-              <p className="tabular-nums text-2xl font-semibold text-foreground">
+              <p className="tabular-nums break-words text-xl font-semibold text-foreground sm:text-2xl">
                 {formatBRL(animatedDebts)}
               </p>
             </div>

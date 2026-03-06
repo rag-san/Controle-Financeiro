@@ -101,7 +101,7 @@ export function NetResultChart({
   }
 
   return (
-    <div className="h-[220px] w-full">
+    <div className="h-[200px] w-full sm:h-[220px]">
       <p className="sr-only">{a11ySummary}</p>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }} barSize={44}>

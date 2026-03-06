@@ -1,4 +1,5 @@
-import type { ReportsTotals } from "@/src/features/reports/types";
+import type { ReportsCashSummary, ReportsTotals } from "@/src/features/reports/types";
+import { formatBRL } from "@/src/utils/format";
 
 export type KpiTrend = {
   deltaPercent: number | null;
@@ -6,7 +7,7 @@ export type KpiTrend = {
 };
 
 export type ReportKpi = {
-  id: "income" | "expense" | "saved" | "savings-rate";
+  id: "income" | "expense" | "cash-outflow" | "cash-balance";
   label: string;
   value: number;
   trend: KpiTrend;
@@ -40,10 +41,11 @@ function computeTrend(current: number, previous: number): KpiTrend {
 export function buildReportKpis(input: {
   current: ReportsTotals;
   previous: ReportsTotals;
+  cash: ReportsCashSummary;
 }): ReportKpi[] {
-  const { current, previous } = input;
+  const { current, previous, cash } = input;
 
-  const kpis: ReportKpi[] = [
+  return [
     {
       id: "income",
       label: "Receitas",
@@ -56,30 +58,21 @@ export function buildReportKpis(input: {
       label: "Despesas",
       value: current.expense,
       trend: computeTrend(current.expense, previous.expense),
-      helpText: "vs período anterior"
+      helpText: "Despesas classificadas vs período anterior"
     },
     {
-      id: "saved",
-      label: "Economizado",
-      value: current.net,
-      trend: computeTrend(current.net, previous.net),
-      helpText: "vs período anterior"
+      id: "cash-outflow",
+      label: "Saída real de caixa",
+      value: cash.outflow,
+      trend: computeTrend(cash.outflow, cash.previousOutflow),
+      helpText: `Despesas classificadas no período: ${formatBRL(current.expense)}`
+    },
+    {
+      id: "cash-balance",
+      label: "Saldo em conta",
+      value: cash.cashBalance,
+      trend: computeTrend(cash.net, cash.previousNet),
+      helpText: `Variação real no período: ${formatBRL(cash.net)}`
     }
   ];
-
-  if (current.income > 0) {
-    const currentRate = round2((current.net / current.income) * 100);
-    const previousRate = previous.income > 0 ? round2((previous.net / previous.income) * 100) : 0;
-
-    kpis.push({
-      id: "savings-rate",
-      label: "Taxa de economia",
-      value: currentRate,
-      trend: computeTrend(currentRate, previousRate),
-      helpText: "vs período anterior"
-    });
-  }
-
-  return kpis;
 }
-

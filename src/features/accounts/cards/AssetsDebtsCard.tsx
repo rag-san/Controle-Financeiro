@@ -99,7 +99,7 @@ function MetricBlock({
         <span className={`h-2 w-2 rounded-full ${dotClassName}`} aria-hidden="true" />
         {label}
       </p>
-      <p className="tabular-nums whitespace-nowrap text-3xl font-semibold tracking-tight text-foreground sm:text-4xl dark:text-foreground">
+      <p className="tabular-nums break-words text-[1.8rem] font-semibold tracking-tight text-foreground sm:text-4xl dark:text-foreground">
         {valueText}
       </p>
       <p className="min-h-[1rem] text-[11px] text-muted-foreground">
@@ -167,7 +167,7 @@ export function AssetsDebtsCard({
         </div>
         <button
           type="button"
-          className="self-end rounded-lg p-1.5 text-muted-foreground/80 transition hover:bg-secondary hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:self-auto dark:hover:bg-secondary dark:hover:text-foreground"
+          className="self-start rounded-lg p-1.5 text-muted-foreground/80 transition hover:bg-secondary hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background sm:self-auto dark:hover:bg-secondary dark:hover:text-foreground"
           aria-label="Configurar visualização de contas"
         >
           <Settings className="h-4 w-4" />

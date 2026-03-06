@@ -17,6 +17,7 @@ type LoadedDeps = {
   resolveDashboardDateRange: typeof import("@/lib/server/dashboard-metrics.repo").resolveDashboardDateRange;
   accountsRepo: typeof import("@/lib/server/accounts.repo").accountsRepo;
   categoriesRepo: typeof import("@/lib/server/categories.repo").categoriesRepo;
+  ledgerRepo: typeof import("@/lib/server/ledger.repo").ledgerRepo;
   transactionsRepo: typeof import("@/lib/server/transactions.repo").transactionsRepo;
   usersRepo: typeof import("@/lib/server/users.repo").usersRepo;
 };
@@ -26,13 +27,14 @@ let depsPromise: Promise<LoadedDeps> | null = null;
 function loadDeps(): Promise<LoadedDeps> {
   if (!depsPromise) {
     depsPromise = (async () => {
-      const [{ db, initDbOnce }, normalizeModule, dashboardMetricsModule, accountsModule, categoriesModule, transactionsModule, usersModule] =
+      const [{ db, initDbOnce }, normalizeModule, dashboardMetricsModule, accountsModule, categoriesModule, ledgerRepoModule, transactionsModule, usersModule] =
         await Promise.all([
           import("@/lib/db"),
           import("@/lib/normalize"),
           import("@/lib/server/dashboard-metrics.repo"),
           import("@/lib/server/accounts.repo"),
           import("@/lib/server/categories.repo"),
+          import("@/lib/server/ledger.repo"),
           import("@/lib/server/transactions.repo"),
           import("@/lib/server/users.repo")
         ]);
@@ -45,6 +47,7 @@ function loadDeps(): Promise<LoadedDeps> {
         resolveDashboardDateRange: dashboardMetricsModule.resolveDashboardDateRange,
         accountsRepo: accountsModule.accountsRepo,
         categoriesRepo: categoriesModule.categoriesRepo,
+        ledgerRepo: ledgerRepoModule.ledgerRepo,
         transactionsRepo: transactionsModule.transactionsRepo,
         usersRepo: usersModule.usersRepo
       };
@@ -541,4 +544,211 @@ test("resolveDashboardDateRange keeps previous month aligned for month-anchored 
   });
   assert.equal(monthToDate.previousFrom, "2026-01-01");
   assert.equal(monthToDate.previousTo, "2026-01-10");
+});
+
+test("ledger dashboard metrics keep opening balance only in patrimony and exclude hidden spending", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+  const fixture = await createFixtureUser("dashboard-ledger-opening");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado ledger-${Date.now()}`,
+    color: "#16a34a"
+  });
+  assert.ok(groceries);
+
+  const range = deps.resolveDashboardDateRange({
+    from: new Date("2026-02-10T00:00:00.000Z"),
+    to: new Date("2026-02-12T00:00:00.000Z")
+  });
+
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-08T12:00:00.000Z"),
+    amount: 500,
+    direction: "IN",
+    type: "income",
+    descriptionNormalized: "saldo inicial",
+    accountId: fixture.primaryAccountId,
+    fingerprint: `ledger-opening-${Date.now()}-1`,
+    excluded: true,
+    isBalanceAdjustment: true
+  });
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-10T12:00:00.000Z"),
+    amount: 100,
+    direction: "OUT",
+    type: "expense",
+    descriptionNormalized: "mercado real ledger",
+    accountId: fixture.primaryAccountId,
+    categoryId: groceries.id,
+    fingerprint: `ledger-opening-${Date.now()}-2`
+  });
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-11T09:00:00.000Z"),
+    amount: 40,
+    direction: "OUT",
+    type: "expense",
+    descriptionNormalized: "mercado oculto ledger",
+    accountId: fixture.primaryAccountId,
+    categoryId: groceries.id,
+    fingerprint: `ledger-opening-${Date.now()}-3`,
+    excluded: true
+  });
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-11T10:00:00.000Z"),
+    amount: 70,
+    direction: "OUT",
+    type: "transfer",
+    descriptionNormalized: "transferencia interna saida ledger",
+    accountId: fixture.primaryAccountId,
+    fingerprint: `ledger-opening-${Date.now()}-4`,
+    transferGroupId: `ledger-opening-group-${Date.now()}`
+  });
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-11T10:00:00.000Z"),
+    amount: 70,
+    direction: "IN",
+    type: "transfer",
+    descriptionNormalized: "transferencia interna entrada ledger",
+    accountId: fixture.secondaryAccountId,
+    fingerprint: `ledger-opening-${Date.now()}-5`,
+    transferGroupId: `ledger-opening-group-${Date.now()}`
+  });
+
+  const summary = await deps.dashboardMetricsRepo.getSummary({
+    userId: fixture.userId,
+    range
+  });
+  assert.equal(summary.totalIncome, 0);
+  assert.equal(summary.totalExpense, 100);
+  assert.equal(summary.net, -100);
+  assert.equal(summary.excludedTotal, 40);
+  assert.equal(summary.cashInflow, 70);
+  assert.equal(summary.cashOutflow, 170);
+  assert.equal(summary.cashNet, -100);
+
+  const categories = await deps.dashboardMetricsRepo.getTopCategories({
+    userId: fixture.userId,
+    range
+  });
+  assert.equal(categories.topCategories.length, 1);
+  assert.equal(categories.topCategories[0]?.name, groceries.name);
+  assert.equal(categories.topCategories[0]?.total, 100);
+  assert.equal(categories.topCategories[0]?.previousTotal, 0);
+
+  const trends = await deps.dashboardMetricsRepo.getTrends({
+    userId: fixture.userId,
+    range,
+    granularity: "day"
+  });
+  assert.equal(trends.series.reduce((sum, point) => sum + point.income, 0), 0);
+  assert.equal(trends.series.reduce((sum, point) => sum + point.expense, 0), 100);
+
+  const patrimony = await deps.dashboardMetricsRepo.getPatrimony({
+    userId: fixture.userId,
+    range,
+    granularity: "day"
+  });
+  assert.deepEqual(
+    patrimony.series.map((item) => item.value),
+    [400, 400, 400]
+  );
+});
+
+test("ledger dashboard metrics do not duplicate card purchase and payment", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+  const fixture = await createFixtureUser("dashboard-ledger-card");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const pharmacy = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Farmacia ledger-${Date.now()}`,
+    color: "#2563eb"
+  });
+  assert.ok(pharmacy);
+
+  const card = await deps.ledgerRepo.createCreditCardAccount({
+    userId: fixture.userId,
+    name: `Cartao ledger-${Date.now()}`,
+    defaultPaymentAccountId: fixture.primaryAccountId
+  });
+  assert.ok(card);
+
+  const range = deps.resolveDashboardDateRange({
+    from: new Date("2026-02-10T00:00:00.000Z"),
+    to: new Date("2026-02-12T00:00:00.000Z")
+  });
+
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-10T12:00:00.000Z"),
+    amount: 120,
+    direction: "OUT",
+    type: "cc_purchase",
+    descriptionNormalized: "compra farmacia cartao ledger",
+    creditCardAccountId: card.id,
+    categoryId: pharmacy.id,
+    fingerprint: `ledger-card-${Date.now()}-1`
+  });
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-12T12:00:00.000Z"),
+    amount: 120,
+    direction: "OUT",
+    type: "cc_payment",
+    descriptionNormalized: "pagamento fatura ledger",
+    accountId: fixture.primaryAccountId,
+    creditCardAccountId: card.id,
+    fingerprint: `ledger-card-${Date.now()}-2`
+  });
+
+  const summary = await deps.dashboardMetricsRepo.getSummary({
+    userId: fixture.userId,
+    range
+  });
+  assert.equal(summary.totalIncome, 0);
+  assert.equal(summary.totalExpense, 120);
+  assert.equal(summary.net, -120);
+  assert.equal(summary.cashInflow, 0);
+  assert.equal(summary.cashOutflow, 120);
+  assert.equal(summary.cashNet, -120);
+  assert.equal(summary.excludedTotal, 0);
+
+  const categories = await deps.dashboardMetricsRepo.getTopCategories({
+    userId: fixture.userId,
+    range
+  });
+  assert.equal(categories.topCategories.length, 1);
+  assert.equal(categories.topCategories[0]?.name, pharmacy.name);
+  assert.equal(categories.topCategories[0]?.total, 120);
+
+  const trends = await deps.dashboardMetricsRepo.getTrends({
+    userId: fixture.userId,
+    range,
+    granularity: "day"
+  });
+  assert.equal(trends.series.reduce((sum, point) => sum + point.expense, 0), 120);
+  assert.equal(trends.series.reduce((sum, point) => sum + point.income, 0), 0);
+
+  const patrimony = await deps.dashboardMetricsRepo.getPatrimony({
+    userId: fixture.userId,
+    range,
+    granularity: "day"
+  });
+  assert.deepEqual(
+    patrimony.series.map((item) => item.value),
+    [0, 0, -120]
+  );
 });

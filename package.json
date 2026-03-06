@@ -1,7 +1,7 @@
 {
   "name": "controle-financeiro-next",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "scripts": {
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
@@ -17,6 +17,7 @@
     "test:unit": "node --env-file=.env --import tsx --test tests/unit/**/*.test.ts",
     "test:migration": "node --import tsx --test tests/unit/topbar-controls-ui-lock.test.ts tests/unit/mobile-responsiveness-guards.test.ts tests/unit/migration-rollout.test.ts",
     "test:integration": "node --env-file=.env --test tests/integration/api-flow.test.mjs",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run lint",
     "build": "next build --no-lint",
@@ -43,6 +44,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^24.10.1",
     "@types/pg": "^8.16.0",
     "@types/react": "^19.2.5",

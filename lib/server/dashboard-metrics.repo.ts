@@ -226,6 +226,16 @@ function buildTransactionsExcludedClause(alias: string, excluded: boolean): stri
     return `${scoped}excluded = TRUE`;
   }
 
+  return `${scoped}excluded = FALSE`;
+}
+
+function buildTransactionsBalanceVisibilityClause(alias: string, excluded: boolean): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+
+  if (excluded) {
+    return `${scoped}excluded = TRUE`;
+  }
+
   return `(
     ${scoped}excluded = FALSE
     OR (
@@ -381,7 +391,7 @@ async function aggregateCashFlowTotals(input: {
 }> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
   const filterClause = buildDashboardFilterSql("t", resolvedFilters);
-  const excludedClause = buildTransactionsExcludedClause("t", resolvedFilters.excluded);
+  const visibilityClause = buildTransactionsBalanceVisibilityClause("t", resolvedFilters.excluded);
 
   const rows = (await db
     .prepare(
@@ -406,7 +416,7 @@ async function aggregateCashFlowTotals(input: {
            AND t.posted_at >= ?
            AND t.posted_at <= ?
            AND a.type IN ('checking', 'cash')
-           AND ${excludedClause}
+           AND ${visibilityClause}
            ${filterClause.sql}
        ) period_rows
        WHERE period IS NOT NULL
@@ -488,7 +498,7 @@ async function getPatrimonyBaselineCents(input: {
 }): Promise<number> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
   const filterClause = buildDashboardFilterSql("t", resolvedFilters);
-  const excludedClause = buildTransactionsExcludedClause("t", resolvedFilters.excluded);
+  const visibilityClause = buildTransactionsBalanceVisibilityClause("t", resolvedFilters.excluded);
   const row = (await db
     .prepare(
       `SELECT
@@ -503,7 +513,7 @@ async function getPatrimonyBaselineCents(input: {
        WHERE t.user_id = ?
          AND t.posted_at < ?
          AND a.type IN ('checking', 'cash')
-         AND ${excludedClause}
+         AND ${visibilityClause}
          ${filterClause.sql}`
     )
     .get(input.userId, input.before.toISOString(), ...filterClause.params)) as
@@ -522,7 +532,7 @@ async function getPatrimonyDeltasByBucket(input: {
 }): Promise<Map<string, number>> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
   const filterClause = buildDashboardFilterSql("t", resolvedFilters);
-  const excludedClause = buildTransactionsExcludedClause("t", resolvedFilters.excluded);
+  const visibilityClause = buildTransactionsBalanceVisibilityClause("t", resolvedFilters.excluded);
   const rows = (await db
     .prepare(
       `SELECT
@@ -539,7 +549,7 @@ async function getPatrimonyDeltasByBucket(input: {
          AND t.posted_at >= ?
          AND t.posted_at <= ?
          AND a.type IN ('checking', 'cash')
-         AND ${excludedClause}
+         AND ${visibilityClause}
          ${filterClause.sql}
        GROUP BY bucket_date
        ORDER BY bucket_date ASC`
@@ -574,7 +584,7 @@ function buildLedgerFilterSql(
   if (filters.type === "income") {
     clauses.push(`${scoped}type = 'income'`);
   } else if (filters.type === "expense") {
-    clauses.push(`${scoped}type IN ('expense', 'cc_purchase')`);
+    clauses.push(`${scoped}type IN ('expense', 'cc_purchase', 'fee', 'refund')`);
   } else if (filters.type === "transfer") {
     clauses.push(`${scoped}type = 'transfer'`);
   }
@@ -589,6 +599,48 @@ function buildLedgerFilterSql(
   };
 }
 
+function buildLedgerExcludedClause(
+  alias: string,
+  excluded: boolean,
+  options?: { includeBalanceAdjustments?: boolean }
+): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+
+  if (excluded) {
+    return `${scoped}excluded = TRUE`;
+  }
+
+  if (options?.includeBalanceAdjustments) {
+    return `(${scoped}excluded = FALSE OR ${scoped}is_balance_adjustment = TRUE)`;
+  }
+
+  return `${scoped}excluded = FALSE`;
+}
+
+function ledgerExpenseCase(alias = ""): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+  return `CASE
+    WHEN ${scoped}type IN ('expense', 'cc_purchase', 'fee') THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'refund' THEN -${scoped}amount_cents
+    ELSE 0
+  END`;
+}
+
+function ledgerCashDeltaCase(alias = ""): string {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+  return `CASE
+    WHEN ${scoped}type = 'income' THEN ${scoped}amount_cents
+    WHEN ${scoped}type IN ('expense', 'fee') THEN -${scoped}amount_cents
+    WHEN ${scoped}type = 'transfer' AND ${scoped}direction = 'IN' THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'transfer' AND ${scoped}direction = 'OUT' THEN -${scoped}amount_cents
+    WHEN ${scoped}type = 'cc_payment' AND ${scoped}direction = 'OUT' THEN -${scoped}amount_cents
+    WHEN ${scoped}type = 'cc_payment' AND ${scoped}direction = 'IN' THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'refund' AND ${scoped}direction = 'IN' THEN ${scoped}amount_cents
+    WHEN ${scoped}type = 'refund' AND ${scoped}direction = 'OUT' THEN -${scoped}amount_cents
+    ELSE 0
+  END`;
+}
+
 async function hasLedgerEntries(input: { userId: string; fromDate: Date; toDate: Date }): Promise<boolean> {
   const row = (await db
     .prepare(
@@ -599,6 +651,21 @@ async function hasLedgerEntries(input: { userId: string; fromDate: Date; toDate:
          AND posted_at <= ?`
     )
     .get(input.userId, input.fromDate.toISOString(), input.toDate.toISOString())) as
+    | { count: number | string | null }
+    | undefined;
+
+  return Number(row?.count ?? 0) > 0;
+}
+
+async function hasLedgerEntriesThrough(input: { userId: string; toDate: Date }): Promise<boolean> {
+  const row = (await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM ledger_entries
+       WHERE user_id = ?
+         AND posted_at <= ?`
+    )
+    .get(input.userId, input.toDate.toISOString())) as
     | { count: number | string | null }
     | undefined;
 
@@ -620,8 +687,18 @@ async function aggregateIncomeExpenseTotalsFromLedger(input: {
     .prepare(
       `SELECT
          period,
-         COALESCE(SUM(CASE WHEN type = 'income' THEN amount_cents ELSE 0 END), 0) AS income_cents,
-         COALESCE(SUM(CASE WHEN type IN ('expense', 'cc_purchase') THEN amount_cents ELSE 0 END), 0) AS expense_cents
+         COALESCE(SUM(CASE WHEN type = 'income' AND excluded = ? THEN amount_cents ELSE 0 END), 0) AS income_cents,
+         COALESCE(SUM(CASE WHEN excluded = ? THEN ${ledgerExpenseCase()} ELSE 0 END), 0) AS expense_cents,
+         COALESCE(
+           SUM(
+             CASE
+               WHEN excluded = TRUE AND type IN ('income', 'expense', 'cc_purchase', 'fee', 'refund')
+                 THEN ABS(amount_cents)
+               ELSE 0
+             END
+           ),
+           0
+         ) AS excluded_cents
        FROM (
          SELECT
            CASE
@@ -630,11 +707,84 @@ async function aggregateIncomeExpenseTotalsFromLedger(input: {
              ELSE NULL
            END AS period,
            type,
-           amount_cents
+           amount_cents,
+           excluded
          FROM ledger_entries
          WHERE user_id = ?
            AND posted_at >= ?
            AND posted_at <= ?
+           ${filterClause.sql}
+       ) period_rows
+       WHERE period IS NOT NULL
+       GROUP BY period`
+    )
+    .all(
+      resolvedFilters.excluded,
+      resolvedFilters.excluded,
+      input.currentFrom.toISOString(),
+      input.currentTo.toISOString(),
+      input.previousFrom.toISOString(),
+      input.previousTo.toISOString(),
+      input.userId,
+      input.previousFrom.toISOString(),
+      input.currentTo.toISOString(),
+      ...filterClause.params
+    )) as TotalsRow[];
+
+  const current = { income: 0, expense: 0, excluded: 0 };
+  const previous = { income: 0, expense: 0, excluded: 0 };
+
+  for (const row of rows) {
+    const target = row.period === "current" ? current : previous;
+    target.income = toAmount(row.income_cents);
+    target.expense = toAmount(row.expense_cents);
+    target.excluded = toAmount(row.excluded_cents);
+  }
+
+  return { current, previous };
+}
+
+async function aggregateCashFlowTotalsFromLedger(input: {
+  userId: string;
+  currentFrom: Date;
+  currentTo: Date;
+  previousFrom: Date;
+  previousTo: Date;
+  filters?: DashboardMetricsFilters;
+}): Promise<{
+  current: { inflow: number; outflow: number; net: number };
+  previous: { inflow: number; outflow: number; net: number };
+}> {
+  const resolvedFilters = resolveDashboardFilters(input.filters);
+  const filterClause = buildLedgerFilterSql("le", resolvedFilters);
+  const visibilityClause = buildLedgerExcludedClause("le", resolvedFilters.excluded, {
+    includeBalanceAdjustments: true
+  });
+
+  const rows = (await db
+    .prepare(
+      `SELECT
+         period,
+         COALESCE(SUM(CASE WHEN delta_cents > 0 THEN delta_cents ELSE 0 END), 0) AS inflow_cents,
+         COALESCE(SUM(CASE WHEN delta_cents < 0 THEN ABS(delta_cents) ELSE 0 END), 0) AS outflow_cents,
+         COALESCE(SUM(delta_cents), 0) AS net_cents
+       FROM (
+         SELECT
+           CASE
+             WHEN le.posted_at >= ? AND le.posted_at <= ? THEN 'current'
+             WHEN le.posted_at >= ? AND le.posted_at <= ? THEN 'previous'
+             ELSE NULL
+           END AS period,
+           ${ledgerCashDeltaCase("le")} AS delta_cents
+         FROM ledger_entries le
+         JOIN accounts a
+           ON a.id = le.account_id
+          AND a.user_id = le.user_id
+         WHERE le.user_id = ?
+           AND le.posted_at >= ?
+           AND le.posted_at <= ?
+           AND a.type IN ('checking', 'cash')
+           AND ${visibilityClause}
            ${filterClause.sql}
        ) period_rows
        WHERE period IS NOT NULL
@@ -649,19 +799,16 @@ async function aggregateIncomeExpenseTotalsFromLedger(input: {
       input.previousFrom.toISOString(),
       input.currentTo.toISOString(),
       ...filterClause.params
-    )) as Array<{
-    period: "current" | "previous";
-    income_cents: number | string | null;
-    expense_cents: number | string | null;
-  }>;
+    )) as CashTotalsRow[];
 
-  const current = { income: 0, expense: 0, excluded: 0 };
-  const previous = { income: 0, expense: 0, excluded: 0 };
+  const current = { inflow: 0, outflow: 0, net: 0 };
+  const previous = { inflow: 0, outflow: 0, net: 0 };
 
   for (const row of rows) {
     const target = row.period === "current" ? current : previous;
-    target.income = toAmount(row.income_cents);
-    target.expense = toAmount(row.expense_cents);
+    target.inflow = toAmount(row.inflow_cents);
+    target.outflow = toAmount(row.outflow_cents);
+    target.net = toAmount(row.net_cents);
   }
 
   return { current, previous };
@@ -676,17 +823,19 @@ async function aggregateTrendsRawFromLedger(input: {
 }): Promise<Map<string, { income: number; expense: number }>> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
   const filterClause = buildLedgerFilterSql("", resolvedFilters);
+  const excludedClause = buildLedgerExcludedClause("", resolvedFilters.excluded);
 
   const rows = (await db
     .prepare(
       `SELECT
          DATE_TRUNC(?, posted_at::timestamptz AT TIME ZONE 'UTC')::date::text AS bucket_date,
          COALESCE(SUM(CASE WHEN type = 'income' THEN amount_cents ELSE 0 END), 0) AS income_cents,
-         COALESCE(SUM(CASE WHEN type IN ('expense', 'cc_purchase') THEN amount_cents ELSE 0 END), 0) AS expense_cents
+         COALESCE(SUM(${ledgerExpenseCase()}), 0) AS expense_cents
        FROM ledger_entries
        WHERE user_id = ?
          AND posted_at >= ?
          AND posted_at <= ?
+         AND ${excludedClause}
          ${filterClause.sql}
        GROUP BY bucket_date
        ORDER BY bucket_date ASC`
@@ -719,15 +868,17 @@ async function getTopCategoriesFromLedger(input: {
   const resolvedFilters = resolveDashboardFilters(input.filters);
   const currentFilterClause = buildLedgerFilterSql("le", resolvedFilters);
   const previousFilterClause = buildLedgerFilterSql("le2", resolvedFilters);
+  const currentExcludedClause = buildLedgerExcludedClause("le", resolvedFilters.excluded);
+  const previousExcludedClause = buildLedgerExcludedClause("le2", resolvedFilters.excluded);
 
   const rows = (await db
     .prepare(
-      `WITH current_categories AS (
+       `WITH current_categories AS (
          SELECT
            COALESCE(le.category_id, 'uncategorized') AS category_key,
            COALESCE(c.name, 'Sem categoria') AS name,
            COALESCE(c.color, '#94a3b8') AS color,
-           SUM(le.amount_cents) AS total_cents
+           SUM(${ledgerExpenseCase("le")}) AS total_cents
          FROM ledger_entries le
          LEFT JOIN categories c
            ON c.id = le.category_id
@@ -735,9 +886,11 @@ async function getTopCategoriesFromLedger(input: {
          WHERE le.user_id = ?
            AND le.posted_at >= ?
            AND le.posted_at <= ?
-           AND le.type IN ('expense', 'cc_purchase')
+           AND ${currentExcludedClause}
+           AND le.type IN ('expense', 'cc_purchase', 'fee', 'refund')
            ${currentFilterClause.sql}
          GROUP BY COALESCE(le.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '#94a3b8')
+         HAVING SUM(${ledgerExpenseCase("le")}) > 0
        ),
        total_expenses AS (
          SELECT COALESCE(SUM(total_cents), 0) AS all_expense_cents
@@ -746,12 +899,13 @@ async function getTopCategoriesFromLedger(input: {
        previous_categories AS (
          SELECT
            COALESCE(le2.category_id, 'uncategorized') AS category_key,
-           SUM(le2.amount_cents) AS total_cents
+           SUM(${ledgerExpenseCase("le2")}) AS total_cents
          FROM ledger_entries le2
          WHERE le2.user_id = ?
            AND le2.posted_at >= ?
            AND le2.posted_at <= ?
-           AND le2.type IN ('expense', 'cc_purchase')
+           AND ${previousExcludedClause}
+           AND le2.type IN ('expense', 'cc_purchase', 'fee', 'refund')
            ${previousFilterClause.sql}
          GROUP BY COALESCE(le2.category_id, 'uncategorized')
        )
@@ -801,6 +955,197 @@ async function getTopCategoriesFromLedger(input: {
   });
 }
 
+function mapPreviousOnlyCategories(
+  rows: Array<{
+    category_key: string;
+    name: string | null;
+    color: string | null;
+    previous_total_cents: number | string | null;
+  }>
+): DashboardCategory[] {
+  return rows.map((row) => {
+    const previousTotal = toAmount(row.previous_total_cents);
+    const categoryId = row.category_key === "uncategorized" ? null : row.category_key;
+
+    return {
+      categoryId,
+      name: row.name ?? "Sem categoria",
+      color: row.color ?? "#94a3b8",
+      total: 0,
+      percent: 0,
+      previousTotal,
+      variationPercent: safeVariationPercent(0, previousTotal)
+    };
+  });
+}
+
+async function getTopCategoriesFromPreviousLedger(input: {
+  userId: string;
+  range: DashboardDateRange;
+  limit: number;
+  filters?: DashboardMetricsFilters;
+}): Promise<DashboardCategory[]> {
+  const resolvedFilters = resolveDashboardFilters(input.filters);
+  const filterClause = buildLedgerFilterSql("le", resolvedFilters);
+  const excludedClause = buildLedgerExcludedClause("le", resolvedFilters.excluded);
+
+  const rows = (await db
+    .prepare(
+      `SELECT
+         COALESCE(le.category_id, 'uncategorized') AS category_key,
+         COALESCE(c.name, 'Sem categoria') AS name,
+         COALESCE(c.color, '#94a3b8') AS color,
+         SUM(${ledgerExpenseCase("le")}) AS previous_total_cents
+       FROM ledger_entries le
+       LEFT JOIN categories c
+         ON c.id = le.category_id
+        AND c.user_id = le.user_id
+       WHERE le.user_id = ?
+         AND le.posted_at >= ?
+         AND le.posted_at <= ?
+         AND ${excludedClause}
+         AND le.type IN ('expense', 'cc_purchase', 'fee', 'refund')
+         ${filterClause.sql}
+       GROUP BY COALESCE(le.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '#94a3b8')
+       HAVING SUM(${ledgerExpenseCase("le")}) > 0
+       ORDER BY previous_total_cents DESC
+       LIMIT ?`
+    )
+    .all(
+      input.userId,
+      input.range.previousFromDate.toISOString(),
+      input.range.previousToDate.toISOString(),
+      ...filterClause.params,
+      input.limit
+    )) as Array<{
+    category_key: string;
+    name: string | null;
+    color: string | null;
+    previous_total_cents: number | string | null;
+  }>;
+
+  return mapPreviousOnlyCategories(rows);
+}
+
+async function getPatrimonyBaselineCentsFromLedger(input: {
+  userId: string;
+  before: Date;
+  filters?: DashboardMetricsFilters;
+}): Promise<number> {
+  const resolvedFilters = resolveDashboardFilters(input.filters);
+  const filterClause = buildLedgerFilterSql("le", resolvedFilters);
+  const visibilityClause = buildLedgerExcludedClause("le", resolvedFilters.excluded, {
+    includeBalanceAdjustments: true
+  });
+  const row = (await db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(${ledgerCashDeltaCase("le")}), 0) AS baseline_cents
+       FROM ledger_entries le
+       JOIN accounts a
+         ON a.id = le.account_id
+        AND a.user_id = le.user_id
+       WHERE le.user_id = ?
+         AND le.posted_at < ?
+         AND a.type IN ('checking', 'cash')
+         AND ${visibilityClause}
+         ${filterClause.sql}`
+    )
+    .get(input.userId, input.before.toISOString(), ...filterClause.params)) as
+    | { baseline_cents: number | string | null }
+    | undefined;
+
+  return Number(row?.baseline_cents ?? 0);
+}
+
+async function getPatrimonyDeltasByBucketFromLedger(input: {
+  userId: string;
+  fromDate: Date;
+  toDate: Date;
+  granularity: DashboardGranularity;
+  filters?: DashboardMetricsFilters;
+}): Promise<Map<string, number>> {
+  const resolvedFilters = resolveDashboardFilters(input.filters);
+  const filterClause = buildLedgerFilterSql("le", resolvedFilters);
+  const visibilityClause = buildLedgerExcludedClause("le", resolvedFilters.excluded, {
+    includeBalanceAdjustments: true
+  });
+  const rows = (await db
+    .prepare(
+      `SELECT
+         DATE_TRUNC(?, le.posted_at::timestamptz AT TIME ZONE 'UTC')::date::text AS bucket_date,
+         COALESCE(SUM(${ledgerCashDeltaCase("le")}), 0) AS delta_cents
+       FROM ledger_entries le
+       JOIN accounts a
+         ON a.id = le.account_id
+        AND a.user_id = le.user_id
+       WHERE le.user_id = ?
+         AND le.posted_at >= ?
+         AND le.posted_at <= ?
+         AND a.type IN ('checking', 'cash')
+         AND ${visibilityClause}
+         ${filterClause.sql}
+       GROUP BY bucket_date
+       ORDER BY bucket_date ASC`
+    )
+    .all(
+      input.granularity,
+      input.userId,
+      input.fromDate.toISOString(),
+      input.toDate.toISOString(),
+      ...filterClause.params
+    )) as PatrimonyDeltaRow[];
+
+  return new Map(rows.map((row) => [normalizeBucketKey(row.bucket_date), Number(row.delta_cents ?? 0)]));
+}
+
+async function getTopCategoriesFromPreviousTransactions(input: {
+  userId: string;
+  range: DashboardDateRange;
+  limit: number;
+  filters?: DashboardMetricsFilters;
+}): Promise<DashboardCategory[]> {
+  const resolvedFilters = resolveDashboardFilters(input.filters);
+  const filterClause = buildDashboardFilterSql("t", resolvedFilters);
+
+  const rows = (await db
+    .prepare(
+      `SELECT
+         COALESCE(t.category_id, 'uncategorized') AS category_key,
+         COALESCE(c.name, 'Sem categoria') AS name,
+         COALESCE(c.color, '#94a3b8') AS color,
+         SUM(ABS(t.amount_cents)) AS previous_total_cents
+       FROM transactions t
+       LEFT JOIN categories c
+         ON c.id = t.category_id
+        AND c.user_id = t.user_id
+       WHERE t.user_id = ?
+         AND t.posted_at >= ?
+         AND t.posted_at <= ?
+         AND t.type = 'expense'::transaction_type
+         AND t.excluded = ?
+         ${filterClause.sql}
+       GROUP BY COALESCE(t.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '#94a3b8')
+       ORDER BY previous_total_cents DESC
+       LIMIT ?`
+    )
+    .all(
+      input.userId,
+      input.range.previousFromDate.toISOString(),
+      input.range.previousToDate.toISOString(),
+      resolvedFilters.excluded,
+      ...filterClause.params,
+      input.limit
+    )) as Array<{
+    category_key: string;
+    name: string | null;
+    color: string | null;
+    previous_total_cents: number | string | null;
+  }>;
+
+  return mapPreviousOnlyCategories(rows);
+}
+
 export const dashboardMetricsRepo = {
   async getSummary(input: {
     userId: string;
@@ -836,14 +1181,23 @@ export const dashboardMetricsRepo = {
           previousTo: input.range.previousToDate,
           filters: input.filters
         });
-    const cashTotals = await aggregateCashFlowTotals({
-      userId: input.userId,
-      currentFrom: input.range.fromDate,
-      currentTo: input.range.toDate,
-      previousFrom: input.range.previousFromDate,
-      previousTo: input.range.previousToDate,
-      filters: input.filters
-    });
+    const cashTotals = useLedger
+      ? await aggregateCashFlowTotalsFromLedger({
+          userId: input.userId,
+          currentFrom: input.range.fromDate,
+          currentTo: input.range.toDate,
+          previousFrom: input.range.previousFromDate,
+          previousTo: input.range.previousToDate,
+          filters: input.filters
+        })
+      : await aggregateCashFlowTotals({
+          userId: input.userId,
+          currentFrom: input.range.fromDate,
+          currentTo: input.range.toDate,
+          previousFrom: input.range.previousFromDate,
+          previousTo: input.range.previousToDate,
+          filters: input.filters
+        });
 
     const currentNet = Number((totals.current.income - totals.current.expense).toFixed(2));
     const previousNet = Number((totals.previous.income - totals.previous.expense).toFixed(2));
@@ -893,12 +1247,21 @@ export const dashboardMetricsRepo = {
       }));
 
     if (useLedger) {
-      const topCategories = await getTopCategoriesFromLedger({
+      let topCategories = await getTopCategoriesFromLedger({
         userId: input.userId,
         range: input.range,
         limit,
         filters: input.filters
       });
+
+      if (topCategories.length === 0) {
+        topCategories = await getTopCategoriesFromPreviousLedger({
+          userId: input.userId,
+          range: input.range,
+          limit,
+          filters: input.filters
+        });
+      }
 
       return {
         from: input.range.from,
@@ -994,10 +1357,20 @@ export const dashboardMetricsRepo = {
       };
     });
 
+    const finalTopCategories =
+      topCategories.length > 0
+        ? topCategories
+        : await getTopCategoriesFromPreviousTransactions({
+            userId: input.userId,
+            range: input.range,
+            limit,
+            filters: input.filters
+          });
+
     return {
       from: input.range.from,
       to: input.range.to,
-      topCategories
+      topCategories: finalTopCategories
     };
   },
 
@@ -1104,19 +1477,37 @@ export const dashboardMetricsRepo = {
     granularity: DashboardGranularity;
     series: DashboardPatrimonyPoint[];
   }> {
+    const useLedger = await hasLedgerEntriesThrough({
+      userId: input.userId,
+      toDate: input.range.toDate
+    });
     const buckets = buildBucketSeries(input.range.fromDate, input.range.toDate, input.granularity);
-    const baselineCents = await getPatrimonyBaselineCents({
-      userId: input.userId,
-      before: input.range.fromDate,
-      filters: input.filters
-    });
-    const deltasByBucket = await getPatrimonyDeltasByBucket({
-      userId: input.userId,
-      fromDate: input.range.fromDate,
-      toDate: input.range.toDate,
-      granularity: input.granularity,
-      filters: input.filters
-    });
+    const baselineCents = useLedger
+      ? await getPatrimonyBaselineCentsFromLedger({
+          userId: input.userId,
+          before: input.range.fromDate,
+          filters: input.filters
+        })
+      : await getPatrimonyBaselineCents({
+          userId: input.userId,
+          before: input.range.fromDate,
+          filters: input.filters
+        });
+    const deltasByBucket = useLedger
+      ? await getPatrimonyDeltasByBucketFromLedger({
+          userId: input.userId,
+          fromDate: input.range.fromDate,
+          toDate: input.range.toDate,
+          granularity: input.granularity,
+          filters: input.filters
+        })
+      : await getPatrimonyDeltasByBucket({
+          userId: input.userId,
+          fromDate: input.range.fromDate,
+          toDate: input.range.toDate,
+          granularity: input.granularity,
+          filters: input.filters
+        });
 
     let runningCents = baselineCents;
     const series: DashboardPatrimonyPoint[] = buckets.map((bucket) => {

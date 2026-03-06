@@ -1,4 +1,4 @@
-import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
+import { fromAmountCents } from "@/lib/finance/official-metrics";
 import { getCategoryColor } from "@/src/features/categories/categoryColors";
 import type { ReportPreparedTransaction } from "@/src/features/reports/types";
 import type { SankeyLink, SankeyModel, SankeyNode } from "@/src/features/reports/sankey/types";
@@ -19,6 +19,12 @@ const EXPENSES_NODE_ID = "expenses";
 const SAVED_NODE_ID = "saved";
 const OTHER_CATEGORIES_LABEL = "Outras categorias";
 const OTHER_SUBCATEGORIES_LABEL = "Outros";
+const OPERATIONAL_CATEGORY_PATTERNS = [
+  /\btransfer/i,
+  /\btransf/i,
+  /\bpagamento de fatura\b/i,
+  /\bfatura\b/i
+];
 
 function round2(value: number): number {
   return Number(value.toFixed(2));
@@ -73,6 +79,15 @@ function lightenHex(hexColor: string, amount = 0.3): string {
   return `#${hex(lighten(red))}${hex(lighten(green))}${hex(lighten(blue))}`;
 }
 
+function isOperationalFlowCategory(label: string): boolean {
+  const normalized = label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  return OPERATIONAL_CATEGORY_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 export function buildSankeyModel(
   transactions: ReportPreparedTransaction[],
   options: BuildSankeyModelOptions = {}
@@ -82,45 +97,81 @@ export function buildSankeyModel(
 
   let totalIncomeCents = 0;
   let totalExpenseCents = 0;
+  let hiddenOperationalExpenseCents = 0;
+  let hiddenOperationalCount = 0;
 
   const expensesByCategory = new Map<string, number>();
   const subcategoriesByCategory = new Map<string, Map<string, number>>();
 
   for (const transaction of transactions) {
-    const absCents = absAmountCents(transaction.absAmount);
-    if (absCents <= 0) continue;
+    if (transaction.incomeCents > 0) {
+      totalIncomeCents += transaction.incomeCents;
+    }
 
-    if (transaction.type === "income") {
-      totalIncomeCents += absCents;
+    if (transaction.expenseCents === 0) {
       continue;
     }
 
-    if (transaction.type !== "expense") {
-      continue;
-    }
-
-    totalExpenseCents += absCents;
+    totalExpenseCents += transaction.expenseCents;
 
     const categoryLabel =
       transaction.parentCategoryName?.trim() ||
       transaction.categoryName?.trim() ||
       "Sem categoria";
     const current = expensesByCategory.get(categoryLabel) ?? 0;
-    expensesByCategory.set(categoryLabel, current + absCents);
+    expensesByCategory.set(categoryLabel, current + transaction.expenseCents);
 
     // Subcategory flow is added only when category hierarchy exists (parent -> child).
     if (transaction.parentCategoryName?.trim()) {
       const subLabel = transaction.categoryName?.trim() || "Sem categoria";
       const subMap = subcategoriesByCategory.get(categoryLabel) ?? new Map<string, number>();
       const subCurrent = subMap.get(subLabel) ?? 0;
-      subMap.set(subLabel, subCurrent + absCents);
+      subMap.set(subLabel, subCurrent + transaction.expenseCents);
       subcategoriesByCategory.set(categoryLabel, subMap);
     }
   }
 
-  const netSavedCents = totalIncomeCents - totalExpenseCents;
+  const effectiveExpenseCents = Math.max(0, totalExpenseCents);
+  const netSavedCents = totalIncomeCents - effectiveExpenseCents;
   const savedFlowCents = Math.max(netSavedCents, 0);
-  const categoryEntries = toTopEntries(expensesByCategory, topCategoriesLimit);
+  const rawCategoryEntries = [...expensesByCategory.entries()]
+    .map(([key, valueCents]) => ({ key, label: key, valueCents }))
+    .filter((entry) => entry.valueCents > 0)
+    .sort((left, right) => right.valueCents - left.valueCents);
+  const spendingCategoryEntries = rawCategoryEntries.filter((entry) => {
+    const operational = isOperationalFlowCategory(entry.label);
+    if (operational) {
+      hiddenOperationalExpenseCents += entry.valueCents;
+      hiddenOperationalCount += 1;
+    }
+    return !operational;
+  });
+  const categoryEntries = toTopEntries(
+    new Map(spendingCategoryEntries.map((entry) => [entry.key, entry.valueCents])),
+    topCategoriesLimit
+  );
+  const minCategoryCents = Math.max(5_000, Math.round(effectiveExpenseCents * 0.06));
+  const refinedCategoryEntries = categoryEntries.filter(
+    (entry) => entry.label === OTHER_CATEGORIES_LABEL || entry.valueCents >= minCategoryCents
+  );
+  const hiddenCategoriesTotalCents = categoryEntries
+    .filter((entry) => entry.label !== OTHER_CATEGORIES_LABEL && entry.valueCents < minCategoryCents)
+    .reduce((sum, entry) => sum + entry.valueCents, 0);
+
+  const consolidatedOtherCents = hiddenCategoriesTotalCents + hiddenOperationalExpenseCents;
+
+  if (consolidatedOtherCents > 0) {
+    const othersEntry = refinedCategoryEntries.find((entry) => entry.label === OTHER_CATEGORIES_LABEL);
+    if (othersEntry) {
+      othersEntry.valueCents += consolidatedOtherCents;
+    } else {
+      refinedCategoryEntries.push({
+        key: OTHER_CATEGORIES_LABEL,
+        label: OTHER_CATEGORIES_LABEL,
+        valueCents: consolidatedOtherCents
+      });
+    }
+  }
 
   const nodes: SankeyNode[] = [
     {
@@ -137,7 +188,7 @@ export function buildSankeyModel(
       kind: "expenses",
       color: "#ef4444",
       column: 1,
-      displayValue: round2(fromAmountCents(totalExpenseCents))
+      displayValue: round2(fromAmountCents(effectiveExpenseCents))
     }
   ];
 
@@ -154,11 +205,11 @@ export function buildSankeyModel(
 
   const links: SankeyLink[] = [];
 
-  if (totalExpenseCents > 0) {
+  if (effectiveExpenseCents > 0) {
     links.push({
       source: INCOME_NODE_ID,
       target: EXPENSES_NODE_ID,
-      value: round2(fromAmountCents(totalExpenseCents)),
+      value: round2(fromAmountCents(effectiveExpenseCents)),
       color: "#ef4444"
     });
   }
@@ -172,7 +223,7 @@ export function buildSankeyModel(
     });
   }
 
-  for (const entry of categoryEntries) {
+  for (const entry of refinedCategoryEntries) {
     const categoryId = `category:${slugify(entry.key) || "categoria"}`;
     const categoryColor = getCategoryColor(entry.label);
 
@@ -258,6 +309,8 @@ export function buildSankeyModel(
     links,
     totalIncome: round2(fromAmountCents(totalIncomeCents)),
     totalExpense: round2(fromAmountCents(totalExpenseCents)),
-    netSaved: round2(fromAmountCents(netSavedCents))
+    netSaved: round2(fromAmountCents(netSavedCents)),
+    hiddenOperationalExpense: round2(fromAmountCents(hiddenOperationalExpenseCents)),
+    hiddenOperationalCount
   };
 }

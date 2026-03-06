@@ -43,7 +43,9 @@ type FullDashboardOptions = {
 
 export const dashboardRepo = {
   async summaryByRange(userId: string, from: Date, to: Date) {
-    const txs = await transactionsRepo.listByDateRange(userId, from, to, true);
+    const txs = (await transactionsRepo.listByDateRange(userId, from, to, true)).filter(
+      (transaction) => !transaction.excluded
+    );
     const totals = accumulateOfficialFlowCents(txs.map((tx) => ({ type: tx.type, amount: tx.amount })));
     const byCategoryMap = new Map<string, { totalCents: number; name: string; color: string }>();
 
@@ -87,7 +89,7 @@ export const dashboardRepo = {
   },
 
   async fullDashboard(userId: string, now = new Date(), options?: FullDashboardOptions) {
-    const latestTransactionDate = await transactionsRepo.latestPostedAt(userId);
+    const latestTransactionDate = await transactionsRepo.latestPostedAt(userId, { excluded: false });
     const referenceDate = options?.forceReferenceDate
       ? options.referenceDate ?? now
       : latestTransactionDate ?? now;
@@ -97,9 +99,24 @@ export const dashboardRepo = {
     const previousMonthEnd = endOfMonth(subMonths(referenceDate, 1));
     const sixMonthsAgo = startOfMonth(subMonths(referenceDate, 5));
 
-    const currentTransactions = await transactionsRepo.listByDateRange(userId, currentMonthStart, currentMonthEnd, true);
-    const previousTransactions = await transactionsRepo.listByDateRange(userId, previousMonthStart, previousMonthEnd, true);
-    const monthlyTransactions = await transactionsRepo.listByDateRange(userId, sixMonthsAgo, currentMonthEnd, false);
+    const currentTransactions = (await transactionsRepo.listByDateRange(
+      userId,
+      currentMonthStart,
+      currentMonthEnd,
+      true
+    )).filter((transaction) => !transaction.excluded);
+    const previousTransactions = (await transactionsRepo.listByDateRange(
+      userId,
+      previousMonthStart,
+      previousMonthEnd,
+      true
+    )).filter((transaction) => !transaction.excluded);
+    const monthlyTransactions = (await transactionsRepo.listByDateRange(
+      userId,
+      sixMonthsAgo,
+      currentMonthEnd,
+      false
+    )).filter((transaction) => !transaction.excluded);
 
     const monthSummary = accumulateOfficialFlowCents(
       currentTransactions.map((tx) => ({ type: tx.type, amount: tx.amount }))

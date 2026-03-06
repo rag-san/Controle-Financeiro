@@ -1090,16 +1090,20 @@ export const transactionsRepo = {
     return rows.map((row) => ({ amount: fromCents(row.amount_cents) }));
   },
 
-  async latestPostedAt(userId: string): Promise<Date | null> {
+  async latestPostedAt(userId: string, options?: { excluded?: boolean }): Promise<Date | null> {
+    const excludedClause = options?.excluded === undefined ? "" : " AND excluded = ?";
     const row = (await db
       .prepare(
         `SELECT posted_at
          FROM transactions
          WHERE user_id = ?
+         ${excludedClause}
          ORDER BY posted_at DESC
          LIMIT 1`
       )
-      .get(userId)) as { posted_at: string } | undefined;
+      .get(...(options?.excluded === undefined ? [userId] : [userId, options.excluded]))) as
+      | { posted_at: string }
+      | undefined;
 
     if (!row?.posted_at) {
       return null;
@@ -1109,16 +1113,20 @@ export const transactionsRepo = {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   },
 
-  async oldestPostedAt(userId: string): Promise<Date | null> {
+  async oldestPostedAt(userId: string, options?: { excluded?: boolean }): Promise<Date | null> {
+    const excludedClause = options?.excluded === undefined ? "" : " AND excluded = ?";
     const row = (await db
       .prepare(
         `SELECT posted_at
          FROM transactions
          WHERE user_id = ?
+         ${excludedClause}
          ORDER BY posted_at ASC
          LIMIT 1`
       )
-      .get(userId)) as { posted_at: string } | undefined;
+      .get(...(options?.excluded === undefined ? [userId] : [userId, options.excluded]))) as
+      | { posted_at: string }
+      | undefined;
 
     if (!row?.posted_at) {
       return null;

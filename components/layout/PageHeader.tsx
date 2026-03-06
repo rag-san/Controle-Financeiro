@@ -10,7 +10,7 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps): React
   return (
     <div className="flex min-h-[68px] flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <h1 className="truncate text-xl font-semibold leading-tight text-foreground">
+        <h1 className="break-words text-xl font-semibold leading-tight text-foreground sm:truncate">
           {title}
         </h1>
         {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}

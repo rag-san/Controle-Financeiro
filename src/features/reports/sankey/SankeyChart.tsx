@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ResponsiveContainer, Sankey, Tooltip } from "recharts";
-import type { TooltipContentProps, TooltipPayloadEntry } from "recharts";
+import { useMemo } from "react";
+import { useTheme } from "@/components/layout/ThemeProvider";
 import type { SankeyLink, SankeyNode } from "@/src/features/reports/sankey/types";
 import { formatBRL } from "@/src/utils/format";
 
@@ -12,338 +11,374 @@ type SankeyChartProps = {
   totalIncome: number;
 };
 
-type RechartsNode = SankeyNode & {
-  name: string;
+type FlowNode = {
+  id: string;
+  label: string;
+  color: string;
+  value: number;
+  dstHeight: number;
+  dstTop: number;
 };
 
-type RechartsLink = {
-  source: number;
-  target: number;
+type CenterNodeLayout = {
+  id: string;
+  label: string;
   value: number;
   color: string;
+  top: number;
+  height: number;
 };
 
-type SankeyNodeRendererProps = {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  payload?: RechartsNode;
-};
-
-type SankeyLinkRendererProps = {
-  index?: number;
-  sourceX?: number;
-  targetX?: number;
-  sourceY?: number;
-  targetY?: number;
-  sourceControlX?: number;
-  targetControlX?: number;
-  linkWidth?: number;
-  payload?: {
-    color?: string;
-    value?: number;
-    source?: { kind?: string };
-    target?: { kind?: string };
-  };
-};
-
-type SankeyTooltipPayloadItem = TooltipPayloadEntry<number, string> & {
-  payload?: {
-    value?: number;
-    name?: string;
-    source?: { name?: string };
-    target?: { name?: string };
-  };
-};
-
-const MIN_LINK_WIDTH = 1.5;
-const MAX_LINK_WIDTH = 14;
-const COMPACT_LAYOUT_BREAKPOINT = 860;
-const DENSE_LAYOUT_NODE_THRESHOLD = 16;
-const DENSE_LAYOUT_LINK_THRESHOLD = 14;
+const CHART_W = 1280;
+const CHART_H = 280;
+const NODE_W = 12;
+const LEFT_X = 74;
+const CENTER_X = 370;
+const RIGHT_X = 880;
+const LEFT_NODE_H = 132;
+const CENTER_TOTAL_H = 170;
+const CENTER_GAP = 18;
 
 function clamp(min: number, max: number, value: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function truncateLabel(label: string, max = 17): string {
-  if (label.length <= max) return label;
-  return `${label.slice(0, max - 1)}…`;
-}
+function normalizeHeights(values: number[], totalHeight: number, minHeight: number): number[] {
+  if (values.length === 0) return [];
+  const sum = values.reduce((acc, value) => acc + value, 0);
+  if (sum <= 0) return values.map(() => minHeight);
 
-function toRechartsData(nodes: SankeyNode[], links: SankeyLink[]): { nodes: RechartsNode[]; links: RechartsLink[] } {
-  const rechartsNodes: RechartsNode[] = nodes.map((node) => ({
-    ...node,
-    name: node.label
-  }));
+  const proportional = values.map((value) => (value / sum) * totalHeight);
+  const withMin = proportional.map((height) => Math.max(minHeight, height));
+  const currentTotal = withMin.reduce((acc, height) => acc + height, 0);
 
-  const nodeIndexById = new Map(rechartsNodes.map((node, index) => [node.id, index]));
-  const rechartsLinks: RechartsLink[] = [];
-
-  for (const link of links) {
-    const source = nodeIndexById.get(link.source);
-    const target = nodeIndexById.get(link.target);
-    if (source === undefined || target === undefined) continue;
-    if (!Number.isFinite(link.value) || link.value <= 0) continue;
-    rechartsLinks.push({
-      source,
-      target,
-      value: link.value,
-      color: link.color
-    });
+  if (currentTotal <= totalHeight) {
+    return withMin;
   }
 
-  return { nodes: rechartsNodes, links: rechartsLinks };
-}
+  const flexibleIndexes = withMin
+    .map((height, index) => ({ height, index }))
+    .filter((item) => item.height > minHeight)
+    .map((item) => item.index);
 
-function toLayoutData(
-  nodes: SankeyNode[],
-  links: SankeyLink[],
-  simplifiedLayout: boolean,
-  topCategoriesLimit: number
-): { nodes: SankeyNode[]; links: SankeyLink[] } {
-  if (!simplifiedLayout) {
-    return { nodes, links };
+  if (flexibleIndexes.length === 0) {
+    return withMin.map(() => totalHeight / withMin.length);
   }
 
-  const expensesNodeId = nodes.find((node) => node.kind === "expenses")?.id ?? "expenses";
-  const topCategoryIds = new Set(
-    links
-      .filter((link) => link.source === expensesNodeId)
-      .sort((left, right) => right.value - left.value)
-      .slice(0, topCategoriesLimit)
-      .map((link) => link.target)
-  );
+  const overflow = currentTotal - totalHeight;
+  const flexibleTotal = flexibleIndexes.reduce((acc, index) => acc + (withMin[index] - minHeight), 0);
+  if (flexibleTotal <= 0) {
+    return withMin;
+  }
 
-  const allowedNodeIds = new Set(
-    nodes
-      .filter((node) => {
-        if (node.kind === "subcategory") return false;
-        if (node.kind !== "category") return true;
-        return topCategoryIds.has(node.id) || node.label.toLowerCase().includes("outras");
-      })
-      .map((node) => node.id)
-  );
-
-  const filteredLinks = links.filter(
-    (link) => allowedNodeIds.has(link.source) && allowedNodeIds.has(link.target)
-  );
-  const filteredNodes = nodes.filter((node) => allowedNodeIds.has(node.id));
-
-  return {
-    nodes: filteredNodes,
-    links: filteredLinks
-  };
+  return withMin.map((height, index) => {
+    if (!flexibleIndexes.includes(index)) return height;
+    const reducible = height - minHeight;
+    const reduction = (reducible / flexibleTotal) * overflow;
+    return Math.max(minHeight, height - reduction);
+  });
 }
 
-function SankeyTooltip({
-  active,
-  payload,
-  totalIncome
-}: Partial<TooltipContentProps<number, string>> & { totalIncome: number }): React.JSX.Element | null {
-  const typedPayload = payload as SankeyTooltipPayloadItem[] | undefined;
-  const item = typedPayload?.[0];
-  const data = item?.payload;
+function relaxLabelPositions(values: number[], minGap: number, minY: number, maxY: number): number[] {
+  const positions = [...values];
+  for (let pass = 0; pass < 24; pass += 1) {
+    for (let index = 1; index < positions.length; index += 1) {
+      const prev = positions[index - 1];
+      const curr = positions[index];
+      if (curr - prev < minGap) {
+        const middle = (prev + curr) / 2;
+        positions[index - 1] = middle - minGap / 2;
+        positions[index] = middle + minGap / 2;
+      }
+    }
+  }
 
-  if (!active || !data) return null;
+  return positions.map((position) => clamp(minY, maxY, position));
+}
 
-  const value = typeof data.value === "number" ? data.value : 0;
-  const hasLink = Boolean(data.source?.name || data.target?.name);
-  const title = hasLink
-    ? `${data.source?.name ?? "Origem"} → ${data.target?.name ?? "Destino"}`
-    : (data.name ?? "Fluxo");
-  const percent = totalIncome > 0 ? (value / totalIncome) * 100 : 0;
+function buildRibbonPath(
+  srcRightX: number,
+  dstLeftX: number,
+  sourceTop: number,
+  sourceBottom: number,
+  targetTop: number,
+  targetBottom: number
+): string {
+  const dx = dstLeftX - srcRightX;
+  const controlA = srcRightX + dx * 0.48;
+  const controlB = dstLeftX - dx * 0.48;
 
+  return `M ${srcRightX} ${sourceTop}
+    C ${controlA} ${sourceTop}, ${controlB} ${targetTop}, ${dstLeftX} ${targetTop}
+    L ${dstLeftX} ${targetBottom}
+    C ${controlB} ${targetBottom}, ${controlA} ${sourceBottom}, ${srcRightX} ${sourceBottom}
+    Z`;
+}
+
+function splitLabel(label: string, maxCharsPerLine = 24, maxLines = 2): string[] {
+  const words = label.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return ["Categoria"];
+
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine) {
+      current = candidate;
+      continue;
+    }
+
+    if (current) {
+      lines.push(current);
+      current = word;
+    } else {
+      lines.push(word.slice(0, maxCharsPerLine));
+      current = word.slice(maxCharsPerLine);
+    }
+
+    if (lines.length === maxLines - 1) {
+      break;
+    }
+  }
+
+  const consumedWords = lines.join(" ").split(/\s+/).filter(Boolean).length;
+  const remainingWords = words.slice(consumedWords);
+  const finalLine = [current, ...remainingWords].filter(Boolean).join(" ").trim();
+
+  if (finalLine) {
+    lines.push(finalLine);
+  }
+
+  return lines.slice(0, maxLines).map((line, index) => {
+    if (index === maxLines - 1 && lines.length > maxLines) {
+      return `${line.slice(0, Math.max(1, maxCharsPerLine - 1)).trim()}…`;
+    }
+    if (line.length > maxCharsPerLine) {
+      return `${line.slice(0, Math.max(1, maxCharsPerLine - 1)).trim()}…`;
+    }
+    return line;
+  });
+}
+
+function CenterNode({
+  layout,
+  fg,
+  sub
+}: {
+  layout: CenterNodeLayout;
+  fg: string;
+  sub: string;
+}): React.JSX.Element {
   return (
-    <div className="min-w-[14rem] rounded-xl border border-border bg-card p-3 text-sm shadow-xl dark:border-border dark:bg-secondary/60">
-      <p className="text-xs text-muted-foreground">{title}</p>
-      <p className="mt-1 tabular-nums font-semibold text-foreground">{formatBRL(value)}</p>
-      {totalIncome > 0 ? (
-        <p className="mt-0.5 text-xs text-muted-foreground">{percent.toFixed(1)}% da receita</p>
-      ) : null}
-    </div>
+    <g>
+      <rect x={CENTER_X} y={layout.top} width={NODE_W} height={layout.height} rx={3} fill={layout.color} opacity={0.96} />
+      <text x={CENTER_X + NODE_W + 12} y={layout.top + layout.height / 2 - 6} fill={fg} fontSize={12} fontWeight={700}>
+        {layout.label}
+      </text>
+      <text x={CENTER_X + NODE_W + 12} y={layout.top + layout.height / 2 + 12} fill={sub} fontSize={10}>
+        {formatBRL(layout.value)}
+      </text>
+    </g>
   );
 }
 
 export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): React.JSX.Element {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-  const [hoveredLink, setHoveredLink] = useState<number | null>(null);
-  const compactLayout = containerWidth > 0 && containerWidth < COMPACT_LAYOUT_BREAKPOINT;
-  const hasSubcategories = useMemo(
-    () => nodes.some((node) => node.kind === "subcategory"),
-    [nodes]
+  const { theme } = useTheme();
+  const dark = theme === "dark";
+  const fg = dark ? "#f8fafc" : "#0f172a";
+  const sub = dark ? "#a8b5c7" : "#64748b";
+  const connector = dark ? "rgba(148,163,184,0.36)" : "rgba(100,116,139,0.34)";
+
+  const incomeNode = nodes.find((node) => node.kind === "income");
+  const expensesNode = nodes.find((node) => node.kind === "expenses");
+  const savedNode = nodes.find((node) => node.kind === "saved");
+  const nodeById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+
+  const expenseLinks = useMemo(
+    () =>
+      links
+        .filter((link) => link.source === expensesNode?.id && link.value > 0)
+        .sort((left, right) => right.value - left.value)
+        .slice(0, 5),
+    [expensesNode?.id, links]
   );
-  const simplifiedLayout =
-    hasSubcategories &&
-    (compactLayout || nodes.length > DENSE_LAYOUT_NODE_THRESHOLD || links.length > DENSE_LAYOUT_LINK_THRESHOLD);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
+  if (!incomeNode || !expensesNode || expenseLinks.length === 0) {
+    return (
+      <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed border-white/10">
+        <p className="text-sm text-slate-400">Sem fluxo suficiente para renderizar o Sankey.</p>
+      </div>
+    );
+  }
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      setContainerWidth(entry.contentRect.width);
+  const expenseValue = expenseLinks.reduce((acc, item) => acc + item.value, 0);
+  const savedValue = Math.max(0, savedNode?.displayValue ?? links.find((link) => link.target === savedNode?.id)?.value ?? 0);
+
+  const leftNodeY = (CHART_H - LEFT_NODE_H) / 2;
+  const centerValues = savedValue > 0 ? [expenseValue, savedValue] : [expenseValue];
+  const centerHeights = normalizeHeights(
+    centerValues,
+    CENTER_TOTAL_H - (centerValues.length - 1) * CENTER_GAP,
+    26
+  );
+  const centerStartY = (CHART_H - CENTER_TOTAL_H) / 2;
+
+  let centerCursor = centerStartY;
+  const centerLayouts: CenterNodeLayout[] = [
+    {
+      id: expensesNode.id,
+      label: "Despesas reais",
+      value: expenseValue,
+      color: expensesNode.color,
+      top: centerCursor,
+      height: centerHeights[0] ?? CENTER_TOTAL_H
+    }
+  ];
+  centerCursor += (centerHeights[0] ?? CENTER_TOTAL_H) + CENTER_GAP;
+
+  if (savedValue > 0 && savedNode) {
+    centerLayouts.push({
+      id: savedNode.id,
+      label: "Economizado",
+      value: savedValue,
+      color: savedNode.color,
+      top: centerCursor,
+      height: centerHeights[1] ?? 32
     });
+  }
 
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const layoutData = useMemo(
-    () => toLayoutData(nodes, links, simplifiedLayout, compactLayout ? 4 : 5),
-    [compactLayout, links, nodes, simplifiedLayout]
+  const centerById = new Map(centerLayouts.map((layout) => [layout.id, layout]));
+  const incomeSegmentHeights = normalizeHeights(
+    centerLayouts.map((item) => item.value),
+    LEFT_NODE_H,
+    14
   );
-  const chartData = useMemo(
-    () => toRechartsData(layoutData.nodes, layoutData.links),
-    [layoutData.links, layoutData.nodes]
+  let incomeCursor = leftNodeY;
+  const incomeSegments = centerLayouts.map((layout, index) => {
+    const segment = {
+      targetId: layout.id,
+      top: incomeCursor,
+      height: incomeSegmentHeights[index] ?? 14
+    };
+    incomeCursor += segment.height;
+    return segment;
+  });
+
+  const categoryHeights = normalizeHeights(
+    expenseLinks.map((link) => link.value),
+    CHART_H - 48 - (expenseLinks.length - 1) * 14,
+    16
   );
-  const maxLinkValue = useMemo(
-    () => Math.max(1, ...chartData.links.map((link) => link.value)),
-    [chartData.links]
-  );
-  const maxColumnNodes = useMemo(() => {
-    const counts = [0, 0, 0, 0];
-    for (const node of layoutData.nodes) {
-      counts[node.column] += 1;
-    }
-    return Math.max(1, ...counts);
-  }, [layoutData.nodes]);
+  let categoryCursor = 24;
+  const flowNodes: FlowNode[] = expenseLinks.map((link, index) => {
+    const target = nodeById.get(link.target);
+    const node: FlowNode = {
+      id: link.target,
+      label: target?.label ?? "Categoria",
+      color: target?.color ?? link.color,
+      value: link.value,
+      dstHeight: categoryHeights[index] ?? 16,
+      dstTop: categoryCursor
+    };
+    categoryCursor += node.dstHeight + 14;
+    return node;
+  });
 
-  const renderNode = (rawProps: unknown): React.JSX.Element => {
-    const { x = 0, y = 0, width = 0, height = 0, payload } = rawProps as SankeyNodeRendererProps;
-    const isRightSide = (payload?.column ?? 0) >= 2;
-    const textX = isRightSide ? x - 7 : x + width + 7;
-    const textAnchor = isRightSide ? "end" : "start";
-    const textY = y + height / 2;
-    const displayValue = payload?.displayValue ?? 0;
-    const alwaysShowLabel =
-      payload?.kind === "income" || payload?.kind === "expenses" || payload?.kind === "saved";
-    const minLabelValue = totalIncome > 0 ? totalIncome * (compactLayout ? 0.06 : 0.025) : 0;
-    const showLabel = height >= 12 && (alwaysShowLabel || displayValue >= minLabelValue);
-    const showValue = !compactLayout && height >= 20 && (alwaysShowLabel || displayValue >= minLabelValue * 1.6);
-    const label = truncateLabel(payload?.name ?? "", compactLayout ? 14 : 17);
-
-    return (
-      <g>
-        <rect
-          x={x}
-          y={y}
-          width={width}
-          height={height}
-          rx={4}
-          fill={payload?.color ?? "#3b82f6"}
-          fillOpacity={0.95}
-          stroke="rgba(148, 163, 184, 0.28)"
-        />
-        {showLabel ? (
-          <text
-            x={textX}
-            y={showValue ? textY - 5 : textY}
-            textAnchor={textAnchor}
-            dominantBaseline="middle"
-            className="fill-foreground text-[12px] font-semibold"
-            aria-hidden="true"
-          >
-            {label}
-          </text>
-        ) : null}
-        {showValue ? (
-          <text
-            x={textX}
-            y={textY + 9}
-            textAnchor={textAnchor}
-            dominantBaseline="middle"
-            className="fill-muted-foreground text-[11px] font-medium tabular-nums"
-            aria-hidden="true"
-          >
-            {formatBRL(displayValue)}
-          </text>
-        ) : null}
-      </g>
-    );
-  };
-
-  const heightPx = compactLayout
-    ? clamp(280, 520, 200 + maxColumnNodes * 24)
-    : simplifiedLayout
-      ? clamp(300, 520, 180 + maxColumnNodes * 22)
-      : clamp(320, 640, 190 + maxColumnNodes * 24);
-  const desiredPadding =
-    maxColumnNodes <= 2 ? 48 : maxColumnNodes <= 4 ? 24 : maxColumnNodes <= 7 ? 14 : 8;
-  const maxSafePadding =
-    maxColumnNodes > 1
-      ? Math.floor((heightPx - 40 - maxColumnNodes * (compactLayout ? 10 : 12)) / (maxColumnNodes - 1))
-      : 0;
-  const nodePadding =
-    maxColumnNodes > 1
-      ? Math.max(6, Math.min(desiredPadding, maxSafePadding))
-      : 16;
-
-  const renderLink = (rawProps: unknown): React.JSX.Element => {
-    const props = rawProps as SankeyLinkRendererProps;
-    const index = props.index ?? 0;
-    const sourceX = props.sourceX ?? 0;
-    const targetX = props.targetX ?? 0;
-    const sourceY = props.sourceY ?? 0;
-    const targetY = props.targetY ?? 0;
-    const sourceControlX = props.sourceControlX ?? sourceX;
-    const targetControlX = props.targetControlX ?? targetX;
-    const stroke = props.payload?.color ?? "rgba(148, 163, 184, 0.26)";
-    const realValue = Math.max(0, props.payload?.value ?? 0);
-    const ratio = realValue / maxLinkValue;
-    const easedRatio = Math.pow(ratio, 0.78);
-    const minWidth = compactLayout ? 1.2 : MIN_LINK_WIDTH;
-    const maxWidth = compactLayout ? 10 : MAX_LINK_WIDTH;
-    const sourceKind = props.payload?.source?.kind;
-    const targetKind = props.payload?.target?.kind;
-    const isSavedFlow = sourceKind === "income" && targetKind === "saved";
-    let strokeWidth = clamp(minWidth, maxWidth, minWidth + (maxWidth - minWidth) * easedRatio);
-    if (isSavedFlow) {
-      strokeWidth = Math.min(strokeWidth, compactLayout ? 3.8 : 5.2);
-    }
-    const isMinorFlow = ratio < 0.08;
-    const baseOpacity = isSavedFlow ? 0.24 : isMinorFlow ? 0.34 : 0.55;
-    const strokeOpacity = hoveredLink === null ? baseOpacity : hoveredLink === index ? 0.8 : 0.22;
-
-    const path = `M${sourceX},${sourceY}
-      C${sourceControlX},${sourceY}
-      ${targetControlX},${targetY}
-      ${targetX},${targetY}`;
-
-    return (
-      <path
-        d={path}
-        fill="none"
-        stroke={stroke}
-        strokeDasharray={isSavedFlow ? "4 3" : undefined}
-        strokeOpacity={strokeOpacity}
-        strokeWidth={strokeWidth}
-        onMouseEnter={() => setHoveredLink(index)}
-        onMouseLeave={() => setHoveredLink(null)}
-      />
-    );
-  };
+  const rawLabelY = flowNodes.map((flow) => flow.dstTop + flow.dstHeight / 2);
+  const labelY = relaxLabelPositions(rawLabelY, 24, 18, CHART_H - 18);
 
   return (
-    <div ref={containerRef} className="w-full" style={{ height: `${heightPx}px` }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <Sankey
-          data={chartData}
-          node={renderNode}
-          link={renderLink}
-          nodePadding={nodePadding}
-          nodeWidth={compactLayout ? 8 : 9}
-          iterations={64}
-          margin={compactLayout ? { top: 16, right: 60, bottom: 16, left: 60 } : { top: 20, right: 92, bottom: 20, left: 92 }}
-        >
-          <Tooltip content={<SankeyTooltip totalIncome={totalIncome} />} />
-        </Sankey>
-      </ResponsiveContainer>
+    <div className="w-full">
+      <svg
+        width="100%"
+        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="block overflow-visible"
+      >
+        <rect x={LEFT_X} y={leftNodeY} width={NODE_W} height={LEFT_NODE_H} rx={3} fill={incomeNode.color} opacity={0.98} />
+        <text x={LEFT_X - 10} y={CHART_H / 2 - 7} textAnchor="end" fill={fg} fontSize={12} fontWeight={700}>
+          Receitas
+        </text>
+        <text x={LEFT_X - 10} y={CHART_H / 2 + 13} textAnchor="end" fill={sub} fontSize={10}>
+          {formatBRL(totalIncome)}
+        </text>
+
+        {incomeSegments.map((segment) => {
+          const target = centerById.get(segment.targetId);
+          if (!target) return null;
+
+          return (
+            <path
+              key={`income-${segment.targetId}`}
+              d={buildRibbonPath(
+                LEFT_X + NODE_W,
+                CENTER_X,
+                segment.top,
+                segment.top + segment.height,
+                target.top,
+                target.top + target.height
+              )}
+              fill={target.color}
+              opacity={segment.targetId === expensesNode.id ? 0.28 : 0.22}
+            />
+          );
+        })}
+
+        {centerLayouts.map((layout) => (
+          <CenterNode key={layout.id} layout={layout} fg={fg} sub={sub} />
+        ))}
+
+        {flowNodes.map((flow, index) => {
+          const expenseLayout = centerById.get(expensesNode.id);
+          if (!expenseLayout) return null;
+
+          const sourceHeights = normalizeHeights(
+            flowNodes.map((item) => item.value),
+            expenseLayout.height,
+            12
+          );
+          const sourceTop = expenseLayout.top + sourceHeights.slice(0, index).reduce((sum, value) => sum + value, 0);
+          const sourceBottom = sourceTop + (sourceHeights[index] ?? 12);
+          const midY = flow.dstTop + flow.dstHeight / 2;
+          const labelX = RIGHT_X + NODE_W + 10;
+          const ly = labelY[index];
+          const labelLines = splitLabel(flow.label, 28, 2);
+          const labelStartY = ly - ((labelLines.length - 1) * 11) / 2;
+          const valueY = labelStartY + labelLines.length * 11 + 4;
+
+          return (
+            <g key={flow.id}>
+              <path
+                d={buildRibbonPath(
+                  CENTER_X + NODE_W,
+                  RIGHT_X,
+                  sourceTop,
+                  sourceBottom,
+                  flow.dstTop,
+                  flow.dstTop + flow.dstHeight
+                )}
+                fill={flow.color}
+                opacity={0.34}
+              />
+              <rect x={RIGHT_X} y={flow.dstTop} width={NODE_W} height={flow.dstHeight} rx={3} fill={flow.color} opacity={0.96} />
+              {Math.abs(ly - midY) > 4 ? (
+                <line x1={RIGHT_X + NODE_W} y1={midY} x2={labelX - 3} y2={ly} stroke={connector} strokeWidth={1.2} />
+              ) : null}
+              <text x={labelX} y={labelStartY} fill={fg} fontSize={11} fontWeight={700}>
+                {labelLines.map((line, lineIndex) => (
+                  <tspan key={`${flow.id}-${lineIndex}`} x={labelX} dy={lineIndex === 0 ? 0 : 11}>
+                    {line}
+                  </tspan>
+                ))}
+              </text>
+              <text x={labelX} y={valueY} fill={sub} fontSize={9.4}>
+                {formatBRL(flow.value)} · {((flow.value / Math.max(expenseValue, 1)) * 100).toFixed(1)}%
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
-
-

@@ -41,6 +41,55 @@ git tag v<versao>
 git push origin v<versao>
 ```
 
+## Release 1.2.0 (foco: consistencia financeira e responsividade mobile)
+
+### Objetivo
+
+Consolidar a fonte canônica dos dados financeiros, eliminar distorções entre dashboard/relatórios/fluxo de caixa e fechar as principais quebras de usabilidade no mobile.
+
+### Checklist especifico
+
+1. Consistência financeira:
+- Unificar métricas oficiais de dashboard, cashflow e reports na mesma regra do ledger.
+- Garantir que transferência interna e pagamento de fatura não distorçam receitas, despesas e saldo.
+- Validar saldo real de caixa, gasto classificado e saída real de caixa em todas as telas analíticas.
+
+2. Importação e dados:
+- Preservar metadados críticos no ledger (`excluded`, `opening balance adjustment`).
+- Garantir sincronização estável entre importação, ledger e relatórios.
+- Validar importação com dados realistas e evitar duplicação de linhas/efeitos.
+
+3. UX e feedback:
+- Padronizar estados de loading, erro, vazio e atualização.
+- Garantir que dashboards, filtros, importação e relatórios mostrem feedback explícito ao usuário.
+
+4. Responsividade:
+- Corrigir navegação mobile, drawer e topbar.
+- Adaptar cards, filtros, formulários, modais e tabelas para 320px, 360px, 390px, 412px, tablet e desktop.
+- Remover dependência de scroll horizontal como caminho principal em telas pequenas.
+
+5. Testes:
+- Validar `typecheck`, `lint`, `test:unit`, `build` e `test:e2e`.
+- Cobrir cenários críticos de consistência financeira e regressão visual/estrutural em mobile.
+
+### Criterio de pronto (DoD)
+
+- `npm run typecheck` passa.
+- `npm run lint` passa.
+- `npm run test:unit` passa.
+- `npm run build` passa.
+- `npm run test:e2e` passa.
+- Dashboard, transações, cashflow, reports, categorias, contas, patrimônio, recorrentes e revisão funcionam sem quebra relevante em mobile.
+- Não há divergência material entre saldo, fluxo de caixa, relatórios e transações.
+
+### Notas de release 1.2.0
+
+- Regras financeiras consolidadas no ledger para dashboard, relatórios e fluxo de caixa.
+- Tratamento correto de pagamento de fatura, compras no crédito, transferências internas e exclusões.
+- Estados visuais revisados para loading, erro, vazio e atualização.
+- Cobertura E2E adicionada para fluxos críticos e validação multi-breakpoint.
+- Revisão estrutural da experiência mobile com cards/listas adaptados, modais fullscreen e navegação mais estável.
+
 ## Release 1.0.1 (foco: importacao por extrato)
 
 ### Objetivo

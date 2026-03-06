@@ -4,6 +4,7 @@ import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics"
 import { getCategoryColor } from "@/src/features/categories/categoryColors";
 import type {
   ReportPreparedTransaction,
+  ReportsCashSummary,
   ReportsCategorySpend,
   ReportsMerchantSpend,
   ReportsModel,
@@ -21,6 +22,12 @@ type BuildReportsModelInput = {
   period: ReportsPeriodComparison;
   accountId?: string;
   categoryId?: string;
+};
+
+type BuildReportsModelFromPreparedInput = {
+  transactions: ReportPreparedTransaction[];
+  period: ReportsPeriodComparison;
+  cashSummary?: ReportsCashSummary;
 };
 
 type CategoryAccumulator = {
@@ -101,15 +108,121 @@ function finalizeTotals(totals: ReportsTotalsCents): ReportsTotals {
   };
 }
 
-export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
-  const categoriesById = new Map(input.categories.map((category) => [category.id, category]));
+function emptyCashSummary(): ReportsCashSummary {
+  return {
+    inflow: 0,
+    outflow: 0,
+    net: 0,
+    previousInflow: 0,
+    previousOutflow: 0,
+    previousNet: 0,
+    cashBalance: 0
+  };
+}
 
-  const prepared: ReportPreparedTransaction[] = [];
+function buildModelFromPrepared(input: BuildReportsModelFromPreparedInput): ReportsModel {
+  const prepared = [...input.transactions];
   const currentPeriodTransactions: ReportPreparedTransaction[] = [];
   const currentTotals = createEmptyTotals();
   const previousTotals = createEmptyTotals();
   const categoryById = new Map<string, CategoryAccumulator>();
   const merchantByKey = new Map<string, MerchantAccumulator>();
+
+  for (const preparedTx of prepared) {
+    const dateKey = toDateKey(preparedTx.date);
+    if (!dateKey) continue;
+
+    const inCurrent = isDateInRangeByKey(dateKey, input.period.current.start, input.period.current.end);
+    const inPrevious = isDateInRangeByKey(dateKey, input.period.previous.start, input.period.previous.end);
+
+    if (inCurrent) {
+      currentPeriodTransactions.push(preparedTx);
+
+      currentTotals.incomeCents += preparedTx.incomeCents;
+      currentTotals.expenseCents += preparedTx.expenseCents;
+
+      if (preparedTx.expenseCents !== 0) {
+        const categoryKey = preparedTx.categoryId ?? "__uncategorized";
+        const categoryCurrent = categoryById.get(categoryKey) ?? {
+          categoryId: preparedTx.categoryId,
+          name: preparedTx.categoryName,
+          valueCents: 0,
+          color: preparedTx.categoryColor,
+          icon: preparedTx.categoryIcon
+        };
+        categoryCurrent.valueCents += preparedTx.expenseCents;
+        categoryById.set(categoryKey, categoryCurrent);
+
+        const merchantCurrent = merchantByKey.get(preparedTx.merchantKey) ?? {
+          merchantKey: preparedTx.merchantKey,
+          merchantLabel: toMerchantLabel(preparedTx.description, preparedTx.merchantKey),
+          totalCents: 0,
+          count: 0
+        };
+        merchantCurrent.totalCents += preparedTx.expenseCents;
+        merchantCurrent.count += 1;
+        merchantByKey.set(preparedTx.merchantKey, merchantCurrent);
+      }
+    }
+
+    if (inPrevious) {
+      previousTotals.incomeCents += preparedTx.incomeCents;
+      previousTotals.expenseCents += preparedTx.expenseCents;
+    }
+  }
+
+  const finalizedCurrentTotals = finalizeTotals(currentTotals);
+  const finalizedPreviousTotals = finalizeTotals(previousTotals);
+  const expenseTotal = Math.max(0, finalizedCurrentTotals.expense);
+
+  const categorySpending: ReportsCategorySpend[] = [...categoryById.values()]
+    .filter((item) => item.valueCents > 0)
+    .sort((left, right) => right.valueCents - left.valueCents)
+    .map((item) => ({
+      categoryId: item.categoryId,
+      name: item.name,
+      value: round2(fromAmountCents(item.valueCents)),
+      share: expenseTotal > 0 ? round2((fromAmountCents(item.valueCents) / expenseTotal) * 100) : 0,
+      color: item.color,
+      icon: item.icon
+    }));
+
+  const topMerchants: ReportsMerchantSpend[] = [...merchantByKey.values()]
+    .filter((item) => item.totalCents > 0)
+    .sort((left, right) => right.totalCents - left.totalCents)
+    .slice(0, 10)
+    .map((item) => ({
+      merchantKey: item.merchantKey,
+      merchantLabel: item.merchantLabel,
+      total: round2(fromAmountCents(item.totalCents)),
+      count: item.count
+    }));
+
+  const timeSeries = buildIncomeExpenseSeries(prepared, input.period.current);
+  const recurringDetected = detectRecurringMerchants(prepared, input.period.current, 5);
+  const sankey = buildSankeyModel(currentPeriodTransactions, {
+    topCategories: 4,
+    topSubcategoriesPerCategory: 0
+  });
+  const hasCurrentData = finalizedCurrentTotals.income > 0 || finalizedCurrentTotals.expense > 0;
+
+  return {
+    currentTotals: finalizedCurrentTotals,
+    previousTotals: finalizedPreviousTotals,
+    cashSummary: input.cashSummary ?? emptyCashSummary(),
+    categorySpending,
+    topMerchants,
+    recurringDetected,
+    timeSeries,
+    sankey,
+    hasCurrentData
+  };
+}
+
+export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
+  const categoriesById = new Map(input.categories.map((category) => [category.id, category]));
+
+  const prepared: ReportPreparedTransaction[] = [];
 
   for (const transaction of input.transactions) {
     if (input.accountId && transaction.accountId !== input.accountId) continue;
@@ -135,6 +248,8 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
       amount: round2(transaction.amount),
       absAmount,
       type: transaction.type,
+      incomeCents: transaction.type === "income" ? absCents : 0,
+      expenseCents: transaction.type === "expense" ? absCents : 0,
       description: transaction.description,
       accountId: transaction.accountId,
       accountName: transaction.account?.name?.trim() || "Conta",
@@ -147,92 +262,16 @@ export function buildReportsModel(input: BuildReportsModelInput): ReportsModel {
       merchantKey
     };
     prepared.push(preparedTx);
-
-    const inCurrent = isDateInRangeByKey(dateKey, input.period.current.start, input.period.current.end);
-    const inPrevious = isDateInRangeByKey(dateKey, input.period.previous.start, input.period.previous.end);
-
-    if (inCurrent) {
-      currentPeriodTransactions.push(preparedTx);
-
-      if (preparedTx.type === "income") {
-        currentTotals.incomeCents += absCents;
-      } else if (preparedTx.type === "expense") {
-        currentTotals.expenseCents += absCents;
-
-        const categoryKey = preparedTx.categoryId ?? "__uncategorized";
-        const categoryCurrent = categoryById.get(categoryKey) ?? {
-          categoryId: preparedTx.categoryId,
-          name: preparedTx.categoryName,
-          valueCents: 0,
-          color: preparedTx.categoryColor,
-          icon: preparedTx.categoryIcon
-        };
-        categoryCurrent.valueCents += absCents;
-        categoryById.set(categoryKey, categoryCurrent);
-
-        const merchantCurrent = merchantByKey.get(merchantKey) ?? {
-          merchantKey,
-          merchantLabel: toMerchantLabel(preparedTx.description, merchantKey),
-          totalCents: 0,
-          count: 0
-        };
-        merchantCurrent.totalCents += absCents;
-        merchantCurrent.count += 1;
-        merchantByKey.set(merchantKey, merchantCurrent);
-      }
-    }
-
-    if (inPrevious) {
-      if (preparedTx.type === "income") {
-        previousTotals.incomeCents += absCents;
-      } else if (preparedTx.type === "expense") {
-        previousTotals.expenseCents += absCents;
-      }
-    }
   }
 
-  const finalizedCurrentTotals = finalizeTotals(currentTotals);
-  const finalizedPreviousTotals = finalizeTotals(previousTotals);
-  const expenseTotal = Math.max(0, finalizedCurrentTotals.expense);
-
-  const categorySpending: ReportsCategorySpend[] = [...categoryById.values()]
-    .sort((left, right) => right.valueCents - left.valueCents)
-    .map((item) => ({
-      categoryId: item.categoryId,
-      name: item.name,
-      value: round2(fromAmountCents(item.valueCents)),
-      share: expenseTotal > 0 ? round2((fromAmountCents(item.valueCents) / expenseTotal) * 100) : 0,
-      color: item.color,
-      icon: item.icon
-    }));
-
-  const topMerchants: ReportsMerchantSpend[] = [...merchantByKey.values()]
-    .sort((left, right) => right.totalCents - left.totalCents)
-    .slice(0, 10)
-    .map((item) => ({
-      merchantKey: item.merchantKey,
-      merchantLabel: item.merchantLabel,
-      total: round2(fromAmountCents(item.totalCents)),
-      count: item.count
-    }));
-
-  const timeSeries = buildIncomeExpenseSeries(prepared, input.period.current);
-  const recurringDetected = detectRecurringMerchants(prepared, input.period.current, 5);
-  const sankey = buildSankeyModel(currentPeriodTransactions, {
-    topCategories: 7,
-    topSubcategoriesPerCategory: 2
+  return buildModelFromPrepared({
+    transactions: prepared,
+    period: input.period
   });
-  const hasCurrentData = finalizedCurrentTotals.income > 0 || finalizedCurrentTotals.expense > 0;
-
-  return {
-    currentTotals: finalizedCurrentTotals,
-    previousTotals: finalizedPreviousTotals,
-    categorySpending,
-    topMerchants,
-    recurringDetected,
-    timeSeries,
-    sankey,
-    hasCurrentData
-  };
 }
 
+export function buildReportsModelFromPrepared(
+  input: BuildReportsModelFromPreparedInput
+): ReportsModel {
+  return buildModelFromPrepared(input);
+}

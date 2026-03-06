@@ -151,6 +151,15 @@ export function NetWorthCard({
 }: NetWorthCardProps): React.JSX.Element {
   const variationBadge = resolveVariationBadge(variacao);
   const gradientId = "dashboard-net-worth-gradient";
+  const yAxisWidth = 80;
+  const chartMarginTop = 8;
+  const chartMarginRight = 16;
+  const chartMarginBottom = 6;
+  const chartMargin = { top: chartMarginTop, right: chartMarginRight, left: 0, bottom: chartMarginBottom };
+  const xAxisReservedHeight = 30;
+  const xAxisPadding = 8;
+  const flatBadgeOffsetX = 0;
+  const flatBadgeBottomOffset = 34;
   const chartContainer = useElementSize<HTMLDivElement>();
   const normalizedSeries = React.useMemo(
     () =>
@@ -167,9 +176,32 @@ export function NetWorthCard({
     [normalizedSeries.length, chartContainer.size.width]
   );
   const canRenderChart = chartContainer.size.width > 0 && chartContainer.size.height > 0;
+  const flatBadgeCenter = React.useMemo(() => {
+    if (!canRenderChart) return null;
+
+    const plotLeft = yAxisWidth + xAxisPadding;
+    const plotRight = chartContainer.size.width - chartMarginRight - xAxisPadding;
+    const plotTop = chartMarginTop;
+    const plotBottom = chartContainer.size.height - chartMarginBottom - xAxisReservedHeight;
+
+    return {
+      x: ((plotLeft + plotRight) / 2) + flatBadgeOffsetX,
+      // Force the "Sem variacao" badge near the bottom area to avoid center overlap.
+      y: Math.max(plotTop + 1, plotBottom - flatBadgeBottomOffset)
+    };
+  }, [
+    canRenderChart,
+    chartContainer.size.height,
+    chartContainer.size.width,
+    chartMarginBottom,
+    chartMarginRight,
+    chartMarginTop,
+    flatBadgeBottomOffset,
+    flatBadgeOffsetX
+  ]);
 
   return (
-    <Card className="h-full overflow-hidden">
+    <Card className="h-full overflow-hidden" data-testid="dashboard-net-worth-card">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
           <CardTitle className="text-[11px] tracking-[0.12em] text-muted-foreground">
@@ -208,7 +240,7 @@ export function NetWorthCard({
                 width={chartContainer.size.width}
                 height={chartContainer.size.height}
                 data={normalizedSeries}
-                margin={{ top: 8, right: 16, left: 0, bottom: 6 }}
+                margin={chartMargin}
               >
                 <defs>
                   <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -223,7 +255,7 @@ export function NetWorthCard({
                   tickLine={false}
                   axisLine={false}
                   interval={flatSeries ? Math.max(normalizedSeries.length - 2, 0) : xAxisInterval}
-                  padding={{ left: 8, right: 8 }}
+                  padding={{ left: xAxisPadding, right: xAxisPadding }}
                   tickMargin={8}
                   tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                   minTickGap={18}
@@ -232,7 +264,7 @@ export function NetWorthCard({
                   tickFormatter={flatSeries ? formatBRL : formatBRLCompact}
                   tickLine={false}
                   axisLine={false}
-                  width={80}
+                  width={yAxisWidth}
                   tickCount={flatSeries ? 1 : 4}
                   domain={yDomain}
                   ticks={yTicks}
@@ -260,8 +292,15 @@ export function NetWorthCard({
                 />
               </AreaChart>
             ) : null}
-            {flatSeries ? (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            {flatSeries && flatBadgeCenter ? (
+              <div
+                className="pointer-events-none absolute"
+                style={{
+                  left: flatBadgeCenter.x,
+                  top: flatBadgeCenter.y,
+                  transform: "translate(-50%, -50%)"
+                }}
+              >
                 <span className="rounded-full border border-border/85 bg-card/90 px-3 py-1 text-[11px] font-semibold text-muted-foreground shadow-sm">
                   Sem variacao no periodo
                 </span>

@@ -95,6 +95,33 @@ const initialFilters: TransactionsFiltersState = {
   to: ""
 };
 
+export function resolveTransactionsRefreshMessage(input: {
+  refreshing: boolean;
+  page: number;
+  debouncedQuery: string;
+  filters: Pick<TransactionsFiltersState, "accountId" | "categoryId" | "type" | "period">;
+}): string {
+  if (!input.refreshing) {
+    return "";
+  }
+
+  if (input.page > 1) {
+    return "Atualizando transações e paginação...";
+  }
+
+  if (
+    input.debouncedQuery ||
+    input.filters.accountId ||
+    input.filters.categoryId ||
+    input.filters.type ||
+    input.filters.period === "custom"
+  ) {
+    return "Aplicando filtros e recalculando indicadores...";
+  }
+
+  return "Buscando transações e atualizando indicadores...";
+}
+
 function resolveSortStateFromQuery(value: string | null): SortState {
   if (value === "date_asc") return { field: "date", direction: "asc" };
   if (value === "amount_desc") return { field: "amount", direction: "desc" };
@@ -527,6 +554,7 @@ export function TransactionsPage(): React.JSX.Element {
     data: transactionsResponse,
     error: transactionsError,
     isLoading,
+    isValidating,
     mutate: mutateTransactions
   } = useSWR(`/api/transactions?${queryString}&includeMeta=1`, fetchTransactionsResource, {
     revalidateOnFocus: false,
@@ -534,6 +562,13 @@ export function TransactionsPage(): React.JSX.Element {
   });
 
   const loading = isLoading && !transactionsResponse;
+  const refreshing = isValidating && Boolean(transactionsResponse) && !loading;
+  const refreshMessage = resolveTransactionsRefreshMessage({
+    refreshing,
+    page,
+    debouncedQuery,
+    filters
+  });
 
   useEffect(() => {
     if (!transactionsResponse) return;
@@ -1323,6 +1358,12 @@ export function TransactionsPage(): React.JSX.Element {
           onExport={() => void handleExportSelected()}
           onApplySuggestions={() => void handleApplySuggestionsBulk()}
         />
+
+        {refreshMessage ? (
+          <FeedbackMessage variant="info" data-testid="transactions-refresh-feedback">
+            {refreshMessage}
+          </FeedbackMessage>
+        ) : null}
 
         {actionError ? <FeedbackMessage variant="error">{actionError}</FeedbackMessage> : null}
 

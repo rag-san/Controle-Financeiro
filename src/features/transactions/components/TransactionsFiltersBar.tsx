@@ -94,7 +94,7 @@ export function TransactionsFiltersBar({
       aria-label="Filtros de transações"
       aria-busy={busy}
     >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
           <Funnel className="h-4 w-4 text-muted-foreground" />
           <span>Filtros</span>
@@ -109,7 +109,7 @@ export function TransactionsFiltersBar({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-8 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground"
+          className="h-8 self-start rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground sm:self-auto"
           onClick={onClear}
           disabled={busy || !canClear}
         >
@@ -134,7 +134,7 @@ export function TransactionsFiltersBar({
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <FilterSelect
             id="tx-filter-period"
             label="Período"
@@ -207,7 +207,7 @@ export function TransactionsFiltersBar({
         </div>
 
         {filters.period === "custom" ? (
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:max-w-[420px]">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:max-w-[420px]">
             <div className="relative">
               <label htmlFor="tx-filter-from" className="sr-only">
                 Data inicial

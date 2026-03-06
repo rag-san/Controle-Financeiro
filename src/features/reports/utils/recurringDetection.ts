@@ -65,7 +65,7 @@ export function detectRecurringMerchants(
   const groups = new Map<string, MerchantRecurringGroup>();
 
   for (const transaction of transactions) {
-    if (transaction.type !== "expense") continue;
+    if (transaction.type !== "expense" || transaction.expenseCents <= 0) continue;
     if (hasInstallmentMarker(transaction.description)) continue;
     if (transaction.timestamp > currentPeriod.end.getTime()) continue;
 
@@ -102,4 +102,3 @@ export function detectRecurringMerchants(
     .sort((left, right) => right.estimatedMonthlyCost - left.estimatedMonthlyCost)
     .slice(0, limit);
 }
-

@@ -10,6 +10,7 @@ type ExpensesCardProps = {
   dateRangeLabel: string;
   totalExpense: number;
   previousTotalExpense: number;
+  classifiedExpense?: number;
   chartData: ExpensesStackedChartData;
   isLoading?: boolean;
 };
@@ -51,6 +52,7 @@ export function ExpensesCard({
   dateRangeLabel,
   totalExpense,
   previousTotalExpense,
+  classifiedExpense,
   chartData,
   isLoading = false
 }: ExpensesCardProps): React.JSX.Element {
@@ -60,11 +62,14 @@ export function ExpensesCard({
     <Card
       className="flex h-full flex-col space-y-4 text-foreground"
       aria-busy={isLoading}
+      data-testid="cashflow-expenses-card"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">GASTOS</p>
-          <p className="text-[1.75rem] font-black tracking-tight text-rose-700 dark:text-rose-300">{formatBRL(totalExpense)}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">SAÍDA REAL DE CAIXA</p>
+          <p className="break-words text-[1.55rem] font-black tracking-tight text-rose-700 dark:text-rose-300 sm:text-[1.75rem]">
+            {formatBRL(totalExpense)}
+          </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge
               value={delta.badgeValue}
@@ -73,11 +78,16 @@ export function ExpensesCard({
             />
             <span>vs {formatBRL(previousTotalExpense)} no período anterior</span>
           </div>
+          {typeof classifiedExpense === "number" ? (
+            <p className="text-xs text-muted-foreground">
+              Despesas classificadas no período: {formatBRL(classifiedExpense)}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">{dateRangeLabel}</p>
         </div>
         <Link
           href="/transactions?type=expense"
-          className="text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="self-start text-xs font-semibold text-primary transition hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Ver mais sobre gastos"
         >
           Ver mais ↗

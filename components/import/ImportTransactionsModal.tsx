@@ -166,6 +166,7 @@ export function ImportTransactionsModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-transactions-modal-title"
+        data-testid="import-transactions-modal"
         className="relative z-[131] flex h-[100dvh] w-full max-w-none flex-col overflow-hidden border border-border bg-card shadow-2xl sm:h-[min(90vh,900px)] sm:max-w-5xl sm:rounded-2xl"
       >
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-6">

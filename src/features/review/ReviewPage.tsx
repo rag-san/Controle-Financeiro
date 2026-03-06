@@ -284,7 +284,7 @@ export function ReviewPage(): React.JSX.Element {
                   </p>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                     <select
-                      className="h-9 min-w-[12rem] rounded-lg border border-border bg-card px-2 text-sm text-foreground dark:border-border dark:bg-secondary/60 dark:text-foreground"
+                      className="h-9 w-full rounded-lg border border-border bg-card px-2 text-sm text-foreground dark:border-border dark:bg-secondary/60 dark:text-foreground sm:min-w-[12rem] sm:w-auto"
                       value={selectedCardMap[item.id] ?? ""}
                       onChange={(event) =>
                         setSelectedCardByPayment((previous) => ({
@@ -303,6 +303,7 @@ export function ReviewPage(): React.JSX.Element {
                     <Button
                       type="button"
                       size="sm"
+                      className="w-full sm:w-auto"
                       onClick={() => void handleConfirmPayment(item.id)}
                       disabled={busyPaymentId === item.id}
                     >

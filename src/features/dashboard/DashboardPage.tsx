@@ -147,7 +147,7 @@ function buildSpendingPaceSeries(current: DashboardTrendPoint[], previous: Dashb
 
 export function DashboardLoading(): React.JSX.Element {
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-testid="dashboard-loading">
       <div className="grid gap-6 xl:grid-cols-12">
         <Skeleton className="h-[420px] xl:col-span-7" />
         <Skeleton className="h-[420px] xl:col-span-5" />
@@ -466,7 +466,9 @@ export function DashboardPage(): React.JSX.Element {
         {loading ? (
           <DashboardLoading />
         ) : error || !dashboardView ? (
-          <FeedbackMessage variant="error">{error || "Nao foi possivel carregar os dados do dashboard."}</FeedbackMessage>
+          <FeedbackMessage variant="error" data-testid="dashboard-error">
+            {error || "Nao foi possivel carregar os dados do dashboard."}
+          </FeedbackMessage>
         ) : (
           <div className="space-y-5">
             <section className="grid gap-4 xl:grid-cols-12">

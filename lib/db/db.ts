@@ -185,8 +185,7 @@ function getDb(): FinanceDb {
       return createStatement(sql);
     },
     async exec(sql: string): Promise<void> {
-      await ensureDbInitialized();
-      await getPgPool().query(sql);
+      await queryInternal(sql);
     },
     async query<T extends QueryResultRow = QueryResultRow>(
       sql: string,

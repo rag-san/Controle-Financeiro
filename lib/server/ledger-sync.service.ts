@@ -166,6 +166,8 @@ type LegacyLedgerCandidate = {
   fingerprint: string;
   transferGroupId: string | null;
   reconciliationStatus: ReconciliationStatus;
+  excluded: boolean;
+  isBalanceAdjustment: boolean;
 };
 
 type LegacyCreditAccountRow = {
@@ -201,6 +203,7 @@ async function resolveLegacyLedgerCandidate(input: {
   const direction = directionFromLegacy(input.transaction.direction, input.transaction.amount);
   const raw = input.transaction.raw as Record<string, unknown> | null;
   const isCardPaymentTransfer = readRawBoolean(raw, "transferDetectedFromCardPayment");
+  const isBalanceAdjustment = readRawBoolean(raw, "openingBalanceAdjustment");
   const resolvedType = toLedgerType({
     transaction: input.transaction,
     direction,
@@ -304,11 +307,15 @@ async function resolveLegacyLedgerCandidate(input: {
     accountId,
     creditCardAccountId,
     categoryId:
-      resolvedType === "income" || resolvedType === "expense" ? input.transaction.categoryId ?? null : null,
+      resolvedType === "income" || resolvedType === "expense" || resolvedType === "refund"
+        ? input.transaction.categoryId ?? null
+        : null,
     institutionId,
     fingerprint,
     transferGroupId: input.transaction.transferGroupId ?? null,
-    reconciliationStatus
+    reconciliationStatus,
+    excluded: input.transaction.excluded ?? false,
+    isBalanceAdjustment
   };
 }
 
@@ -332,6 +339,8 @@ function isSameCandidateAsEntry(input: {
     (input.existing.categoryId ?? null) === (input.candidate.categoryId ?? null) &&
     (input.existing.transferGroupId ?? null) === (input.candidate.transferGroupId ?? null) &&
     input.existing.reconciliationStatus === input.candidate.reconciliationStatus &&
+    input.existing.excluded === input.candidate.excluded &&
+    input.existing.isBalanceAdjustment === input.candidate.isBalanceAdjustment &&
     input.existing.postedAt.toISOString() === input.candidate.postedAt.toISOString()
   );
 }
@@ -506,12 +515,17 @@ export async function syncLedgerFromImportBatch(input: {
       merchantNormalized,
       accountId,
       creditCardAccountId,
-      categoryId: resolvedType === "income" || resolvedType === "expense" ? transaction.categoryId : null,
+      categoryId:
+        resolvedType === "income" || resolvedType === "expense" || resolvedType === "refund"
+          ? transaction.categoryId
+          : null,
       importSourceId,
       rawTransactionId,
       externalRef,
       fingerprint,
       transferGroupId: transaction.transferGroupId ?? null,
+      excluded: transaction.excluded,
+      isBalanceAdjustment: readRawBoolean(raw, "openingBalanceAdjustment"),
       reconciliationStatus:
         resolvedType === "cc_payment" && !creditCardAccountId
           ? "unmatched"
@@ -655,7 +669,9 @@ export async function syncLedgerForLegacyTransactions(input: {
       externalRef: candidate.externalRef,
       fingerprint: candidate.fingerprint,
       transferGroupId: candidate.transferGroupId,
-      reconciliationStatus: candidate.reconciliationStatus
+      reconciliationStatus: candidate.reconciliationStatus,
+      excluded: candidate.excluded,
+      isBalanceAdjustment: candidate.isBalanceAdjustment
     });
 
     if (result.created) {

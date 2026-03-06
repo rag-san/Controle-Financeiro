@@ -117,7 +117,37 @@ function AllocationPanel({
           <>
             <AllocationBar items={items} onItemSelect={onSelectItem} />
 
-            <div className="overflow-x-auto rounded-xl border border-border [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:border-border dark:[&::-webkit-scrollbar-thumb]:bg-border">
+            <div className="space-y-2 md:hidden">
+              {items.map((item) => (
+                <button
+                  key={`mobile-${item.id}`}
+                  type="button"
+                  onClick={() => onSelectItem(item)}
+                  className={`w-full rounded-xl border px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    selectedItemId === item.id
+                      ? "border-primary/45 bg-primary/10"
+                      : "border-border/80 bg-secondary/30 hover:bg-secondary/50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: item.color }}
+                          aria-hidden="true"
+                        />
+                        <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{item.weight.toFixed(1)}% da alocação</p>
+                    </div>
+                    <p className="text-sm font-semibold text-foreground">{formatBRL(item.value)}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto rounded-xl border border-border [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:border-border dark:[&::-webkit-scrollbar-thumb]:bg-border md:block">
               <table className="w-full min-w-[520px] border-collapse">
                 <thead className="bg-secondary/55 dark:bg-secondary/40">
                   <tr>

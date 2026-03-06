@@ -10,12 +10,10 @@ const variantClasses: Record<FeedbackVariant, string> = {
   error: "feedback-message--error"
 };
 
-type FeedbackMessageProps = {
+type FeedbackMessageProps = React.HTMLAttributes<HTMLDivElement> & {
   variant?: FeedbackVariant;
-  className?: string;
   role?: "status" | "alert";
   live?: "polite" | "assertive" | "off";
-  children: React.ReactNode;
 };
 
 export function FeedbackMessage({
@@ -23,13 +21,19 @@ export function FeedbackMessage({
   className,
   role,
   live,
-  children
+  children,
+  ...props
 }: FeedbackMessageProps): React.JSX.Element {
   const resolvedRole = role ?? (variant === "error" ? "alert" : "status");
   const resolvedLive = live ?? (variant === "error" ? "assertive" : "polite");
 
   return (
-    <div role={resolvedRole} aria-live={resolvedLive} className={cn("feedback-message", variantClasses[variant], className)}>
+    <div
+      {...props}
+      role={resolvedRole}
+      aria-live={resolvedLive}
+      className={cn("feedback-message", variantClasses[variant], className)}
+    >
       {children}
     </div>
   );

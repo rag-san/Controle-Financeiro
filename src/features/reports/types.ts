@@ -48,6 +48,16 @@ export type ReportsTotals = {
   net: number;
 };
 
+export type ReportsCashSummary = {
+  inflow: number;
+  outflow: number;
+  net: number;
+  previousInflow: number;
+  previousOutflow: number;
+  previousNet: number;
+  cashBalance: number;
+};
+
 export type ReportsCategorySpend = {
   categoryId: string | null;
   name: string;
@@ -89,6 +99,8 @@ export type ReportPreparedTransaction = {
   amount: number;
   absAmount: number;
   type: "income" | "expense" | "transfer";
+  incomeCents: number;
+  expenseCents: number;
   description: string;
   accountId: string;
   accountName: string;
@@ -104,6 +116,7 @@ export type ReportPreparedTransaction = {
 export type ReportsModel = {
   currentTotals: ReportsTotals;
   previousTotals: ReportsTotals;
+  cashSummary: ReportsCashSummary;
   categorySpending: ReportsCategorySpend[];
   topMerchants: ReportsMerchantSpend[];
   recurringDetected: ReportsRecurringDetected[];

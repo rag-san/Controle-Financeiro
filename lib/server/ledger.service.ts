@@ -69,6 +69,14 @@ function normalizeDirection(input: ImportRowInput): LedgerDirection {
   return input.amount >= 0 ? "IN" : "OUT";
 }
 
+function readMetaBoolean(meta: Record<string, unknown> | null | undefined, key: string): boolean {
+  if (!meta || typeof meta !== "object") {
+    return false;
+  }
+
+  return meta[key] === true;
+}
+
 function isCardPaymentDescription(normalizedDescription: string): boolean {
   if (CARD_PAYMENT_KEYWORDS.some((keyword) => normalizedDescription.includes(keyword))) {
     return true;
@@ -308,6 +316,8 @@ export async function importLedgerForUser(
     const normalizedDescription = normalizeText(row.description);
     const merchantNormalized = normalizeOptionalText(row.merchant);
     const amountCents = normalizeAmountCents(row.amount);
+    const excluded = readMetaBoolean(row.meta ?? null, "excluded");
+    const isBalanceAdjustment = readMetaBoolean(row.meta ?? null, "openingBalanceAdjustment");
     const resolvedType = resolveLedgerType({
       kind: input.kind,
       normalizedDescription,
@@ -385,7 +395,9 @@ export async function importLedgerForUser(
       rawTransactionId,
       externalRef: row.externalId?.trim() || null,
       fingerprint,
-      reconciliationStatus
+      reconciliationStatus,
+      excluded,
+      isBalanceAdjustment
     });
 
     if (result.created) {
