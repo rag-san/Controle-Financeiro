@@ -28,6 +28,8 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 }
 
 const initialFooterState: ImportTransactionsFooterState = {
+  currentStep: 1,
+  currentStepLabel: "Etapa 1: Selecionar e analisar arquivo",
   validRows: 0,
   errorRows: 0,
   ignoredRows: 0,
@@ -153,10 +155,13 @@ export function ImportTransactionsModal({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[130] flex items-end justify-center sm:items-center sm:p-4" role="presentation">
+    <div
+      className="fixed inset-0 z-[130] flex items-end justify-center bg-black/60 backdrop-blur-[1px] sm:items-center sm:p-4"
+      role="presentation"
+    >
       <button
         type="button"
-        className="absolute inset-0 bg-black/55"
+        className="absolute inset-0 bg-black/40"
         onClick={handleClose}
         aria-label="Fechar importação"
       />
@@ -169,10 +174,15 @@ export function ImportTransactionsModal({
         data-testid="import-transactions-modal"
         className="relative z-[131] flex h-[100dvh] w-full max-w-none flex-col overflow-hidden border border-border bg-card shadow-2xl sm:h-[min(90vh,900px)] sm:max-w-5xl sm:rounded-2xl"
       >
-        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-6">
-          <h2 id="import-transactions-modal-title" className="text-base font-semibold">
-            Importação de arquivo
-          </h2>
+        <header className="sticky top-0 z-20 flex items-start justify-between gap-3 border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-6">
+          <div className="space-y-1">
+            <h2 id="import-transactions-modal-title" className="text-base font-semibold">
+              Importação de arquivo
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Selecione o arquivo, confirme os dados e finalize a importação com preview.
+            </p>
+          </div>
           <Button
             ref={closeButtonRef}
             type="button"
@@ -187,7 +197,7 @@ export function ImportTransactionsModal({
           </Button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:[&::-webkit-scrollbar-thumb]:bg-border">
+        <div className="flex-1 overflow-y-auto px-4 pb-24 pt-4 sm:px-6 sm:pb-5 sm:pt-5 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border dark:[&::-webkit-scrollbar-thumb]:bg-border">
           <ImportTransactionsContent
             ref={contentRef}
             accounts={accounts}
@@ -202,11 +212,17 @@ export function ImportTransactionsModal({
           />
         </div>
 
-        <footer className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-border bg-card/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <p className="text-xs text-muted-foreground sm:text-sm">
-            Linhas válidas: {footerState.validRows} | Erros: {footerState.errorRows} | Ignoradas:{" "}
-            {footerState.ignoredRows}
-          </p>
+        <footer className="sticky bottom-0 z-20 flex flex-col gap-3 border-t border-border bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:pb-3">
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              Passo atual
+            </p>
+            <p className="text-sm font-medium text-foreground">{footerState.currentStepLabel}</p>
+            <p className="text-xs text-muted-foreground sm:text-sm">
+              Linhas válidas: {footerState.validRows} | Erros: {footerState.errorRows} | Ignoradas:{" "}
+              {footerState.ignoredRows}
+            </p>
+          </div>
           <div className="flex w-full gap-2 sm:w-auto">
             <Button
               type="button"

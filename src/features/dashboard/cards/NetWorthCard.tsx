@@ -5,6 +5,7 @@ import { Area, AreaChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } 
 import { DefaultChartTooltip } from "@/src/components/charts/DefaultChartTooltip";
 import { Badge } from "@/src/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { InfoTooltip } from "@/src/components/ui/InfoTooltip";
 import { formatBRL, formatBRLCompact, formatShortDate } from "@/src/utils/format";
 
 type NetWorthPoint = {
@@ -204,8 +205,12 @@ export function NetWorthCard({
     <Card className="h-full overflow-hidden" data-testid="dashboard-net-worth-card">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="text-[11px] tracking-[0.12em] text-muted-foreground">
-            Patrimonio
+          <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-muted-foreground">
+            <span>Patrimonio</span>
+            <InfoTooltip
+              content="Acompanha a evolução do saldo consolidado para mostrar se seu patrimônio está crescendo, estável ou caindo."
+              ariaLabel="Entender o patrimônio"
+            />
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Evolucao por faixa selecionada ({periodDescription}).

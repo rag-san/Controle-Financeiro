@@ -32,33 +32,17 @@ type AssetsDebtsChartProps = {
 function resolveXAxisInterval(range: AccountsRangeKey, pointsLength: number): number {
   if (pointsLength <= 1) return 0;
 
-  if (range === "1W") {
-    return pointsLength > 5 ? 1 : 0;
-  }
+  const targetTicksByRange: Record<AccountsRangeKey, number> = {
+    "1W": 4,
+    "1M": 6,
+    "3M": 7,
+    YTD: 8,
+    "1Y": 8,
+    ALL: 8
+  };
 
-  if (range === "1M") {
-    return Math.max(0, Math.ceil(pointsLength / 7) - 1);
-  }
-
-  if (range === "3M") {
-    if (pointsLength <= 14) {
-      return 0;
-    }
-    return Math.max(0, Math.ceil(pointsLength / 12) - 1);
-  }
-
-  if (range === "1Y" || range === "ALL") {
-    if (pointsLength <= 14) {
-      return 0;
-    }
-    return Math.max(0, Math.ceil(pointsLength / 12) - 1);
-  }
-
-  if (pointsLength <= 14) {
-    return 0;
-  }
-
-  return Math.max(0, Math.ceil(pointsLength / 10) - 1);
+  const targetTicks = targetTicksByRange[range];
+  return Math.max(0, Math.ceil(pointsLength / targetTicks) - 1);
 }
 
 function resolveHoverPointFromChartState(state: unknown): HoverPoint {
@@ -142,7 +126,7 @@ export function AssetsDebtsChart({
             tickLine={false}
             axisLine={false}
             tickMargin={10}
-            minTickGap={14}
+            minTickGap={24}
           />
           <YAxis
             tickFormatter={(value) => formatBRL(Number(value))}
@@ -151,7 +135,7 @@ export function AssetsDebtsChart({
             tick={{ fontSize: 12 }}
             tickLine={false}
             axisLine={false}
-            width={96}
+            width={84}
           />
           <Tooltip content={<AssetsDebtsTooltip />} />
           <Area

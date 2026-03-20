@@ -24,6 +24,7 @@ import {
 } from "@/src/features/categorization/suggestCategory";
 import { Button } from "@/src/components/ui/Button";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
+import { GuidanceCard } from "@/src/components/ui/GuidanceCard";
 import { useToast } from "@/src/components/ui/ToastProvider";
 import { buildInsights } from "@/src/features/insights/buildInsights";
 import { InsightsBanner } from "@/src/features/insights/components/InsightsBanner";
@@ -1241,7 +1242,8 @@ export function TransactionsPage(): React.JSX.Element {
       <Button
         variant="outline"
         onClick={() => setCreatePanelOpen(!showCreate)}
-        className="flex-1 border-border/90 bg-card/90 text-foreground shadow-sm hover:bg-secondary dark:border-border dark:bg-secondary/60 dark:text-foreground dark:hover:bg-secondary sm:flex-none"
+        className="flex-1 whitespace-nowrap border-border/90 bg-card/90 text-foreground shadow-sm hover:bg-secondary dark:border-border dark:bg-secondary/60 dark:text-foreground dark:hover:bg-secondary sm:flex-none"
+        aria-label={showCreate ? "Fechar formulário de nova transação" : "Adicionar transação manualmente"}
       >
         <Plus className="h-4 w-4" />
         {showCreate ? "Fechar" : "Nova"}
@@ -1249,10 +1251,12 @@ export function TransactionsPage(): React.JSX.Element {
       <Button
         ref={importButtonRef}
         onClick={() => setImportModalOpen(true)}
-        className="flex-1 border border-primary/35 bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 sm:flex-none"
+        className="flex-1 whitespace-nowrap border border-primary/35 bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 sm:flex-none"
+        aria-label="Importar extrato"
       >
         <Upload className="h-4 w-4" />
-        Importar extrato
+        <span className="sm:hidden">Importar</span>
+        <span className="hidden sm:inline">Importar extrato</span>
       </Button>
     </>
   );
@@ -1268,7 +1272,11 @@ export function TransactionsPage(): React.JSX.Element {
   );
 
   return (
-    <PageShell title="Transações" subtitle="Lançamentos, filtros e categorização manual" actions={actions}>
+    <PageShell
+      title="Transações"
+      subtitle="Veja todas as movimentações importadas do seu banco e registre lançamentos quando precisar."
+      actions={actions}
+    >
       <ImportTransactionsModal
         open={isImportOpen}
         accounts={accounts}
@@ -1281,6 +1289,25 @@ export function TransactionsPage(): React.JSX.Element {
         onAccountsRefresh={() => refreshMetaAndData()}
       />
       <div className="space-y-5">
+        <section className="grid gap-4 xl:grid-cols-2" aria-label="Guias da tela de transações">
+          <GuidanceCard
+            eyebrow="Transações"
+            title="Veja todas as movimentações importadas do seu banco"
+            description="Use esta tela para filtrar, revisar categorias, corrigir lançamentos e acompanhar o que entrou e saiu."
+            tooltip="Depois da importação, esta é a área principal para revisar transações, aplicar categorias e fazer ajustes manuais."
+            ctaLabel="Importar extrato"
+            ctaHref="/transactions?import=1"
+          />
+          <GuidanceCard
+            eyebrow="Iniciante"
+            title="Sem conta bancária? Comece com lançamentos manuais"
+            description="Se você ainda não usa extratos bancários, clique em Nova para cadastrar receitas e gastos manualmente."
+            tooltip="O app já aceita lançamentos manuais. Isso ajuda usuários iniciantes ou quem ainda não centraliza tudo no banco."
+            ctaLabel="Novo lançamento"
+            ctaHref="/transactions?new=1"
+          />
+        </section>
+
         <TransactionsKpiCards
           income={summary.income}
           expense={summary.expense}

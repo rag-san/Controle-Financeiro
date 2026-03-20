@@ -12,13 +12,13 @@
   --secondary: 213 34% 92%;
   --secondary-foreground: 222 30% 20%;
   --muted: 213 30% 90%;
-  --muted-foreground: 217 16% 40%;
+  --muted-foreground: 217 20% 31%;
   --accent: 160 46% 42%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 53%;
   --destructive-foreground: 0 0% 100%;
-  --border: 214 31% 82%;
-  --input: 214 31% 82%;
+  --border: 214 27% 74%;
+  --input: 214 27% 74%;
   --ring: 206 90% 52%;
   --radius: 0.9rem;
   --shell-bg-start: 210 84% 97%;
@@ -38,13 +38,13 @@
   --secondary: 223 34% 17%;
   --secondary-foreground: 210 24% 94%;
   --muted: 223 30% 19%;
-  --muted-foreground: 214 13% 64%;
+  --muted-foreground: 214 16% 72%;
   --accent: 160 49% 44%;
   --accent-foreground: 0 0% 100%;
   --destructive: 0 72% 53%;
   --destructive-foreground: 0 0% 100%;
-  --border: 222 30% 26%;
-  --input: 222 30% 26%;
+  --border: 222 26% 32%;
+  --input: 222 26% 32%;
   --ring: 199 93% 60%;
   --shell-bg-start: 224 56% 8%;
   --shell-bg-mid: 223 49% 9%;
@@ -163,5 +163,14 @@ a {
 
   .feedback-message--error {
     @apply border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300;
+  }
+
+  .onboarding-highlight {
+    position: relative;
+    z-index: 140;
+    border-radius: 0.75rem;
+    box-shadow:
+      0 0 0 3px hsl(var(--primary) / 0.8),
+      0 10px 24px -14px rgba(15, 23, 42, 0.75);
   }
 }

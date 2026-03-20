@@ -300,7 +300,9 @@ function EmptyState({
     <div className="px-4 py-10 text-center" data-testid="transactions-table-empty">
       <Search className="mx-auto h-8 w-8 text-muted-foreground/80" />
       <p className="mt-3 text-sm font-semibold text-foreground">Nenhuma transação encontrada</p>
-      <p className="mt-1 text-xs text-muted-foreground">Ajuste os filtros ou faça um novo lançamento.</p>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Ajuste os filtros, importe seu extrato bancário ou adicione um lançamento manual para começar.
+      </p>
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
         {onCreateTransaction ? (
           <Button type="button" size="sm" onClick={onCreateTransaction}>

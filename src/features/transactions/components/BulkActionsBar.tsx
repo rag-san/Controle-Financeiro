@@ -44,11 +44,12 @@ export function BulkActionsBar({
         {selectedCount} selecionada(s)
       </p>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
         <Button
           type="button"
           variant="ghost"
           size="sm"
+          className="justify-center"
           onClick={onClearSelection}
           disabled={busy}
           aria-label="Limpar selecao"
@@ -61,6 +62,7 @@ export function BulkActionsBar({
           type="button"
           variant="outline"
           size="sm"
+          className="justify-center"
           onClick={onSetCategory}
           disabled={busy}
           isLoading={categorizing}
@@ -75,6 +77,7 @@ export function BulkActionsBar({
             type="button"
             variant="outline"
             size="sm"
+            className="justify-center"
             onClick={onExport}
             disabled={busy}
             isLoading={exporting}
@@ -90,6 +93,7 @@ export function BulkActionsBar({
             type="button"
             variant="outline"
             size="sm"
+            className="justify-center sm:col-auto"
             onClick={onApplySuggestions}
             disabled={busy}
             isLoading={applyingSuggestions}
@@ -104,6 +108,7 @@ export function BulkActionsBar({
           type="button"
           variant="danger"
           size="sm"
+          className="col-span-2 justify-center sm:col-auto"
           onClick={onDelete}
           disabled={busy}
           isLoading={deleting}

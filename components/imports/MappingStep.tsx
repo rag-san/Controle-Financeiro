@@ -65,8 +65,11 @@ export function MappingStep({
   return (
     <section className="space-y-4 rounded-2xl border border-border bg-card p-5" aria-labelledby="mapping-step-title">
       <h3 id="mapping-step-title" className="text-base font-semibold">
-        Mapeamento de colunas CSV
+        Confirmar dados detectados
       </h3>
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        Confira se o sistema identificou corretamente data, descrição e valor antes de seguir para o preview.
+      </p>
       {confidence ? (
         <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm">
           <p className="font-medium">

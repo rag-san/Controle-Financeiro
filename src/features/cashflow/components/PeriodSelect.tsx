@@ -23,7 +23,7 @@ export function PeriodSelect({
 
   return (
     <div
-      className="inline-flex items-center gap-1 rounded-xl border border-border/80 bg-secondary/75 p-1 shadow-sm dark:border-border dark:bg-secondary/60"
+      className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-border/80 bg-secondary/75 p-1 shadow-sm [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden dark:border-border dark:bg-secondary/60"
       role="group"
       aria-label="Selecionar periodo do fluxo de caixa"
     >
@@ -50,7 +50,6 @@ export function PeriodSelect({
           </button>
         );
       })}
-
     </div>
   );
 }

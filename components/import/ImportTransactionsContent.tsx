@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Ca
 import { Checkbox } from "@/src/components/ui/Checkbox";
 import { Select } from "@/src/components/ui/Select";
 import { FileDropzone } from "@/components/imports/FileDropzone";
+import { ImportFlowSteps } from "@/components/imports/ImportFlowSteps";
 import { MappingStep } from "@/components/imports/MappingStep";
 import { PreviewStep } from "@/components/imports/PreviewStep";
 import { RulesStep } from "@/components/imports/RulesStep";
@@ -110,6 +111,8 @@ type ParseResponse = {
 };
 
 export type ImportTransactionsFooterState = {
+  currentStep: 1 | 2 | 3 | 4;
+  currentStepLabel: string;
   validRows: number;
   errorRows: number;
   ignoredRows: number;
@@ -206,6 +209,44 @@ function buildParseRequestSignature(
 function isParseSupportedFile(file: File): boolean {
   const extension = getFileExtension(file.name);
   return extension === ".csv" || extension === ".ofx" || extension === ".pdf";
+}
+
+function resolveImportCurrentStep(input: {
+  file: File | null;
+  parseData: ParseResponse | null;
+  isParsing: boolean;
+  loading: boolean;
+  validRowsCount: number;
+}): 1 | 2 | 3 | 4 {
+  if (!input.file) {
+    return 1;
+  }
+  if (input.isParsing || !input.parseData) return 1;
+  if (input.parseData.needsMapping) {
+    return 2;
+  }
+  if (input.loading || input.validRowsCount > 0) return 4;
+  return 3;
+}
+
+function resolveImportCurrentStepLabel(step: 1 | 2 | 3 | 4): string {
+  if (step === 1) return "Etapa 1: Selecionar e analisar arquivo";
+  if (step === 2) return "Etapa 2 de 4: Confirmar dados detectados";
+  if (step === 3) return "Etapa 3 de 4: Revisar preview";
+  return "Etapa 4 de 4: Confirmar importacao";
+}
+
+function resolveImportCurrentStepHelp(step: 1 | 2 | 3 | 4): string {
+  if (step === 1) {
+    return "Selecione o arquivo de extrato do seu banco para importar suas transações.";
+  }
+  if (step === 2) {
+    return "Confirme se data, descrição e valores foram reconhecidos corretamente antes de seguir.";
+  }
+  if (step === 3) {
+    return "Revise as transações válidas, as linhas ignoradas e os possíveis erros antes de importar.";
+  }
+  return "Conclua a importação para enviar as transações revisadas para o Finance Control.";
 }
 
 export const ImportTransactionsContent = forwardRef<
@@ -438,9 +479,24 @@ export const ImportTransactionsContent = forwardRef<
   const canImport = steps === "preview" && validRowsCount > 0 && !loading;
   const importLabel = validRowsCount === 1 ? "Importar 1 linha" : `Importar ${validRowsCount} linhas`;
   const shouldShowQuickAccountForm = showQuickAccountForm || mergedAccounts.length === 0;
+  const currentStep = useMemo(
+    () =>
+      resolveImportCurrentStep({
+        file,
+        parseData,
+        isParsing,
+        loading,
+        validRowsCount
+      }),
+    [file, isParsing, loading, parseData, validRowsCount]
+  );
+  const currentStepLabel = useMemo(() => resolveImportCurrentStepLabel(currentStep), [currentStep]);
+  const currentStepHelp = useMemo(() => resolveImportCurrentStepHelp(currentStep), [currentStep]);
 
   useEffect(() => {
     onFooterStateChange?.({
+      currentStep,
+      currentStepLabel,
       validRows: validRowsCount,
       errorRows: errorRowsCount,
       ignoredRows: ignoredRowsCount,
@@ -450,6 +506,8 @@ export const ImportTransactionsContent = forwardRef<
     });
   }, [
     canImport,
+    currentStep,
+    currentStepLabel,
     errorRowsCount,
     ignoredRowsCount,
     importLabel,
@@ -829,12 +887,27 @@ export const ImportTransactionsContent = forwardRef<
   return (
     <Card>
       <CardHeader className="flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <UploadCloud className="h-4 w-4" />
-          Importar extrato (CSV/OFX/PDF)
-        </CardTitle>
+        <div className="space-y-1">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UploadCloud className="h-4 w-4" />
+            Importar extrato (CSV/OFX/PDF)
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Faça a importação em quatro etapas claras para revisar os dados com segurança.
+          </p>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4" aria-busy={loading || creatingAccount}>
+        <ImportFlowSteps currentStep={currentStep} />
+
+        <section className="rounded-xl border border-border/80 bg-background/50 px-3 py-2.5">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Passo atual
+          </p>
+          <p className="mt-1 text-sm font-medium text-foreground">{currentStepLabel}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{currentStepHelp}</p>
+        </section>
+
         {steps === "upload" ? <FileDropzone onSelect={handleUpload} /> : null}
         {steps === "upload" && file ? (
           <FeedbackMessage

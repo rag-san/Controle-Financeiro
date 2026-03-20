@@ -135,7 +135,9 @@ export function PreviewStep({
             <h3 id="import-preview-title" className="font-semibold">
               Preview da importacao
             </h3>
-            <p className="text-sm text-muted-foreground">Status por linha apos parse e normalizacao.</p>
+            <p className="text-sm text-muted-foreground">
+              Status por linha após a análise do arquivo. Revise tudo antes de confirmar a importação.
+            </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Mostrando {filteredRows.length} de {rows.length} linhas.
             </p>

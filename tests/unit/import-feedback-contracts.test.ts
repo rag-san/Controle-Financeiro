@@ -14,6 +14,14 @@ test("import flow keeps explicit processing, success, empty and error feedback m
     "Import parsing progress message changed."
   );
   assert.ok(
+    importContent.includes('Etapa 1: Selecionar e analisar arquivo'),
+    "Import stepper guidance changed."
+  );
+  assert.ok(
+    importContent.includes('Selecione o arquivo de extrato do seu banco para importar suas transações.'),
+    "Import first-step helper text changed."
+  );
+  assert.ok(
     importContent.includes('Importação concluída: {result.totalImported} novas transações e {result.totalSkipped} ignoradas.'),
     "Import success feedback changed."
   );

@@ -82,6 +82,8 @@ Arquivo de referencia: `.env.example`
 - `NEXTAUTH_URL`: URL base da aplicacao (ex.: `http://localhost:3000`)
 - `DATABASE_URL`: string de conexao PostgreSQL (principal)
 - `POSTGRES_URL` / `POSTGRES_URL_NON_POOLING`: aliases aceitos automaticamente (Vercel Postgres)
+- Se a URL vier com `sslmode=require`, `prefer` ou `verify-ca`, o app normaliza para `sslmode=verify-full` para manter a semantica segura atual do `pg` v8 e eliminar o warning do `pg-connection-string`
+- Se voce quiser a compatibilidade futura do libpq desde ja, use `uselibpqcompat=true&sslmode=require` na query string
 - `PG_POOL_MAX`: limite do pool de conexoes PostgreSQL (padrao: `1` no Vercel, `10` fora)
 - `PG_IDLE_TIMEOUT_MS` e `PG_CONNECTION_TIMEOUT_MS`: timeouts do pool PostgreSQL
 - `API_PROFILING`: ativa profiling de rotas (`0` ou `1`)
@@ -136,6 +138,7 @@ Comandos principais:
 npm run verify
 npm run test
 npm run build
+npm run start
 ```
 
 Documentacao de testes:

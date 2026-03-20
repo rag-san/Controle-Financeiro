@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { InfoTooltip } from "@/src/components/ui/InfoTooltip";
 import { formatBRL, formatPercent } from "@/src/utils/format";
 
 export type DashboardCategory = {
@@ -56,8 +57,12 @@ export function TopCategoriesCard({
     <Card className="h-full" data-testid="dashboard-top-categories-card">
       <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
         <div>
-          <CardTitle className="text-[11px] tracking-[0.12em] text-muted-foreground">
-            Principais categorias
+          <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-muted-foreground">
+            <span>Principais categorias</span>
+            <InfoTooltip
+              content="Mostra as categorias que mais concentraram gastos no período para facilitar priorização e revisão."
+              ariaLabel="Entender as principais categorias"
+            />
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Comparativo {periodDescription} vs mes anterior.

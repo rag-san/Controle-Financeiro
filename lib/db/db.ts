@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { PoolClient, QueryResultRow } from "pg";
 import { Pool } from "pg";
+import { normalizePostgresConnectionString } from "@/lib/db/postgres-url";
 
 export type FinanceDbDialect = "postgres";
 
@@ -38,14 +39,17 @@ type TxContext = {
 const txStorage = new AsyncLocalStorage<TxContext>();
 
 function resolvePostgresUrl(): string {
-  return (
+  const configuredUrl =
+    (
     process.env.DATABASE_URL?.trim() ||
     process.env.POSTGRES_URL?.trim() ||
     process.env.POSTGRES_URL_NON_POOLING?.trim() ||
     process.env.POSTGRES_PRISMA_URL?.trim() ||
     process.env.FINANCE_DATABASE_URL?.trim() ||
     ""
-  );
+    );
+
+  return normalizePostgresConnectionString(configuredUrl);
 }
 
 const POSTGRES_URL = resolvePostgresUrl();

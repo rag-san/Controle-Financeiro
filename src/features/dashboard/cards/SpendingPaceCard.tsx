@@ -1,8 +1,8 @@
 import React from "react";
 import Link from "next/link";
-import { Info } from "lucide-react";
 import { SpendingPaceChart, type SpendingPacePoint } from "@/src/features/dashboard/charts/SpendingPaceChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { InfoTooltip } from "@/src/components/ui/InfoTooltip";
 import { cn } from "@/lib/utils";
 import { formatBRL, formatSignedPercent } from "@/src/utils/format";
 
@@ -65,7 +65,10 @@ export function SpendingPaceCard({
         <div>
           <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-muted-foreground">
             <span>Ritmo de gastos</span>
-            <Info className="h-3.5 w-3.5 text-muted-foreground/80" aria-hidden="true" />
+            <InfoTooltip
+              content="Compara o gasto acumulado do período atual com o mesmo recorte anterior para mostrar se você está gastando mais ou menos."
+              ariaLabel="Entender o ritmo de gastos"
+            />
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
             Comparativo acumulado {periodDescription}.

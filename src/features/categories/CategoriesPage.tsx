@@ -6,6 +6,7 @@ import { PageShell } from "@/components/layout/PageShell";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import type { CategoryDTO } from "@/lib/types";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
+import { GuidanceCard } from "@/src/components/ui/GuidanceCard";
 import { Skeleton } from "@/src/components/ui/Skeleton";
 import { useToast } from "@/src/components/ui/ToastProvider";
 import { CategoriesMonthSummaryCard } from "@/src/features/categories/cards/CategoriesMonthSummaryCard";
@@ -176,8 +177,31 @@ export function CategoriesPage(): React.JSX.Element {
   const actions = <NewCategoryButton onClick={() => setNewCategoryOpen(true)} />;
 
   return (
-    <PageShell title="Categorias" subtitle="Distribuição de gastos e estrutura de categorias" actions={actions}>
+    <PageShell
+      title="Categorias"
+      subtitle="Acompanhe seus gastos organizados por categoria e entenda onde está concentrando despesas."
+      actions={actions}
+    >
       <div className="space-y-5">
+        <section className="grid gap-4 xl:grid-cols-2" aria-label="Guias da tela de categorias">
+          <GuidanceCard
+            eyebrow="Categorias"
+            title="Acompanhe seus gastos organizados por categoria"
+            description="Esta tela resume o mês e mostra como suas despesas estão distribuídas entre grupos e subcategorias."
+            tooltip="Categorias ajudam a transformar a lista de transações em visão analítica. Isso facilita identificar excessos e padrões."
+            ctaLabel="Ver transações"
+            ctaHref="/transactions"
+          />
+          <GuidanceCard
+            eyebrow="Como usar"
+            title="Importe, revise e depois automatize"
+            description="O fluxo mais simples é importar o extrato, conferir as categorias sugeridas e depois criar regras para acelerar os próximos meses."
+            tooltip="Regras automáticas reaplicam categorias em lançamentos parecidos, reduzindo esforço manual nas próximas importações."
+            ctaLabel="Importar extrato"
+            ctaHref="/transactions?import=1"
+          />
+        </section>
+
         <div className="flex justify-center">
           <CategoriesTopTabs activeTab={activeTab} onChange={setActiveTab} />
         </div>

@@ -1,7 +1,8 @@
 "use client";
 
 import { format, parseISO } from "date-fns";
-import { SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
+import { LayoutDashboard, SlidersHorizontal, Upload } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import React from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import { cn } from "@/lib/utils";
 import { Button } from "@/src/components/ui/Button";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
+import { GuidanceCard } from "@/src/components/ui/GuidanceCard";
 import { Input } from "@/src/components/ui/Input";
 import { NetWorthCard } from "@/src/features/dashboard/cards/NetWorthCard";
 import { PartialResultCard } from "@/src/features/dashboard/cards/PartialResultCard";
@@ -145,6 +147,72 @@ function buildSpendingPaceSeries(current: DashboardTrendPoint[], previous: Dashb
   return chartData;
 }
 
+export function isDashboardOverviewEmpty(overview: DashboardOverviewPayload): boolean {
+  const hasSummaryActivity =
+    Math.abs(overview.summary.totalIncome) > 0 ||
+    Math.abs(overview.summary.totalExpense) > 0 ||
+    Math.abs(overview.summary.cashInflow ?? 0) > 0 ||
+    Math.abs(overview.summary.cashOutflow ?? 0) > 0 ||
+    Math.abs(overview.summary.excludedTotal) > 0 ||
+    Math.abs(overview.summary.previousPeriodComparison.previousIncome) > 0 ||
+    Math.abs(overview.summary.previousPeriodComparison.previousExpense) > 0;
+
+  const hasCategories = overview.categories.some(
+    (item) => Math.abs(item.total) > 0 || Math.abs(item.previousTotal) > 0
+  );
+  const hasTrendData =
+    overview.trends.series.some(
+      (point) => Math.abs(point.income) > 0 || Math.abs(point.expense) > 0 || Math.abs(point.net) > 0
+    ) ||
+    overview.trends.previousSeries.some(
+      (point) => Math.abs(point.income) > 0 || Math.abs(point.expense) > 0 || Math.abs(point.net) > 0
+    );
+  const hasPatrimony = overview.patrimony.series.some((point) => Math.abs(point.value) > 0);
+
+  return !(hasSummaryActivity || hasCategories || hasTrendData || hasPatrimony);
+}
+
+export function DashboardEmptyState(): React.JSX.Element {
+  return (
+    <section
+      className="app-surface-card rounded-2xl border border-dashed border-border/80 px-5 py-8 text-center sm:px-8 sm:py-10"
+      data-testid="dashboard-empty-state"
+    >
+      <div className="mx-auto flex max-w-2xl flex-col items-center gap-4">
+        <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <LayoutDashboard className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold text-foreground">Você ainda não possui dados financeiros.</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
+            Importe seu extrato bancário para começar. Depois disso, o Finance Control preenche o dashboard,
+            organiza categorias e facilita sua leitura mensal.
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Se você ainda não usa conta bancária, também pode começar adicionando gastos manualmente em Transações.
+          </p>
+        </div>
+        <div className="flex w-full flex-col items-center justify-center gap-3 sm:flex-row">
+          <Link
+            id="tour-dashboard-empty-import"
+            href="/transactions?import=1"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            <Upload className="h-4 w-4" aria-hidden="true" />
+            Importar extrato
+          </Link>
+          <Link
+            href="/transactions?new=1"
+            className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-card px-5 text-sm font-semibold text-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            Adicionar manualmente
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function DashboardLoading(): React.JSX.Element {
   return (
     <div className="space-y-6" data-testid="dashboard-loading">
@@ -226,6 +294,10 @@ export function DashboardPage(): React.JSX.Element {
 
   const loading = overviewRequest.isLoading;
   const error = overviewRequest.error?.message || "";
+  const isOverviewEmpty = useMemo(
+    () => (overviewRequest.data ? isDashboardOverviewEmpty(overviewRequest.data) : false),
+    [overviewRequest.data]
+  );
 
   useEffect(() => {
     if (!showFilters) return;
@@ -360,22 +432,37 @@ export function DashboardPage(): React.JSX.Element {
   const actions = useMemo(
     () => (
       <>
-        <div className="relative order-first" ref={filtersRootRef}>
+        <Button
+          id="tour-dashboard-import"
+          type="button"
+          size="sm"
+          onClick={() => router.push("/transactions?import=1")}
+          className="w-full justify-center border border-primary/35 bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 sm:w-auto sm:justify-start"
+          aria-label="Importar extrato para preencher o dashboard"
+        >
+          <Upload className="h-4 w-4" />
+          <span>Importar extrato</span>
+        </Button>
+
+        <div className="relative order-first w-full sm:w-auto" ref={filtersRootRef}>
           <Button
+            id="tour-dashboard-filters"
             type="button"
             size="sm"
             aria-haspopup="dialog"
             aria-expanded={showFilters}
             aria-controls={showFilters ? filtersPopoverId : undefined}
+            aria-label={filterButtonLabel}
             onClick={() => setShowFilters((previous) => !previous)}
             className={cn(
-              "border border-border/70 bg-card/85 text-muted-foreground shadow-sm transition hover:bg-secondary hover:text-foreground",
+              "w-full justify-center border border-border/70 bg-card/85 text-muted-foreground shadow-sm transition hover:bg-secondary hover:text-foreground sm:w-auto sm:justify-start",
               showFilters &&
                 "border-primary/40 bg-primary text-primary-foreground shadow-[0_10px_22px_rgba(14,116,144,0.32)] hover:brightness-105"
             )}
           >
             <SlidersHorizontal className="h-4 w-4" />
-            {filterButtonLabel}
+            <span className="sm:hidden">Filtros</span>
+            <span className="hidden sm:inline">{filterButtonLabel}</span>
           </Button>
 
           <section
@@ -384,8 +471,8 @@ export function DashboardPage(): React.JSX.Element {
             aria-label="Filtro do dashboard"
             aria-hidden={!showFilters}
             className={[
-              "absolute right-0 top-full z-40 mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-border/80 bg-card/95 p-2.5 shadow-xl backdrop-blur",
-              "origin-top-right transition-all duration-150 ease-out",
+              "absolute left-0 right-0 top-full z-40 mt-2 rounded-2xl border border-border/80 bg-card/95 p-2.5 shadow-xl backdrop-blur sm:left-auto sm:right-0 sm:w-[19rem] sm:max-w-[calc(100vw-2rem)]",
+              "origin-top transition-all duration-150 ease-out sm:origin-top-right",
               showFilters
                 ? "visible translate-y-0 scale-100 opacity-100 pointer-events-auto"
                 : "invisible -translate-y-1 scale-95 opacity-0 pointer-events-none"
@@ -457,18 +544,49 @@ export function DashboardPage(): React.JSX.Element {
         />
       </>
     ),
-    [applyDateFilter, clearDateFilter, draftFrom, draftTo, filterButtonLabel, filtersPopoverId, showFilters]
+    [applyDateFilter, clearDateFilter, draftFrom, draftTo, filterButtonLabel, filtersPopoverId, router, showFilters]
   );
 
   return (
-    <PageShell title="Dashboard" subtitle="Visao geral das suas financas" actions={actions}>
+    <PageShell
+      title="Dashboard"
+      subtitle="Entenda seu momento financeiro e descubra o próximo passo para manter tudo organizado."
+      actions={actions}
+    >
       <div className="space-y-5 overflow-x-hidden">
+        <section className="grid gap-4 xl:grid-cols-3" aria-label="Guias do dashboard">
+          <GuidanceCard
+            eyebrow="Dashboard"
+            title="Acompanhe o resultado do período"
+            description="Aqui você vê receitas, gastos, patrimônio e ritmo financeiro sem precisar navegar por várias telas."
+            tooltip="Use este painel para entender rapidamente se o mês está sob controle e quais áreas pedem atenção."
+          />
+          <GuidanceCard
+            eyebrow="Primeiro passo"
+            title="Importe seu extrato para preencher os gráficos"
+            description="Seu fluxo principal começa na importação. Em poucos passos você traz as transações e libera os indicadores."
+            tooltip="A importação aceita CSV, OFX e PDFs compatíveis. Depois do preview, a confirmação final envia os dados."
+            ctaLabel="Abrir importação"
+            ctaHref="/transactions?import=1"
+          />
+          <GuidanceCard
+            eyebrow="Categorias"
+            title="Entenda onde o dinheiro está indo"
+            description="Depois da importação, revise categorias para interpretar seus gastos e identificar oportunidades de ajuste."
+            tooltip="Categorias agrupam despesas parecidas para facilitar análise e criação de regras automáticas."
+            ctaLabel="Ver categorias"
+            ctaHref="/categories"
+          />
+        </section>
+
         {loading ? (
           <DashboardLoading />
         ) : error || !dashboardView ? (
           <FeedbackMessage variant="error" data-testid="dashboard-error">
             {error || "Nao foi possivel carregar os dados do dashboard."}
           </FeedbackMessage>
+        ) : isOverviewEmpty ? (
+          <DashboardEmptyState />
         ) : (
           <div className="space-y-5">
             <section className="grid gap-4 xl:grid-cols-12">
@@ -509,7 +627,7 @@ export function DashboardPage(): React.JSX.Element {
                 />
               </div>
 
-              <div className="min-w-0 xl:col-span-7">
+              <div id="tour-dashboard-top-categories" className="min-w-0 xl:col-span-7">
                 <TopCategoriesCard
                   categorias={dashboardView.categories}
                   periodDescription={dashboardView.periodDescription}

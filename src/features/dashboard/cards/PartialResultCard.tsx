@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { Info } from "lucide-react";
 import { Badge } from "@/src/components/ui/Badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/src/components/ui/Card";
+import { InfoTooltip } from "@/src/components/ui/InfoTooltip";
 import { ProgressBar } from "@/src/components/ui/ProgressBar";
 import { formatBRL, formatSignedPercent } from "@/src/utils/format";
 
@@ -48,7 +48,10 @@ export function PartialResultCard({
         <div>
           <CardTitle className="flex items-center gap-2 text-[11px] tracking-[0.12em] text-muted-foreground">
             <span>Resultado parcial</span>
-            <Info className="h-3.5 w-3.5 text-muted-foreground/80" aria-hidden="true" />
+            <InfoTooltip
+              content="Resume quanto entrou, quanto saiu e qual foi o saldo do período para mostrar se houve economia ou déficit."
+              ariaLabel="Entender o resultado parcial"
+            />
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">Comparativo do {periodDescription}.</p>
         </div>

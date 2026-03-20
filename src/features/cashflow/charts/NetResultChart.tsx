@@ -125,7 +125,7 @@ export function NetResultChart({
             tickLine={false}
             axisLine={false}
             tickMargin={8}
-            minTickGap={12}
+            minTickGap={20}
           />
           <YAxis
             tickFormatter={formatBRLCompact}
@@ -133,7 +133,7 @@ export function NetResultChart({
             tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false}
             axisLine={false}
-            width={78}
+            width={72}
           />
           <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1.2} strokeDasharray="4 3" />
           <Tooltip content={<NetResultTooltip />} cursor={{ fill: "rgba(148,163,184,0.12)" }} />

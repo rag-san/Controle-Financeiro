@@ -107,7 +107,10 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/45 sm:items-center sm:p-4" role="presentation">
+    <div
+      className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 backdrop-blur-[1px] sm:items-center sm:p-4"
+      role="presentation"
+    >
       <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar modal" />
       <div
         ref={dialogRef}
@@ -138,10 +141,17 @@ export function Modal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
+        <div
+          className={cn(
+            "flex-1 overflow-y-auto px-4 pt-4 sm:px-5 sm:pt-4",
+            footer ? "pb-24 sm:pb-5" : "pb-4 sm:pb-5"
+          )}
+        >
+          {children}
+        </div>
 
         {footer ? (
-          <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-border/70 bg-card/95 px-4 py-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-5">
+          <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-border/70 bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-5 sm:pb-3">
             {footer}
           </div>
         ) : null}

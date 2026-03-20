@@ -35,6 +35,28 @@ type NetWorthCardComponent = (props: {
 }) => React.JSX.Element;
 
 type DashboardLoadingComponent = () => React.JSX.Element;
+type DashboardEmptyStateComponent = () => React.JSX.Element;
+type IsDashboardOverviewEmpty = (input: {
+  summary: {
+    totalIncome: number;
+    totalExpense: number;
+    cashInflow?: number;
+    cashOutflow?: number;
+    excludedTotal: number;
+    previousPeriodComparison: {
+      previousIncome: number;
+      previousExpense: number;
+    };
+  };
+  categories: Array<{ total: number; previousTotal: number }>;
+  trends: {
+    series: Array<{ income: number; expense: number; net: number }>;
+    previousSeries: Array<{ income: number; expense: number; net: number }>;
+  };
+  patrimony: {
+    series: Array<{ value: number }>;
+  };
+}) => boolean;
 
 async function loadClientExport<T>(modulePath: string, exportName: string): Promise<T> {
   const moduleNamespace = await import(modulePath);
@@ -192,4 +214,72 @@ test("dashboard loading skeleton renders without runtime errors", async () => {
 
   const html = renderToStaticMarkup(React.createElement(DashboardLoading));
   assert.match(html, /animate-pulse/);
+});
+
+test("dashboard empty state explains the next action", async () => {
+  const DashboardEmptyState = await loadClientExport<DashboardEmptyStateComponent>(
+    "../../src/features/dashboard/DashboardPage.tsx",
+    "DashboardEmptyState"
+  );
+
+  const html = renderToStaticMarkup(React.createElement(DashboardEmptyState));
+  assert.match(html, /Você ainda não possui dados financeiros\./);
+  assert.match(html, /Importar extrato/);
+});
+
+test("dashboard overview empty helper only returns true without any activity", async () => {
+  const isDashboardOverviewEmpty = await loadClientExport<IsDashboardOverviewEmpty>(
+    "../../src/features/dashboard/DashboardPage.tsx",
+    "isDashboardOverviewEmpty"
+  );
+
+  assert.equal(
+    isDashboardOverviewEmpty({
+      summary: {
+        totalIncome: 0,
+        totalExpense: 0,
+        cashInflow: 0,
+        cashOutflow: 0,
+        excludedTotal: 0,
+        previousPeriodComparison: {
+          previousIncome: 0,
+          previousExpense: 0
+        }
+      },
+      categories: [],
+      trends: {
+        series: [{ income: 0, expense: 0, net: 0 }],
+        previousSeries: [{ income: 0, expense: 0, net: 0 }]
+      },
+      patrimony: {
+        series: [{ value: 0 }]
+      }
+    }),
+    true
+  );
+
+  assert.equal(
+    isDashboardOverviewEmpty({
+      summary: {
+        totalIncome: 1200,
+        totalExpense: 0,
+        cashInflow: 1200,
+        cashOutflow: 0,
+        excludedTotal: 0,
+        previousPeriodComparison: {
+          previousIncome: 0,
+          previousExpense: 0
+        }
+      },
+      categories: [],
+      trends: {
+        series: [{ income: 1200, expense: 0, net: 1200 }],
+        previousSeries: [{ income: 0, expense: 0, net: 0 }]
+      },
+      patrimony: {
+        series: [{ value: 1200 }]
+      }
+    }),
+    false
+  );
 });

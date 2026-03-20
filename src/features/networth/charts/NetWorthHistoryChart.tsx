@@ -40,31 +40,18 @@ const rangeOptions = [
 function resolveXAxisInterval(range: NetWorthRangeKey, pointsLength: number): number {
   if (pointsLength <= 1) return 0;
 
-  if (range === "1D") {
-    return 0;
-  }
+  const targetTicksByRange: Record<NetWorthRangeKey, number> = {
+    "1D": 6,
+    "1W": 5,
+    "1M": 7,
+    "3M": 8,
+    YTD: 8,
+    "1Y": 8,
+    ALL: 8
+  };
 
-  if (range === "1W") {
-    return pointsLength > 5 ? 1 : 0;
-  }
-
-  if (range === "1M") {
-    return Math.max(0, Math.ceil(pointsLength / 8) - 1);
-  }
-
-  if (range === "3M") {
-    return Math.max(0, Math.ceil(pointsLength / 9) - 1);
-  }
-
-  if (range === "YTD") {
-    return Math.max(0, Math.ceil(pointsLength / 10) - 1);
-  }
-
-  if (range === "1Y" || range === "ALL") {
-    return pointsLength <= 12 ? 0 : Math.max(0, Math.ceil(pointsLength / 12) - 1);
-  }
-
-  return 0;
+  const targetTicks = targetTicksByRange[range];
+  return Math.max(0, Math.ceil(pointsLength / targetTicks) - 1);
 }
 
 export function NetWorthHistoryChart({
@@ -127,7 +114,7 @@ export function NetWorthHistoryChart({
                   axisLine={false}
                   tick={{ fontSize: 12 }}
                   tickMargin={10}
-                  minTickGap={14}
+                  minTickGap={24}
                 />
                 <YAxis
                   tickFormatter={(value) => formatBRL(Number(value))}
@@ -135,7 +122,7 @@ export function NetWorthHistoryChart({
                   ticks={yAxis.ticks}
                   tickLine={false}
                   axisLine={false}
-                  width={98}
+                  width={84}
                   tick={{ fontSize: 12 }}
                 />
                 <ReferenceLine y={0} stroke="rgb(148 163 184 / 0.35)" strokeWidth={1} />

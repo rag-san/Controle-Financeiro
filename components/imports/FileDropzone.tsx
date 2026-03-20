@@ -18,10 +18,18 @@ export function FileDropzone({ onSelect, accept = ".csv,.ofx,.pdf" }: FileDropzo
       <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-primary/15 text-primary">
         <Upload className="h-5 w-5" />
       </div>
-      <p id="file-dropzone-title" className="text-sm text-muted-foreground">
-        Selecione um arquivo CSV, OFX ou PDF (Inter/Mercado Pago).
+      <p id="file-dropzone-title" className="text-sm font-medium text-foreground">
+        Selecione o arquivo de extrato do seu banco para importar suas transações.
       </p>
-      <Button className="mt-4" variant="secondary" onClick={() => inputRef.current?.click()} aria-controls={inputId}>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Formatos aceitos: CSV, OFX e PDF compatível. O arquivo será analisado antes da importação final.
+      </p>
+      <Button
+        className="mt-4 min-w-40"
+        variant="secondary"
+        onClick={() => inputRef.current?.click()}
+        aria-controls={inputId}
+      >
         Selecionar arquivo
       </Button>
       <input
