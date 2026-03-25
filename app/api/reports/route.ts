@@ -5,6 +5,7 @@ import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics"
 import { privateCacheHeaders, withDeprecatedApiHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
+import { themeColors } from "@/src/lib/theme/colors";
 
 const deprecatedReportsHeaders = withDeprecatedApiHeaders(privateCacheHeaders, {
   successor: "/api/metrics/official?view=reports&preset=3M",
@@ -105,37 +106,37 @@ function buildSankey(
   const totalExpense = round2(expenseEntries.reduce((sum, entry) => sum + entry.value, 0));
 
   const nodes: SankeyNode[] = [
-    ...incomeEntries.map((entry) => ({
-      name: entry.name,
-      kind: "income" as const,
-      color: "#10b981"
-    })),
-    {
-      name: "Disponível",
-      kind: "balance",
-      color: "#3b82f6"
-    },
-    ...expenseEntries.map((entry) => ({
-      name: entry.name,
-      kind: "expense" as const,
-      color: "#f43f5e"
-    }))
+      ...incomeEntries.map((entry) => ({
+        name: entry.name,
+        kind: "income" as const,
+        color: themeColors.success
+      })),
+      {
+        name: "Disponível",
+        kind: "balance",
+        color: themeColors.info
+      },
+      ...expenseEntries.map((entry) => ({
+        name: entry.name,
+        kind: "expense" as const,
+        color: themeColors.error
+      }))
   ];
 
   const balanceIndex = incomeEntries.length;
   const links: SankeyLink[] = [
-    ...incomeEntries.map((entry, index) => ({
-      source: index,
-      target: balanceIndex,
-      value: entry.value,
-      color: "rgba(16, 185, 129, 0.35)"
-    })),
-    ...expenseEntries.map((entry, index) => ({
-      source: balanceIndex,
-      target: balanceIndex + 1 + index,
-      value: entry.value,
-      color: "rgba(244, 63, 94, 0.35)"
-    }))
+      ...incomeEntries.map((entry, index) => ({
+        source: index,
+        target: balanceIndex,
+        value: entry.value,
+        color: "hsl(var(--success) / 0.35)"
+      })),
+      ...expenseEntries.map((entry, index) => ({
+        source: balanceIndex,
+        target: balanceIndex + 1 + index,
+        value: entry.value,
+        color: "hsl(var(--error) / 0.35)"
+      }))
   ];
 
   return {
@@ -188,5 +189,4 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(payload, { headers: deprecatedReportsHeaders });
   });
 }
-
 

@@ -9,10 +9,7 @@ export function Card({ children, className, ...props }: CardProps): React.JSX.El
   return (
     <section
       {...props}
-      className={cn(
-        "app-surface-card rounded-2xl p-6 text-card-foreground",
-        className
-      )}
+      className={cn("glass-card p-6", className)}
     >
       {children}
     </section>

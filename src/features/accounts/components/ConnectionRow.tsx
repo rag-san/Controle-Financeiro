@@ -30,7 +30,7 @@ export function ConnectionRow({
         type="button"
         onClick={onDisconnect}
         disabled={disconnectDisabled}
-        className="rounded-md px-2 py-1 text-sm font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-400 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
+        className="rounded-md px-2 py-1 text-sm font-medium text-error transition hover:bg-error/10 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50 dark:text-error dark:hover:bg-error/10 dark:hover:text-error"
         aria-label={`Disconnect ${institution}`}
       >
         Desconectar
@@ -38,4 +38,5 @@ export function ConnectionRow({
     </div>
   );
 }
+
 

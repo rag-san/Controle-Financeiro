@@ -1,5 +1,7 @@
 import { eachMonthOfInterval, format } from "date-fns";
+import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
 import { categoriesRepo } from "@/lib/server/categories.repo";
+import { themeColors } from "@/src/lib/theme/colors";
 import {
   dashboardMetricsRepo,
   type DashboardDateRange,
@@ -307,7 +309,7 @@ function resolveReportCategory(entry: LedgerAnalyticsEntry, categoriesById: Map<
   return {
     id: category?.id ?? entry.categoryId ?? null,
     name,
-    color: category?.color ?? "#94a3b8",
+    color: category?.color ?? themeColors.mutedForeground,
     icon: category?.icon ?? null,
     parentId,
     parentName
@@ -542,15 +544,15 @@ async function shouldUseLedgerAnalytics(input: {
   accountId?: string;
   categoryId?: string;
 }): Promise<boolean> {
-  const entries = await ledgerRepo.listAnalyticsEntries({
+  return shouldUseLedgerForAnalytics({
     userId: input.userId,
     from: input.from,
     to: input.to,
     accountId: input.accountId,
-    categoryId: input.categoryId
+    categoryId: input.categoryId,
+    transactionTypes: ["income", "expense", "transfer"],
+    hideCardPaymentMirrorInflow: true
   });
-
-  return entries.length > 0;
 }
 
 async function buildLegacyCashflowPayload(input: {

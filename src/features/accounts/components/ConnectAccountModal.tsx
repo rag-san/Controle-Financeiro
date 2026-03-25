@@ -154,7 +154,7 @@ export function ConnectAccountModal({
     <div className="fixed inset-0 z-[100] flex items-end justify-center sm:items-center sm:p-4" role="presentation">
       <button
         type="button"
-        className="absolute inset-0 bg-black/40"
+        className="absolute inset-0 bg-overlay/40"
         onClick={handleClose}
         aria-label="Fechar modal de conta"
       />
@@ -293,7 +293,7 @@ export function ConnectAccountModal({
             ) : null}
 
             {errorMessage ? (
-              <p className="sm:col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+              <p className="sm:col-span-2 rounded-lg border border-error/20 bg-error/10 px-3 py-2 text-sm text-error dark:border-error/20 dark:bg-error/10 dark:text-error">
                 {errorMessage}
               </p>
             ) : null}
@@ -320,3 +320,4 @@ export function ConnectAccountModal({
     </div>
   );
 }
+

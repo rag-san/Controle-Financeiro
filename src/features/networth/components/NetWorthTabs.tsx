@@ -43,18 +43,18 @@ function TabButton({
       tabIndex={tabIndex}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      className={`relative inline-flex items-center gap-2 rounded-md px-1 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+      className={`relative inline-flex items-center gap-2 rounded-md px-1 py-2 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
         active
-          ? "text-emerald-600 dark:text-emerald-400"
-          : "text-muted-foreground hover:text-foreground dark:text-muted-foreground/80 dark:hover:text-foreground"
+          ? "text-info"
+          : "text-muted-foreground hover:text-foreground"
       }`}
     >
       <span>{label}</span>
       <span
         className={`rounded-full px-1.5 py-0.5 text-xs transition-colors duration-200 ${
           active
-            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
-            : "bg-secondary text-muted-foreground dark:bg-secondary dark:text-muted-foreground"
+            ? "bg-info/10 text-info"
+            : "bg-secondary text-muted-foreground"
         }`}
       >
         {count}
@@ -147,7 +147,7 @@ export function NetWorthTabs({
 
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute bottom-0 h-0.5 rounded-full bg-emerald-500 transition-all duration-300 ease-out"
+          className="pointer-events-none absolute bottom-0 h-0.5 rounded-full bg-info transition-all duration-300 ease-out"
           style={{ left: `${underline.left}px`, width: `${underline.width}px` }}
         />
       </div>

@@ -1,509 +1,338 @@
-"use client";
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import { Plus, RefreshCw, CreditCard, Landmark, Link as LinkIcon } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { extractApiError, parseApiResponse } from '@/lib/client/api-response';
+import type { AccountDTO } from '@/lib/types';
+import type { NetWorthEntryDTO, NetWorthRangeKey } from '@/src/features/networth/types';
+import { buildDerivedSeriesFromSnapshot, buildHistorySeries, filterHistoryByInterval, resolveRangeInterval } from '@/src/features/networth/utils/buildHistorySeries';
+import { deriveSnapshotFromAccounts } from '@/src/features/networth/utils/calculateNetWorth';
+import { AssetsDebtsTooltip } from '@/src/components/charts/AssetsDebtsTooltip';
+import { EmptyState } from '@/src/app-shell/components/EmptyState';
+import { NewAccountModal } from './components/NewAccountModal';
+import { Skeleton } from '@/src/app-shell/components/ShellSkeleton';
+import { formatCurrency, cn } from '@/src/app-shell/utils';
 
-import { CreditCard, Eye, EyeOff, Link2, RefreshCcw, Trash2, Wallet } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { PageShell } from "@/components/layout/PageShell";
-import { Skeleton } from "@/src/components/ui/Skeleton";
-import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
-import type { AccountDTO } from "@/lib/types";
-import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
-import { IconButton } from "@/src/components/ui/IconButton";
-import { useToast } from "@/src/components/ui/ToastProvider";
-import { AssetsDebtsCard } from "@/src/features/accounts/cards/AssetsDebtsCard";
-import { AccountGroupCard } from "@/src/features/accounts/components/AccountGroupCard";
-import { AccountRow } from "@/src/features/accounts/components/AccountRow";
-import { ConnectAccountButton } from "@/src/features/accounts/components/ConnectAccountButton";
-import { ConnectAccountModal } from "@/src/features/accounts/components/ConnectAccountModal";
-import { DeleteAccountModal } from "@/src/features/accounts/components/DeleteAccountModal";
-import { ConnectionRow } from "@/src/features/accounts/components/ConnectionRow";
-import type { AccountsRangeKey, NetWorthEntryDTO } from "@/src/features/accounts/types";
-import {
-  buildSeriesFromHistory,
-  buildConnections,
-  buildHistoricalAssetsDebtsSeries,
-  deriveAccountsSummary,
-  filterSeriesByInterval,
-  resolveSummaryAtOrBeforeDate,
-  resolvePreviousInterval,
-  resolveRangeInterval,
-  splitAccountGroups
-} from "@/src/features/accounts/utils/accounts";
-import { formatBRL } from "@/src/utils/format";
+interface AccountsProps {
+  hideValues: boolean;
+}
 
-type ConnectAccountDraft = {
-  name: string;
-  type: AccountDTO["type"];
-  institution: string;
-  currency: string;
-  parentAccountId: string;
+export { Accounts as AccountsPage };
+
+type AccountsChartRow = {
+  date: string;
+  ativos: number;
+  dividas: number;
 };
 
-function EmptyGroupRow({
-  message,
-  ctaLabel,
-  onAction
-}: {
-  message: string;
-  ctaLabel: string;
-  onAction: () => void;
-}): React.JSX.Element {
+type AccountGroupRow = {
+  id: string;
+  name: string;
+  bank?: string;
+  status?: string;
+  dueDate?: string;
+  balance?: number;
+};
+
+type AccountGroup = {
+  id: string;
+  title: string;
+  total: number;
+  accounts: AccountGroupRow[];
+};
+
+function resolveChartRange(range: string): NetWorthRangeKey {
+  if (range === '1W') return '1W';
+  if (range === 'YTD') return 'YTD';
+  if (range === '3M') return '3M';
+  if (range === '1Y') return '1Y';
+  if (range === 'ALL') return 'ALL';
+  return '1M';
+}
+
+function formatChartLabel(dateKey: string, range: string): string {
+  const date = new Date(`${dateKey}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+
+  if (range === '1W' || range === '1M') {
+    return format(date, 'dd/MM', { locale: ptBR });
+  }
+
+  return format(date, 'MMM', { locale: ptBR })
+    .replace('.', '')
+    .replace(/^\w/, (value) => value.toUpperCase());
+}
+
+function buildAccountGroups(accounts: AccountDTO[]): AccountGroup[] {
+  const creditAccounts = accounts.filter((account) => account.type === 'credit');
+  const bankAccounts = accounts.filter((account) => account.type !== 'credit');
+  const connections = [...new Set(accounts.map((account) => account.institution?.trim()).filter(Boolean))];
+
+  const groups: AccountGroup[] = [];
+
+  if (creditAccounts.length > 0) {
+    groups.push({
+      id: 'credit',
+      title: 'Cartões de Crédito',
+      total: creditAccounts.reduce((sum, account) => sum + Math.abs(Math.min(account.currentBalance ?? 0, 0)), 0),
+      accounts: creditAccounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        bank: account.institution ?? 'Cartão Manual',
+        balance: account.currentBalance ?? 0
+      }))
+    });
+  }
+
+  if (bankAccounts.length > 0) {
+    groups.push({
+      id: 'bank',
+      title: 'Contas Bancárias',
+      total: bankAccounts.reduce((sum, account) => sum + Math.max(account.currentBalance ?? 0, 0), 0),
+      accounts: bankAccounts.map((account) => ({
+        id: account.id,
+        name: account.name,
+        bank: account.institution ?? 'Conta Manual',
+        balance: account.currentBalance ?? 0
+      }))
+    });
+  }
+
+  if (connections.length > 0) {
+    groups.push({
+      id: 'connections',
+      title: 'Conexões',
+      total: 0,
+      accounts: connections.map((institution, index) => ({
+        id: `connection-${index}`,
+        name: institution as string,
+        status: 'Conectado'
+      }))
+    });
+  }
+
+  return groups;
+}
+
+export function Accounts({ hideValues }: AccountsProps) {
+  const [timeRange, setTimeRange] = useState('1M');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [accounts, setAccounts] = useState<AccountDTO[]>([]);
+  const [entries, setEntries] = useState<NetWorthEntryDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const [accountsResponse, netWorthResponse] = await Promise.all([
+        fetch('/api/accounts', { cache: 'no-store' }),
+        fetch('/api/net-worth', { cache: 'no-store' })
+      ]);
+
+      const [{ data: accountsData, errorMessage: accountsError }, { data: entriesData, errorMessage: netWorthError }] = await Promise.all([
+        parseApiResponse<AccountDTO[] | { error?: unknown }>(accountsResponse),
+        parseApiResponse<NetWorthEntryDTO[] | { error?: unknown }>(netWorthResponse)
+      ]);
+
+      if (accountsError) throw new Error(accountsError);
+      if (!accountsResponse.ok || !accountsData || !Array.isArray(accountsData)) {
+        throw new Error(extractApiError(accountsData, 'Não foi possível carregar as contas.'));
+      }
+
+      if (netWorthError) throw new Error(netWorthError);
+      if (!netWorthResponse.ok || !entriesData || !Array.isArray(entriesData)) {
+        throw new Error(extractApiError(entriesData, 'Não foi possível carregar o histórico das contas.'));
+      }
+
+      setAccounts(accountsData);
+      setEntries(entriesData);
+    } catch (loadError) {
+      setAccounts([]);
+      setEntries([]);
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar contas.');
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    void load();
+  };
+
+  const snapshot = useMemo(() => deriveSnapshotFromAccounts(accounts), [accounts]);
+  const groups = useMemo(() => buildAccountGroups(accounts), [accounts]);
+
+  const chartData = useMemo<AccountsChartRow[]>(() => {
+    const timeline = buildHistorySeries(entries);
+    const referenceDate = timeline.length > 0 ? new Date(`${timeline[timeline.length - 1].date}T12:00:00`) : new Date();
+    const currentInterval = resolveRangeInterval(resolveChartRange(timeRange), referenceDate, timeline[0] ? new Date(`${timeline[0].date}T12:00:00`) : undefined);
+    const filtered = filterHistoryByInterval(timeline, currentInterval);
+    const source =
+      filtered.length > 0
+        ? filtered
+        : buildDerivedSeriesFromSnapshot(snapshot, resolveChartRange(timeRange), currentInterval);
+
+    return source.map((point) => ({
+      date: formatChartLabel(point.date, timeRange),
+      ativos: point.assets,
+      dividas: point.debts
+    }));
+  }, [entries, snapshot, timeRange]);
+
   return (
-    <div className="flex flex-col items-start gap-3 px-4 py-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between dark:text-muted-foreground/80">
-      <span>{message}</span>
-      <button
-        type="button"
-        onClick={onAction}
-        className="rounded-md px-2 py-1 font-medium text-primary transition hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-primary-foreground dark:hover:bg-primary/25 dark:hover:text-primary-foreground"
-      >
-        {ctaLabel}
-      </button>
+    <div className="space-y-8 animate-in fade-in duration-300">
+      <header className="mb-6 flex flex-col gap-3 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Contas</h1>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <button
+            onClick={handleRefresh}
+            className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
+            title="Atualizar contas"
+            disabled={loading}
+          >
+            <RefreshCw size={18} className={cn((isRefreshing || loading) && 'animate-spin text-primary')} />
+          </button>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 font-medium text-background transition-all duration-200 hover:scale-105 hover:bg-primary/90 active:scale-95 shadow-[0_0_15px_hsl(var(--success) / 0.2)] hover:shadow-[0_0_25px_hsl(var(--success) / 0.4)]"
+          >
+            <Plus size={18} />
+            Nova Conta
+          </button>
+        </div>
+      </header>
+
+      {loading ? (
+        <div className="space-y-4 sm:space-y-6">
+          <Skeleton className="glass-card h-[260px] sm:h-[356px]" />
+          <Skeleton className="glass-card h-[220px] sm:h-[280px]" />
+        </div>
+      ) : error ? (
+        <div className="glass-card p-8 text-center">
+          <p className="text-sm text-error mb-4">{error}</p>
+          <button
+            onClick={handleRefresh}
+            className="bg-primary hover:bg-primary/90 text-background px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="glass-card p-5 sm:p-6">
+            <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="grid grid-cols-2 gap-4 sm:flex sm:gap-8">
+                <div>
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Ativos</div>
+                  <div className="text-2xl font-semibold text-foreground">R$ {formatCurrency(snapshot.assets, hideValues).replace('R$', '').trim()}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Dívidas</div>
+                  <div className="text-2xl font-semibold text-foreground">R$ {formatCurrency(snapshot.debts, hideValues).replace('R$', '').trim()}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-6 h-[220px] w-full sm:h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorAtivos" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--info))" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="hsl(var(--info))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border) / 0.22)" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} tickLine={false} axisLine={false} />
+                  <Tooltip content={<AssetsDebtsTooltip />} />
+                  <Area type="monotone" dataKey="ativos" stroke="hsl(var(--info))" fillOpacity={1} fill="url(#colorAtivos)" />
+                  <Area type="monotone" dataKey="dividas" stroke="hsl(var(--error))" fillOpacity={0} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2">
+              {['1W', '1M', 'YTD', '3M', '1Y', 'ALL'].map((range) => (
+                <button
+                  key={range}
+                  onClick={() => setTimeRange(range)}
+                  className={cn(
+                    'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+                    timeRange === range ? 'bg-secondary/80 text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {groups.length === 0 ? (
+            <div className="glass-card">
+              <EmptyState
+                icon={Landmark}
+                title="Nenhuma conta cadastrada"
+                description="Crie sua primeira conta para visualizar saldos, cartões e conexões."
+                actionLabel="Nova Conta"
+                onAction={() => setIsModalOpen(true)}
+              />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {groups.map((group) => (
+                <div key={group.id} className="glass-card overflow-hidden">
+                  <div className="flex flex-col gap-2 border-b border-border/60 bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      {group.id === 'credit' && <CreditCard size={16} />}
+                      {group.id === 'bank' && <Landmark size={16} />}
+                      {group.id === 'connections' && <LinkIcon size={16} />}
+                      {group.title}
+                    </h3>
+                    {group.total > 0 && <span className="text-sm font-medium text-foreground">R$ {formatCurrency(group.total, hideValues).replace('R$', '').trim()}</span>}
+                  </div>
+                  <div className="divide-y divide-border/60">
+                    {group.accounts.map((account) => (
+                      <div key={account.id} className="flex flex-col gap-2 p-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-foreground">{account.name}</div>
+                          <div className="text-xs text-muted-foreground">{account.bank || account.status} {account.dueDate && `• Vence: ${account.dueDate}`}</div>
+                        </div>
+                        {account.balance !== undefined && (
+                          <div className="text-sm font-medium text-foreground">
+                            {account.balance === 0 ? '-R$ 0,00' : `R$ ${formatCurrency(account.balance, hideValues).replace('R$', '').trim()}`}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      <NewAccountModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onCreated={() => {
+          setIsModalOpen(false);
+          void load();
+        }}
+      />
     </div>
   );
 }
-
-export function AccountsPage(): React.JSX.Element {
-  const { toast } = useToast();
-  const [accounts, setAccounts] = useState<AccountDTO[]>([]);
-  const [netWorthEntries, setNetWorthEntries] = useState<NetWorthEntryDTO[]>([]);
-  const [selectedRange, setSelectedRange] = useState<AccountsRangeKey>("1M");
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [connectModalOpen, setConnectModalOpen] = useState(false);
-  const [savingAccount, setSavingAccount] = useState(false);
-  const [connectErrorMessage, setConnectErrorMessage] = useState("");
-  const [hideBalances, setHideBalances] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [deletingAccount, setDeletingAccount] = useState(false);
-
-  const loadAccountsData = useCallback(
-    async (signal?: AbortSignal): Promise<void> => {
-      setLoading(true);
-      setErrorMessage("");
-
-      try {
-        const [accountsResponse, netWorthResponse] = await Promise.all([
-          fetch("/api/accounts", { signal }),
-          fetch("/api/net-worth", { signal })
-        ]);
-
-        const { data: accountsData, errorMessage: accountsParseError } = await parseApiResponse<
-          AccountDTO[] | { error?: unknown }
-        >(accountsResponse);
-
-        if (accountsParseError) {
-          throw new Error(accountsParseError);
-        }
-
-        if (!accountsResponse.ok || !accountsData || !Array.isArray(accountsData)) {
-          throw new Error(extractApiError(accountsData, "Não foi possível carregar contas."));
-        }
-
-        const { data: netWorthData } = await parseApiResponse<NetWorthEntryDTO[] | { error?: unknown }>(
-          netWorthResponse
-        );
-
-        const sanitizedNetWorth = netWorthResponse.ok && Array.isArray(netWorthData) ? netWorthData : [];
-
-        setAccounts(accountsData);
-        setNetWorthEntries(sanitizedNetWorth);
-      } catch (loadError) {
-        if (loadError instanceof DOMException && loadError.name === "AbortError") {
-          return;
-        }
-
-        setAccounts([]);
-        setNetWorthEntries([]);
-        setErrorMessage(
-          loadError instanceof Error ? loadError.message : "Não foi possível carregar dados das contas."
-        );
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void loadAccountsData(controller.signal);
-    return () => controller.abort();
-  }, [loadAccountsData]);
-
-  const summary = useMemo(() => deriveAccountsSummary(accounts), [accounts]);
-  const historicalSeries = useMemo(
-    () => buildHistoricalAssetsDebtsSeries(netWorthEntries),
-    [netWorthEntries]
-  );
-
-  const referenceDate = useMemo(() => {
-    const latestPoint = historicalSeries[historicalSeries.length - 1];
-    if (!latestPoint) return new Date();
-    return new Date(`${latestPoint.date}T12:00:00`);
-  }, [historicalSeries]);
-
-  const currentInterval = useMemo(
-    () => resolveRangeInterval(referenceDate, selectedRange),
-    [referenceDate, selectedRange]
-  );
-  const previousInterval = useMemo(
-    () => resolvePreviousInterval(currentInterval),
-    [currentInterval]
-  );
-
-  const chartData = useMemo(() => {
-    const historicalSlice = filterSeriesByInterval(historicalSeries, currentInterval);
-    if (historicalSlice.length >= 2) {
-      return historicalSlice;
-    }
-
-    return buildSeriesFromHistory(historicalSeries, summary, selectedRange, currentInterval);
-  }, [currentInterval, historicalSeries, selectedRange, summary]);
-
-  const previousSummary = useMemo(() => {
-    const previousHistory = filterSeriesByInterval(historicalSeries, previousInterval);
-    if (previousHistory.length > 0) {
-      const latest = previousHistory[previousHistory.length - 1];
-      return { assets: latest.assets, debts: latest.debts };
-    }
-
-    return resolveSummaryAtOrBeforeDate(historicalSeries, previousInterval.end, summary);
-  }, [historicalSeries, previousInterval, summary]);
-
-  const { creditCards, bankAccounts } = useMemo(() => splitAccountGroups(accounts), [accounts]);
-  const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
-  const creditCardsGroupedByParent = useMemo(() => {
-    const grouped = new Map<string, AccountDTO[]>();
-    for (const card of creditCards) {
-      const key = card.parentAccountId ?? "__unlinked__";
-      const current = grouped.get(key) ?? [];
-      current.push(card);
-      grouped.set(key, current);
-    }
-
-    return [...grouped.entries()]
-      .map(([parentId, cards]) => ({
-        parentId: parentId === "__unlinked__" ? null : parentId,
-        parent: parentId === "__unlinked__" ? null : accountById.get(parentId) ?? null,
-        cards: cards.sort((left, right) => left.name.localeCompare(right.name))
-      }))
-      .sort((left, right) => {
-        if (left.parent && right.parent) return left.parent.name.localeCompare(right.parent.name);
-        if (left.parent && !right.parent) return -1;
-        if (!left.parent && right.parent) return 1;
-        return 0;
-      });
-  }, [accountById, creditCards]);
-  const connections = useMemo(() => buildConnections(accounts), [accounts]);
-
-  const totalCreditDebt = useMemo(
-    () => creditCards.reduce((total, account) => total + Math.abs(account.currentBalance ?? 0), 0),
-    [creditCards]
-  );
-  const totalBankAssets = useMemo(
-    () => bankAccounts.reduce((total, account) => total + (account.currentBalance ?? 0), 0),
-    [bankAccounts]
-  );
-
-  const actions = useMemo(
-    () => (
-      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-        <IconButton
-          aria-label={hideBalances ? "Mostrar valores" : "Ocultar valores"}
-          onClick={() => setHideBalances((previous) => !previous)}
-          icon={hideBalances ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-        />
-        <IconButton
-          aria-label="Atualizar dados de contas"
-          onClick={() => void loadAccountsData()}
-          icon={<RefreshCcw className="h-4 w-4" />}
-        />
-        <ConnectAccountButton onClick={() => setConnectModalOpen(true)} />
-      </div>
-    ),
-    [hideBalances, loadAccountsData]
-  );
-
-  const handleCreateManualAccount = useCallback(
-    async (draft: ConnectAccountDraft): Promise<void> => {
-      if (draft.name.trim().length < 2) {
-        setConnectErrorMessage("Informe um nome com pelo menos 2 caracteres.");
-        return;
-      }
-
-      setSavingAccount(true);
-      setConnectErrorMessage("");
-
-      try {
-        const response = await fetch("/api/accounts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: draft.name.trim(),
-            type: draft.type,
-            institution: draft.institution.trim() || null,
-            currency: draft.currency.trim().toUpperCase() || "BRL",
-            parentAccountId: draft.type === "credit" ? draft.parentAccountId || null : null
-          })
-        });
-
-        const { data, errorMessage } = await parseApiResponse<AccountDTO | { error?: unknown }>(response);
-
-        if (errorMessage) {
-          throw new Error(errorMessage);
-        }
-
-        if (!response.ok || !data || Array.isArray(data) || !("id" in data) || !("name" in data)) {
-          throw new Error(extractApiError(data, "Não foi possível criar a conta."));
-        }
-
-        const createdAccount = data as AccountDTO;
-
-        toast({
-          variant: "success",
-          title: "Conta criada",
-          description: `${createdAccount.name} foi adicionada com sucesso.`
-        });
-
-        setConnectModalOpen(false);
-        await loadAccountsData();
-      } catch (createError) {
-        const message =
-          createError instanceof Error ? createError.message : "Falha ao salvar a conta.";
-        setConnectErrorMessage(message);
-      } finally {
-        setSavingAccount(false);
-      }
-    },
-    [loadAccountsData, toast]
-  );
-
-  const handleDeleteAccount = useCallback(async (): Promise<void> => {
-    if (!deleteTarget) return;
-
-    setDeletingAccount(true);
-    try {
-      const response = await fetch(`/api/accounts/${deleteTarget.id}`, { method: "DELETE" });
-      const { data, errorMessage } = await parseApiResponse<
-        { success?: boolean; deletedTransactions?: number } | { error?: unknown }
-      >(response);
-
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-      if (!response.ok) {
-        throw new Error(extractApiError(data, "Não foi possível excluir a conta."));
-      }
-
-      toast({
-        variant: "success",
-        title: "Conta excluída",
-        description:
-          data && "deletedTransactions" in data && typeof data.deletedTransactions === "number"
-            ? `${deleteTarget.name} foi removida com sucesso. ${data.deletedTransactions} transação(ões) apagada(s).`
-            : `${deleteTarget.name} foi removida com sucesso.`
-      });
-
-      setDeleteTarget(null);
-      await loadAccountsData();
-    } catch (deleteError) {
-      const message = deleteError instanceof Error ? deleteError.message : "Falha ao excluir conta.";
-      toast({
-        variant: "error",
-        title: "Não foi possível excluir",
-        description: message
-      });
-    } finally {
-      setDeletingAccount(false);
-    }
-  }, [deleteTarget, loadAccountsData, toast]);
-
-  return (
-    <PageShell title="Contas" subtitle="Acompanhe ativos, dívidas e conexões financeiras" actions={actions}>
-      {loading ? (
-        <div className="space-y-4">
-          <Skeleton className="h-[420px] rounded-2xl" />
-          <Skeleton className="h-[150px] rounded-2xl" />
-          <Skeleton className="h-[150px] rounded-2xl" />
-          <Skeleton className="h-[150px] rounded-2xl" />
-        </div>
-      ) : (
-        <div className="space-y-4 overflow-x-hidden">
-          {errorMessage ? <FeedbackMessage variant="error">{errorMessage}</FeedbackMessage> : null}
-
-          <AssetsDebtsCard
-            assets={summary.assets}
-            debts={summary.debts}
-            previousAssets={previousSummary.assets}
-            previousDebts={previousSummary.debts}
-            chartData={chartData}
-            selectedRange={selectedRange}
-            onRangeChange={setSelectedRange}
-            loading={loading}
-            hideValues={hideBalances}
-          />
-
-          <AccountGroupCard
-            icon={<CreditCard className="h-4 w-4" aria-hidden="true" />}
-            iconClassName="bg-rose-100 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300"
-            title="Cartões de Crédito"
-            subtitle={`${creditCards.length} contas`}
-            totalLabel={hideBalances ? "••••••" : `-${formatBRL(totalCreditDebt)}`}
-          >
-            {creditCards.length === 0 ? (
-              <EmptyGroupRow
-                message="Nenhum cartão de crédito cadastrado"
-                ctaLabel="Conectar conta"
-                onAction={() => setConnectModalOpen(true)}
-              />
-            ) : (
-              creditCardsGroupedByParent.flatMap((group) => {
-                const parentRow = group.parent ? (
-                  <div
-                    key={`parent-${group.parent.id}`}
-                    className="border-b border-border/70 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground dark:border-border dark:text-muted-foreground/80"
-                  >
-                    {group.parent.name}
-                  </div>
-                ) : null;
-
-                const cardRows = group.cards.map((account) => {
-                  const debt = Math.abs(account.currentBalance ?? 0);
-                  const institutionLabel = account.institution?.trim() || "Instituição";
-
-                  return (
-                    <AccountRow
-                      key={account.id}
-                      name={`${group.parent ? "↳ " : ""}${account.name}`}
-                      subtitle={`${institutionLabel} • Vence: --/--/----`}
-                      amount={debt}
-                      amountSign="negative"
-                      amountTone={debt > 0 ? "negative" : "muted"}
-                      metaRight={group.parent ? `Conta mãe: ${group.parent.name}` : "Sem conta mãe"}
-                      iconClassName="bg-rose-100 text-rose-500 dark:bg-rose-950/40 dark:text-rose-300"
-                      hiddenAmount={hideBalances}
-                      actionSlot={
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget({ id: account.id, name: account.name })}
-                          className="rounded-md p-1.5 text-muted-foreground/80 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
-                          aria-label={`Excluir conta ${account.name}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      }
-                    />
-                  );
-                });
-
-                return parentRow ? [parentRow, ...cardRows] : cardRows;
-              })
-            )}
-          </AccountGroupCard>
-
-          <AccountGroupCard
-            icon={<Wallet className="h-4 w-4" aria-hidden="true" />}
-            iconClassName="bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"
-            title="Contas Bancárias"
-            subtitle={`${bankAccounts.length} contas`}
-            totalLabel={hideBalances ? "••••••" : formatBRL(totalBankAssets)}
-          >
-            {bankAccounts.length === 0 ? (
-              <EmptyGroupRow
-                message="Nenhuma conta bancária encontrada"
-                ctaLabel="Conectar conta"
-                onAction={() => setConnectModalOpen(true)}
-              />
-            ) : (
-              bankAccounts.map((account) => {
-                const institution = account.institution?.trim() || "Conta Manual";
-                const balance = account.currentBalance ?? 0;
-                const amountTone = balance > 0 ? "default" : balance < 0 ? "negative" : "muted";
-                const amountSign = balance > 0 ? "none" : balance < 0 ? "negative" : "none";
-
-                return (
-                  <AccountRow
-                    key={account.id}
-                    name={account.name}
-                    subtitle={institution}
-                    amount={Math.abs(balance)}
-                    amountSign={amountSign}
-                    amountTone={amountTone}
-                    iconClassName="bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300"
-                    hiddenAmount={hideBalances}
-                    actionSlot={
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget({ id: account.id, name: account.name })}
-                        className="rounded-md p-1.5 text-muted-foreground/80 transition hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
-                        aria-label={`Excluir conta ${account.name}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    }
-                  />
-                );
-              })
-            )}
-          </AccountGroupCard>
-
-          <AccountGroupCard
-            icon={<Link2 className="h-4 w-4" aria-hidden="true" />}
-            iconClassName="bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
-            title="Conexões"
-            subtitle={`${connections.length} instituições conectadas`}
-          >
-            {connections.length === 0 ? (
-              <EmptyGroupRow
-                message="Nenhuma instituição conectada"
-                ctaLabel="Conectar conta"
-                onAction={() => setConnectModalOpen(true)}
-              />
-            ) : (
-              connections.map((connection) => (
-                <ConnectionRow
-                  key={connection.institution}
-                  institution={connection.institution}
-                  accountCount={connection.accountCount}
-                  onDisconnect={() => {
-                    toast({
-                      variant: "info",
-                      title: "Integracao pendente",
-                      description: `Desconexao de ${connection.institution} sera habilitada em breve.`
-                    });
-                  }}
-                />
-              ))
-            )}
-          </AccountGroupCard>
-        </div>
-      )}
-
-      <ConnectAccountModal
-        open={connectModalOpen}
-        accounts={accounts}
-        busy={savingAccount}
-        errorMessage={connectErrorMessage}
-        onClose={() => {
-          if (savingAccount) return;
-          setConnectModalOpen(false);
-          setConnectErrorMessage("");
-        }}
-        onSubmitManual={handleCreateManualAccount}
-      />
-
-      <DeleteAccountModal
-        open={Boolean(deleteTarget)}
-        accountName={deleteTarget?.name ?? ""}
-        busy={deletingAccount}
-        onClose={() => {
-          if (deletingAccount) return;
-          setDeleteTarget(null);
-        }}
-        onConfirm={handleDeleteAccount}
-      />
-    </PageShell>
-  );
-}
-
-
 

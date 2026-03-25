@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { createId } from "@/lib/db";
+import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
 import { fromCents, nowIso } from "@/lib/server/sql";
 
 type AccountRow = {
@@ -18,6 +19,66 @@ type AccountBalanceRow = {
   account_id: string;
   total_cents: number | null;
 };
+
+async function listLegacyBalancesByUser(userId: string): Promise<Map<string, number>> {
+  const balanceRows = (await db
+    .prepare(
+      `SELECT account_id, SUM(amount_cents) AS total_cents
+       FROM transactions
+       WHERE user_id = ?
+       GROUP BY account_id`
+    )
+    .all(userId)) as AccountBalanceRow[];
+
+  return new Map(balanceRows.map((row) => [row.account_id, fromCents(row.total_cents)]));
+}
+
+async function listLedgerBalancesByUser(userId: string): Promise<Map<string, number>> {
+  const balanceRows = (await db
+    .prepare(
+      `SELECT
+         a.id AS account_id,
+         COALESCE(
+           SUM(
+             CASE
+               WHEN a.type = 'credit' THEN
+                 CASE
+                   WHEN le.type = 'cc_purchase' THEN -le.amount_cents
+                   WHEN le.type = 'refund' THEN le.amount_cents
+                   WHEN le.type = 'cc_payment' THEN le.amount_cents
+                   ELSE 0
+                 END
+               ELSE
+                 CASE
+                   WHEN le.type = 'income' THEN le.amount_cents
+                   WHEN le.type IN ('expense', 'fee') THEN -le.amount_cents
+                   WHEN le.type = 'transfer' AND le.direction = 'IN' THEN le.amount_cents
+                   WHEN le.type = 'transfer' AND le.direction = 'OUT' THEN -le.amount_cents
+                   WHEN le.type = 'cc_payment' AND le.direction = 'IN' THEN le.amount_cents
+                   WHEN le.type = 'cc_payment' AND le.direction = 'OUT' THEN -le.amount_cents
+                   WHEN le.type = 'refund' AND le.direction = 'IN' THEN le.amount_cents
+                   WHEN le.type = 'refund' AND le.direction = 'OUT' THEN -le.amount_cents
+                   ELSE 0
+                 END
+             END
+           ),
+           0
+         ) AS total_cents
+       FROM accounts a
+       LEFT JOIN ledger_entries le
+         ON le.user_id = a.user_id
+        AND (
+          (a.type = 'credit' AND le.credit_card_account_id = a.id)
+          OR (a.type <> 'credit' AND le.account_id = a.id)
+        )
+        AND (le.excluded = FALSE OR le.is_balance_adjustment = TRUE)
+       WHERE a.user_id = ?
+       GROUP BY a.id`
+    )
+    .all(userId)) as AccountBalanceRow[];
+
+  return new Map(balanceRows.map((row) => [row.account_id, fromCents(row.total_cents)]));
+}
 
 function mapAccount(row: AccountRow) {
   return {
@@ -49,16 +110,13 @@ export const accountsRepo = {
 
   async listByUserWithBalance(userId: string) {
     const accounts = await this.listByUser(userId);
-    const balanceRows = (await db
-      .prepare(
-        `SELECT account_id, SUM(amount_cents) AS total_cents
-         FROM transactions
-         WHERE user_id = ?
-         GROUP BY account_id`
-      )
-      .all(userId)) as AccountBalanceRow[];
-
-    const balanceByAccountId = new Map(balanceRows.map((row) => [row.account_id, fromCents(row.total_cents)]));
+    const useLedger = await shouldUseLedgerForAnalytics({
+      userId,
+      includeBalanceAdjustments: true
+    });
+    const balanceByAccountId = useLedger
+      ? await listLedgerBalancesByUser(userId)
+      : await listLegacyBalancesByUser(userId);
 
     return accounts.map((account) => ({
       ...account,

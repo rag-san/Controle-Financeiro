@@ -51,24 +51,24 @@ export function ExpensesStackedTooltip({
   const title = typeof label === "string" ? formatMonthLabel(label) : String(label ?? "");
 
   return (
-    <div className="min-w-[14rem] rounded-xl border border-border bg-card/95 p-3 text-xs text-foreground shadow-xl backdrop-blur dark:bg-secondary/85">
-      <p className="mb-2 font-semibold text-foreground">{title}</p>
-      <ul className="space-y-1.5">
+    <div className="min-w-[14rem] rounded-2xl border border-border/90 bg-card/95 p-3 text-xs text-foreground shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+      <ul className="space-y-2">
         {items.map((item) => (
           <li key={item.category} className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2 text-muted-foreground">
+            <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
               <span
-                className="inline-block h-2.5 w-2.5 rounded-full"
+                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-inset ring-border/60"
                 style={{ backgroundColor: item.color }}
                 aria-hidden="true"
               />
-              <span className="truncate">{item.category}</span>
+              <span className="truncate text-[13px] text-foreground/90">{item.category}</span>
             </span>
             <span className="font-semibold text-foreground">{formatBRL(item.value)}</span>
           </li>
         ))}
       </ul>
-      <div className="mt-2 border-t border-border/90 pt-2">
+      <div className="mt-2 border-t border-border/80 pt-2">
         <div className="flex items-center justify-between">
           <span className="font-medium text-muted-foreground">Total</span>
           <span className="font-semibold text-foreground">{formatBRL(total)}</span>

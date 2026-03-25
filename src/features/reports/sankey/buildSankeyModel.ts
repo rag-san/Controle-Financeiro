@@ -1,4 +1,5 @@
 import { fromAmountCents } from "@/lib/finance/official-metrics";
+import { themeColors } from "@/src/lib/theme/colors";
 import { getCategoryColor } from "@/src/features/categories/categoryColors";
 import type { ReportPreparedTransaction } from "@/src/features/reports/types";
 import type { SankeyLink, SankeyModel, SankeyNode } from "@/src/features/reports/sankey/types";
@@ -77,6 +78,15 @@ function lightenHex(hexColor: string, amount = 0.3): string {
   const hex = (channel: number) => channel.toString(16).padStart(2, "0");
 
   return `#${hex(lighten(red))}${hex(lighten(green))}${hex(lighten(blue))}`;
+}
+
+function softenColor(color: string, amount = 0.32): string {
+  if (color.startsWith("#")) {
+    return lightenHex(color, amount);
+  }
+
+  const mixAmount = Math.max(0, Math.min(100, Math.round((1 - amount) * 100)));
+  return `color-mix(in srgb, ${color} ${mixAmount}%, hsl(var(--background)))`;
 }
 
 function isOperationalFlowCategory(label: string): boolean {
@@ -178,7 +188,7 @@ export function buildSankeyModel(
       id: INCOME_NODE_ID,
       label: "Receita",
       kind: "income",
-      color: "#10b981",
+      color: themeColors.success,
       column: 0,
       displayValue: round2(fromAmountCents(totalIncomeCents))
     },
@@ -186,7 +196,7 @@ export function buildSankeyModel(
       id: EXPENSES_NODE_ID,
       label: "Despesas",
       kind: "expenses",
-      color: "#ef4444",
+      color: themeColors.error,
       column: 1,
       displayValue: round2(fromAmountCents(effectiveExpenseCents))
     }
@@ -197,7 +207,7 @@ export function buildSankeyModel(
       id: SAVED_NODE_ID,
       label: "Economizado",
       kind: "saved",
-      color: "#3b82f6",
+      color: themeColors.info,
       column: 1,
       displayValue: round2(fromAmountCents(savedFlowCents))
     });
@@ -210,7 +220,7 @@ export function buildSankeyModel(
       source: INCOME_NODE_ID,
       target: EXPENSES_NODE_ID,
       value: round2(fromAmountCents(effectiveExpenseCents)),
-      color: "#ef4444"
+      color: themeColors.error
     });
   }
 
@@ -219,7 +229,7 @@ export function buildSankeyModel(
       source: INCOME_NODE_ID,
       target: SAVED_NODE_ID,
       value: round2(fromAmountCents(savedFlowCents)),
-      color: "#3b82f6"
+      color: themeColors.info
     });
   }
 
@@ -281,7 +291,7 @@ export function buildSankeyModel(
       continue;
     }
 
-    const subColor = lightenHex(categoryColor, 0.32);
+    const subColor = softenColor(categoryColor, 0.32);
 
     for (const sub of topSubs) {
       const subId = `subcategory:${slugify(entry.key)}:${slugify(sub.label) || "subcategoria"}`;

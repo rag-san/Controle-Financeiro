@@ -27,10 +27,9 @@ type ToastContextValue = {
 };
 
 const toastStyleByVariant: Record<ToastVariant, string> = {
-  info: "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary-foreground",
-  success:
-    "border-emerald-200/80 bg-emerald-50/95 text-emerald-900 dark:border-emerald-700/45 dark:bg-card/95 dark:text-emerald-100",
-  error: "border-rose-200/80 bg-rose-50/95 text-rose-900 dark:border-rose-700/45 dark:bg-card/95 dark:text-rose-100"
+  info: "border-info/25 bg-info/10 text-info",
+  success: "border-success/25 bg-success/10 text-success",
+  error: "border-error/25 bg-error/10 text-error"
 };
 
 const toastIconByVariant: Record<ToastVariant, React.ComponentType<{ className?: string }>> = {
@@ -108,7 +107,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }): Reac
               <button
                 type="button"
                 onClick={() => dismissToast(item.id)}
-                className="rounded-md p-1 text-current/75 transition hover:bg-black/5 hover:text-current dark:hover:bg-card/10"
+                className="rounded-md p-1 text-current/75 transition hover:bg-muted/30 hover:text-current"
                 aria-label="Fechar notificacao"
               >
                 <X className="h-4 w-4" />

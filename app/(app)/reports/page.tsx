@@ -1,9 +1,11 @@
 "use client";
 
-import { ReportsPage } from "@/src/features/reports/ReportsPage";
+import { Reports } from "@/src/features/reports/ReportsPage";
+import { useNovaShell } from "@/src/app-shell/AppShellContext";
 
 export default function ReportsRoutePage(): React.JSX.Element {
-  return <ReportsPage />;
+  const { hideValues } = useNovaShell();
+  return <Reports hideValues={hideValues} />;
 }
 
 

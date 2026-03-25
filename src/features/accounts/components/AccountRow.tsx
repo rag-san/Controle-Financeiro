@@ -30,8 +30,8 @@ function formatAmount(amount: number, sign: AccountRowProps["amountSign"]): stri
 
 const amountToneClassMap: Record<NonNullable<AccountRowProps["amountTone"]>, string> = {
   default: "text-foreground",
-  positive: "text-emerald-600 dark:text-emerald-400",
-  negative: "text-rose-600 dark:text-rose-400",
+  positive: "text-success dark:text-success",
+  negative: "text-error dark:text-error",
   muted: "text-muted-foreground"
 };
 
@@ -71,5 +71,6 @@ export function AccountRow({
     </div>
   );
 }
+
 
 

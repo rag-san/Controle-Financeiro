@@ -4,10 +4,10 @@ import { cn } from "@/lib/utils";
 type FeedbackVariant = "info" | "success" | "warning" | "error";
 
 const variantClasses: Record<FeedbackVariant, string> = {
-  info: "feedback-message--info",
-  success: "feedback-message--success",
-  warning: "feedback-message--warning",
-  error: "feedback-message--error"
+  info: "border-border bg-muted/50 text-muted-foreground",
+  success: "border-success/20 bg-success/10 text-success",
+  warning: "border-warning/20 bg-warning/10 text-warning",
+  error: "border-error/20 bg-error/10 text-error"
 };
 
 type FeedbackMessageProps = React.HTMLAttributes<HTMLDivElement> & {
@@ -32,7 +32,7 @@ export function FeedbackMessage({
       {...props}
       role={resolvedRole}
       aria-live={resolvedLive}
-      className={cn("feedback-message", variantClasses[variant], className)}
+      className={cn("rounded-xl border p-3 text-sm", variantClasses[variant], className)}
     >
       {children}
     </div>

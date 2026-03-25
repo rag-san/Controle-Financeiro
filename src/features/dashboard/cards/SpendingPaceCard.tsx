@@ -28,11 +28,11 @@ function resolveDeltaBadgeClass(variationPercent: number): string {
   const variant = resolveBadgeVariant(variationPercent);
 
   if (variant === "positive") {
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200";
+    return "bg-success/10 text-success";
   }
 
   if (variant === "negative") {
-    return "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-200";
+    return "bg-error/10 text-error";
   }
 
   return "bg-secondary text-secondary-foreground";
@@ -54,8 +54,8 @@ export function SpendingPaceCard({
   const headlineValue = formatBRL(Math.abs(paceDelta));
   const headlineLabel = isBelow ? "abaixo" : "acima";
   const headlineLabelClass = isBelow
-    ? "text-emerald-700 dark:text-emerald-300"
-    : "text-rose-700 dark:text-rose-300";
+    ? "text-success"
+    : "text-error";
   const markerLabel = `${headlineValue} ${headlineLabel}`;
   const deltaClass = resolveDeltaBadgeClass(variationPercent);
 

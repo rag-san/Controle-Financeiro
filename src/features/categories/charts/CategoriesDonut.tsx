@@ -26,8 +26,8 @@ function DonutTooltip({
 
   const item = payload[0].payload;
   return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg dark:border-border dark:bg-secondary/60">
-      <p className="font-medium text-foreground">{item.label}</p>
+    <div className="rounded-2xl border border-border/90 bg-card/95 px-3 py-2 text-xs shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.label}</p>
       <p className="tabular-nums font-semibold text-foreground">{formatBRL(item.value)}</p>
       <p className="text-muted-foreground">{item.percentage.toFixed(1)}%</p>
     </div>
@@ -47,7 +47,7 @@ export function CategoriesDonut({
           {
             id: "empty",
             label: "Sem gastos",
-            color: "#cbd5e1",
+            color: "hsl(var(--muted-foreground) / 0.35)",
             value: 1,
             percentage: 100
           } satisfies CategoryDonutSlice
@@ -111,11 +111,11 @@ export function CategoriesDonut({
 
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
         <div className="flex max-w-[8rem] flex-col items-center text-center">
-          <span className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+          <span className="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-muted-foreground">
             {centerLabel}
           </span>
           {centerValue ? (
-            <span className="mt-1 text-sm font-black tracking-tight text-slate-900 dark:text-slate-100">
+            <span className="mt-1 text-sm font-black tracking-tight text-foreground">
               {centerValue}
             </span>
           ) : null}

@@ -48,19 +48,19 @@ export function CategoriesMonthSummaryCard({
 
   return (
     <Card
-      className="overflow-hidden rounded-[24px] border border-slate-200/80 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.98),_rgba(243,246,251,0.96)_42%,_rgba(235,240,247,0.98)_100%)] px-5 py-5 shadow-[0_16px_38px_rgba(15,23,42,0.07)] dark:border-slate-800/90 dark:bg-[radial-gradient(circle_at_top,_rgba(18,26,47,0.96),_rgba(15,23,42,0.98)_48%,_rgba(9,16,32,1)_100%)] sm:px-6"
+      className="overflow-hidden rounded-[24px] border border-border/80 bg-gradient-to-b from-card via-card to-secondary/60 px-5 py-5 shadow-[0_16px_38px_hsl(var(--overlay)/0.08)] sm:px-6"
       data-testid="categories-month-summary-card"
     >
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(240px,0.8fr)] lg:items-center">
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
               Total gasto
             </p>
-            <p className="tabular-nums text-[1.7rem] font-black leading-none tracking-tight text-slate-950 dark:text-slate-50 sm:text-[2.1rem]">
+            <p className="tabular-nums text-[1.7rem] font-black leading-none tracking-tight text-foreground sm:text-[2.1rem]">
               {formatBRL(totalSpent)}
             </p>
-            <p className="text-sm text-slate-500 dark:text-slate-400 sm:text-[15px]">
+            <p className="text-sm text-muted-foreground sm:text-[15px]">
               gasto em {monthLabel}
             </p>
           </div>
@@ -77,15 +77,15 @@ export function CategoriesMonthSummaryCard({
                     className="h-3 w-3 rounded-[4px]"
                     style={{ backgroundColor: slice.color }}
                   />
-                  <span className="truncate text-slate-600 dark:text-slate-300">{slice.label}</span>
-                  <span className="tabular-nums font-bold text-slate-950 dark:text-slate-50">
+                  <span className="truncate text-foreground">{slice.label}</span>
+                  <span className="tabular-nums font-bold text-foreground">
                     {formatLegendPercentage(slice.percentage)}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300/90 bg-white/65 px-4 py-4 text-sm text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] dark:border-slate-700 dark:bg-slate-900/35 dark:text-slate-400">
+            <div className="rounded-2xl border border-dashed border-border/80 bg-muted/40 px-4 py-4 text-sm text-muted-foreground shadow-[inset_0_1px_0_hsl(var(--overlay)/0.05)]">
               Nenhum gasto classificado neste mês.
             </div>
           )}
@@ -100,18 +100,18 @@ export function CategoriesMonthSummaryCard({
               className="h-56 w-56 sm:h-60 sm:w-60"
             />
 
-            <div className="inline-flex w-full items-center justify-between gap-2.5 rounded-full border border-slate-300/85 bg-white/70 px-2.5 py-1.5 text-slate-700 shadow-[0_8px_18px_rgba(148,163,184,0.14)] backdrop-blur dark:border-slate-700 dark:bg-slate-900/45 dark:text-slate-100">
+            <div className="inline-flex w-full items-center justify-between gap-2.5 rounded-full border border-border/80 bg-card/70 px-2.5 py-1.5 text-foreground shadow-[0_8px_18px_hsl(var(--overlay)/0.08)] backdrop-blur">
               <Button
                 type="button"
                 size="icon"
                 variant="ghost"
                 onClick={onPreviousMonth}
                 aria-label="Mês anterior"
-                className="h-8 w-8 shrink-0 rounded-full text-slate-500 hover:bg-slate-200/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-50"
+                className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </Button>
-              <p className="flex-1 text-center text-sm font-semibold tracking-tight text-slate-950 dark:text-slate-50 sm:text-[15px]">
+              <p className="flex-1 text-center text-sm font-semibold tracking-tight text-foreground sm:text-[15px]">
                 {monthLabel}
               </p>
               <Button
@@ -120,7 +120,7 @@ export function CategoriesMonthSummaryCard({
                 variant="ghost"
                 onClick={onNextMonth}
                 aria-label="Próximo mês"
-                className="h-8 w-8 shrink-0 rounded-full text-slate-500 hover:bg-slate-200/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-50"
+                className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </Button>

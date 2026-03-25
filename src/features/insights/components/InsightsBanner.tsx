@@ -27,14 +27,14 @@ export function InsightsBanner({
 
   const getInsightTone = (id: string): string => {
     if (id.includes("uncategorized")) {
-      return "border-amber-200 bg-amber-50/80 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100";
+      return "border-warning/20 bg-warning/10 text-warning";
     }
 
     if (id.includes("duplicate")) {
-      return "border-rose-200 bg-rose-50/80 text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100";
+      return "border-error/20 bg-error/10 text-error";
     }
 
-    return "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary-foreground";
+    return "border-info/25 bg-info/10 text-info";
   };
 
   return (

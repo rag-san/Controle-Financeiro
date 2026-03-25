@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { PageContainer } from "@/components/layout/PageContainer";
-import { Sidebar } from "@/components/layout/Sidebar";
-import { Topbar } from "@/components/layout/Topbar";
+import { PageContainer } from "./PageContainer";
+import { Sidebar } from "./Sidebar";
+import { Topbar } from "./Topbar";
 
 type PageShellProps = {
   title: string;

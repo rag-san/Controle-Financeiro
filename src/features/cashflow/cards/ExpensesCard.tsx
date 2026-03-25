@@ -67,7 +67,7 @@ export function ExpensesCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">SAÍDA REAL DE CAIXA</p>
-          <p className="break-words text-[1.55rem] font-black tracking-tight text-rose-700 dark:text-rose-300 sm:text-[1.75rem]">
+          <p className="break-words text-[1.55rem] font-black tracking-tight text-error dark:text-error sm:text-[1.75rem]">
             {formatBRL(totalExpense)}
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -102,4 +102,5 @@ export function ExpensesCard({
     </Card>
   );
 }
+
 

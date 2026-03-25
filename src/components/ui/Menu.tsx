@@ -116,7 +116,7 @@ export function Menu({
                 "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 item.tone === "danger"
-                  ? "text-destructive hover:bg-destructive/10"
+                  ? "text-error hover:bg-error/10"
                   : "text-foreground hover:bg-muted",
                 item.disabled ? "cursor-not-allowed opacity-50" : ""
               )}

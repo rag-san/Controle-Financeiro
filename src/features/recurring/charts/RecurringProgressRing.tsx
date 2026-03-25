@@ -27,8 +27,8 @@ function RingTooltip({
 
   const item = payload[0].payload;
   return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs shadow-lg dark:border-border dark:bg-secondary/60">
-      <p className="font-medium text-foreground">{item.name}</p>
+    <div className="rounded-2xl border border-border/90 bg-card/95 px-3 py-2 text-xs shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{item.name}</p>
       <p className="tabular-nums font-semibold text-foreground">
         {formatBRL(item.value)}
       </p>
@@ -47,11 +47,11 @@ export function RecurringProgressRing({
   const data: RingDatum[] =
     total <= 0
       ? [
-          { name: "Sem dados", value: 1, color: "#cbd5e1" }
+          { name: "Sem dados", value: 1, color: "hsl(var(--muted-foreground) / 0.35)" }
         ]
       : [
-          { name: "Pago", value: safePaid, color: "#3b82f6" },
-          { name: "Faltante", value: safeRemaining, color: "#e2e8f0" }
+          { name: "Pago", value: safePaid, color: "hsl(var(--success))" },
+          { name: "Faltante", value: safeRemaining, color: "hsl(var(--muted-foreground) / 0.28)" }
         ];
 
   return (

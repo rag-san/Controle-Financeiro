@@ -7,10 +7,11 @@ import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { restoreDefaultCategoriesForUser } from "@/lib/server/default-categories.service";
+import { themeColors } from "@/src/lib/theme/colors";
 
 const createCategorySchema = z.object({
   name: z.string().min(2).max(80),
-  color: z.string().min(4).max(32).default("#3b82f6"),
+  color: z.string().min(4).max(32).default(themeColors.info),
   icon: z.string().max(50).optional().nullable(),
   parentId: z.string().min(6).max(128).optional().nullable()
 });

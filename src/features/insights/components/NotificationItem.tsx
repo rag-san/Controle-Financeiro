@@ -22,31 +22,31 @@ function resolveIcon(insight: Insight): React.JSX.Element {
 
 function resolveIconClass(severity: Insight["severity"]): string {
   if (severity === "warning") {
-    return "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300";
+    return "bg-warning/10 text-warning";
   }
 
-  return "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground";
+  return "bg-info/10 text-info";
 }
 
 function resolveContainerClass(severity: Insight["severity"]): string {
   if (severity === "warning") {
-    return "border-l-4 border-l-amber-400";
+    return "border-l-4 border-l-warning";
   }
 
-  return "border-l-4 border-l-primary/60";
+  return "border-l-4 border-l-info";
 }
 
 function resolveSeverityBadge(severity: Insight["severity"]): { label: string; className: string } {
   if (severity === "warning") {
     return {
       label: "Atenção",
-      className: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+      className: "bg-warning/10 text-warning"
     };
   }
 
   return {
     label: "Info",
-    className: "bg-primary/15 text-primary dark:bg-primary/25 dark:text-primary-foreground"
+    className: "bg-info/10 text-info"
   };
 }
 
@@ -87,9 +87,9 @@ export function NotificationItem({
 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {insight.cta ? (
-              <Link
+          <Link
                 href={insight.cta.href}
-                className="inline-flex h-7 items-center rounded-full border border-primary/30 bg-primary/10 px-2.5 text-xs font-semibold text-primary transition hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:border-primary/40 dark:bg-primary/20 dark:text-primary-foreground dark:hover:bg-primary/25"
+                className="inline-flex h-7 items-center rounded-full border border-info/30 bg-info/10 px-2.5 text-xs font-semibold text-info transition hover:bg-info/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 {insight.cta.label}
               </Link>
@@ -98,7 +98,7 @@ export function NotificationItem({
             <button
               type="button"
               onClick={() => onSnooze(1)}
-              className="inline-flex h-7 items-center rounded-full border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-muted-foreground dark:hover:border-border dark:hover:bg-secondary dark:hover:text-foreground"
+              className="inline-flex h-7 items-center rounded-full border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               aria-label="Adiar notificacao por 1 dia"
             >
               Adiar 1d
@@ -107,7 +107,7 @@ export function NotificationItem({
             <button
               type="button"
               onClick={() => onSnooze(7)}
-              className="inline-flex h-7 items-center rounded-full border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-muted-foreground dark:hover:border-border dark:hover:bg-secondary dark:hover:text-foreground"
+              className="inline-flex h-7 items-center rounded-full border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               aria-label="Adiar notificacao por 7 dias"
             >
               Adiar 7d
@@ -116,7 +116,7 @@ export function NotificationItem({
             <button
               type="button"
               onClick={onDismiss}
-              className="inline-flex h-7 items-center rounded-full border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background dark:text-muted-foreground dark:hover:border-border dark:hover:bg-secondary dark:hover:text-foreground"
+              className="inline-flex h-7 items-center rounded-full border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition hover:border-border hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               aria-label="Dispensar notificacao"
             >
               Dispensar

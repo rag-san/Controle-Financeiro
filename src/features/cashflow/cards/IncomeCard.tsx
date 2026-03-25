@@ -66,7 +66,7 @@ export function IncomeCard({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-2">
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">ENTRADAS DE CAIXA</p>
-          <p className="break-words text-[1.6rem] font-black tracking-tight text-emerald-700 dark:text-emerald-300 sm:text-[1.9rem]">
+          <p className="break-words text-[1.6rem] font-black tracking-tight text-success dark:text-success sm:text-[1.9rem]">
             {formatBRL(totalIncome)}
           </p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -101,7 +101,7 @@ export function IncomeCard({
 
       {!hasIncomeData ? (
         <div className="flex flex-col items-center justify-center gap-1 pt-1">
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-emerald-500/35 bg-emerald-500/12 text-base text-emerald-700 dark:text-emerald-300 shadow-[0_10px_24px_rgba(16,185,129,0.2)]">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-success/20 bg-success/10 text-base text-success dark:text-success shadow-[0_10px_24px_hsl(var(--success) / 0.2)]">
             ↗
           </span>
           <p className="text-xs text-muted-foreground">Nenhuma entrada de caixa no período</p>
@@ -116,4 +116,5 @@ export function IncomeCard({
     </Card>
   );
 }
+
 

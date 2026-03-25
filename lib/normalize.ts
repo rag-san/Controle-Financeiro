@@ -89,6 +89,20 @@ function inferTypeFromAmount(amount: number): "income" | "expense" {
   return amount >= 0 ? "income" : "expense";
 }
 
+function normalizeTypeHint(value: string | null | undefined): string {
+  return normalizeDescription(String(value ?? ""));
+}
+
+function isExplicitTransferTypeHint(typeHint: string): boolean {
+  return [
+    "TRANSFER",
+    "TRANSFERENCIA",
+    "TRANSF",
+    "TED",
+    "DOC"
+  ].includes(typeHint);
+}
+
 export function normalizeTransaction(params: {
   date: string | Date;
   description: string;
@@ -97,8 +111,9 @@ export function normalizeTransaction(params: {
 }): NormalizedTransactionDraft {
   const date = parseFlexibleDate(params.date);
   let amount = typeof params.amount === "number" ? params.amount : parseMoneyInput(params.amount);
-  const loweredType = params.type?.toLowerCase() ?? "";
-  const isTransferType = loweredType.includes("transfer");
+  const normalizedType = normalizeTypeHint(params.type);
+  const loweredType = normalizedType.toLowerCase();
+  const isTransferType = isExplicitTransferTypeHint(normalizedType);
 
   if (!isTransferType && (loweredType.includes("deb") || loweredType.includes("saida") || loweredType.includes("desp"))) {
     amount = amount > 0 ? -amount : amount;

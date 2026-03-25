@@ -26,7 +26,7 @@ test("dashboard filter trigger keeps locked label and icon contract", () => {
 });
 
 test("theme toggle keeps locked icon button entrypoint in topbar", () => {
-  const topbar = readRepoFile("components/layout/Topbar.tsx");
+  const topbar = readRepoFile("src/components/layout/Topbar.tsx");
 
   assert.ok(
     topbar.includes('aria-label="Alternar tema"'),

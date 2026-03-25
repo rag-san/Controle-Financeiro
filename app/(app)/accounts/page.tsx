@@ -1,7 +1,9 @@
 "use client";
 
-import { AccountsPage } from "@/src/features/accounts/AccountsPage";
+import { Accounts } from "@/src/features/accounts/AccountsPage";
+import { useNovaShell } from "@/src/app-shell/AppShellContext";
 
 export default function AccountsRoutePage(): React.JSX.Element {
-  return <AccountsPage />;
+  const { hideValues } = useNovaShell();
+  return <Accounts hideValues={hideValues} />;
 }

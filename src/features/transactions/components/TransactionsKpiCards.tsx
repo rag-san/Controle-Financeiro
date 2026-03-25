@@ -38,7 +38,7 @@ function KpiCard({
   return (
     <article
       className={cn(
-        "relative overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-secondary/70 p-4 shadow-[0_8px_24px_rgba(15,23,42,0.08)] dark:from-card dark:via-card dark:to-secondary/65",
+        "relative overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-secondary/70 p-4 shadow-[0_8px_24px_hsl(var(--overlay) / 0.08)] dark:from-card dark:via-card dark:to-secondary/65",
         tone.borderClassName
       )}
     >
@@ -112,14 +112,13 @@ export function TransactionsKpiCards({
         valueHint="Entradas classificadas (sem transferências)"
         icon={<ArrowDownLeft className="h-4 w-4" />}
         tone={{
-          borderClassName: "border-emerald-200/80 dark:border-emerald-900/60",
-          glowClassName: "bg-emerald-400/35 dark:bg-emerald-500/25",
-          iconClassName: "text-emerald-600 dark:text-emerald-300",
+          borderClassName: "border-success/20",
+          glowClassName: "bg-success/10",
+          iconClassName: "text-success",
           iconContainerClassName:
-            "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300",
-          valueClassName: "text-emerald-700 dark:text-emerald-300",
-          badgeClassName:
-            "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
+            "border-success/20 bg-success/10 text-success",
+          valueClassName: "text-success",
+          badgeClassName: "bg-success/10 text-success"
         }}
       />
 
@@ -130,13 +129,13 @@ export function TransactionsKpiCards({
         valueHint={`Despesas classificadas: ${formatMoney(expense)}`}
         icon={<ArrowUpRight className="h-4 w-4" />}
         tone={{
-          borderClassName: "border-rose-200/80 dark:border-rose-900/60",
-          glowClassName: "bg-rose-400/35 dark:bg-rose-500/25",
-          iconClassName: "text-rose-600 dark:text-rose-300",
+          borderClassName: "border-error/20",
+          glowClassName: "bg-error/10",
+          iconClassName: "text-error",
           iconContainerClassName:
-            "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300",
-          valueClassName: "text-rose-700 dark:text-rose-300",
-          badgeClassName: "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-200"
+            "border-error/20 bg-error/10 text-error",
+          valueClassName: "text-error",
+          badgeClassName: "bg-error/10 text-error"
         }}
       />
 
@@ -149,28 +148,27 @@ export function TransactionsKpiCards({
         tone={{
           borderClassName:
             cashBalance >= 0
-              ? "border-primary/35 dark:border-primary/45"
-              : "border-orange-200/80 dark:border-orange-900/60",
+              ? "border-info/20"
+              : "border-warning/20",
           glowClassName:
-            cashBalance >= 0 ? "bg-primary/30 dark:bg-primary/25" : "bg-orange-400/35 dark:bg-orange-500/25",
+            cashBalance >= 0 ? "bg-info/10" : "bg-warning/10",
           iconClassName:
-            cashBalance >= 0 ? "text-primary dark:text-primary" : "text-orange-600 dark:text-orange-300",
+            cashBalance >= 0 ? "text-info" : "text-warning",
           iconContainerClassName:
             cashBalance >= 0
-              ? "border-primary/35 bg-primary/10 text-primary dark:border-primary/45 dark:bg-primary/20 dark:text-primary"
-              : "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/60 dark:bg-orange-950/40 dark:text-orange-300",
+              ? "border-info/20 bg-info/10 text-info"
+              : "border-warning/20 bg-warning/10 text-warning",
           valueClassName:
-            cashBalance >= 0
-              ? "text-foreground dark:text-foreground"
-              : "text-orange-700 dark:text-orange-300",
+            cashBalance >= 0 ? "text-foreground" : "text-warning",
           badgeClassName:
             cashBalance >= 0
-              ? "border border-primary/35 bg-primary/15 text-foreground dark:border-primary/45 dark:bg-primary/25 dark:text-foreground"
-              : "bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-200"
+              ? "border border-info/20 bg-info/10 text-foreground"
+              : "bg-warning/10 text-warning"
         }}
       />
     </section>
   );
 }
+
 
 

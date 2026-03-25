@@ -36,7 +36,7 @@ export function BulkActionsBar({
 
   return (
     <section
-      className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-secondary/65 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.1)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70 sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-secondary/65 px-4 py-3 shadow-[0_8px_20px_hsl(var(--overlay) / 0.1)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70 sm:flex-row sm:items-center sm:justify-between"
       aria-live="polite"
       aria-label="Ações em lote"
     >

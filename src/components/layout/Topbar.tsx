@@ -1,8 +1,8 @@
 "use client";
 
 import { Menu, Moon, Sun } from "lucide-react";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { useTheme } from "@/components/layout/ThemeProvider";
+import { PageHeader } from "./PageHeader";
+import { useTheme } from "./ThemeProvider";
 import { IconButton } from "@/src/components/ui/IconButton";
 
 type TopbarProps = {

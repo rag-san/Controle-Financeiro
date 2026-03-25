@@ -296,6 +296,135 @@ test("official metrics route ignores excluded rows and opening balance adjustmen
   assert.equal(categoriesPayload.aggregates.list[0]?.value ?? 0, 200);
 });
 
+test("official categories route uses ledger data when the month is fully mirrored", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-categories-ledger");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado categories ledger-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const currentMonth = monthKey(now);
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 2),
+    amount: 150,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado categories ledger",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+
+  const response = await deps.GET(
+    await buildAuthenticatedRequest(
+      `/api/metrics/official?view=categories&month=${currentMonth}`,
+      fixture,
+      deps.AUTH_SECRET
+    )
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.view, "categories");
+  assert.equal(payload.aggregates.totalSpent, 150);
+  assert.equal(payload.aggregates.list[0]?.value ?? 0, 150);
+  assert.equal(payload.aggregates.list[0]?.name, groceries.name);
+});
+
+test("official categories route stays on legacy data while the month has transactions without ledger mirror", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-categories-fallback");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado categories fallback-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const currentMonth = monthKey(now);
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id,
+    date: utcDate(year, monthIndex, 2),
+    description: "Mercado categories legado sem espelho",
+    normalizedDescription: deps.normalizeDescription("Mercado categories legado sem espelho"),
+    amount: -80,
+    type: "expense",
+    status: "posted"
+  });
+
+  const mirroredTx = await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id,
+    date: utcDate(year, monthIndex, 3),
+    description: "Mercado categories com espelho",
+    normalizedDescription: deps.normalizeDescription("Mercado categories com espelho"),
+    amount: -120,
+    type: "expense",
+    status: "posted"
+  });
+  assert.ok(mirroredTx);
+
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 3),
+    amount: 120,
+    direction: "OUT",
+    type: "expense",
+    descriptionNormalized: deps.normalizeDescription("Mercado categories com espelho"),
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id,
+    externalRef: `LEGACY_TX:${mirroredTx.id}`,
+    fingerprint: deps.buildFingerprint({
+      postedAt: utcDate(year, monthIndex, 3),
+      amountCents: 12000,
+      type: "expense",
+      direction: "OUT",
+      descriptionNormalized: deps.normalizeDescription("Mercado categories com espelho"),
+      accountId: fixture.checkingAccountId,
+      creditCardAccountId: null
+    })
+  });
+
+  const response = await deps.GET(
+    await buildAuthenticatedRequest(
+      `/api/metrics/official?view=categories&month=${currentMonth}`,
+      fixture,
+      deps.AUTH_SECRET
+    )
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.view, "categories");
+  assert.equal(payload.aggregates.totalSpent, 200);
+  assert.equal(payload.aggregates.list[0]?.value ?? 0, 200);
+  assert.equal(payload.aggregates.list[0]?.name, groceries.name);
+});
+
 test("official cashflow route anchors to latest included transaction and ignores excluded opening balance", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -471,4 +600,213 @@ test("official reports and cashflow use ledger cash reality without duplicating 
   assert.equal(cashflowPayload.data.netResult.current, 0);
   assert.equal(cashflowPayload.data.income.current, 1000);
   assert.equal(cashflowPayload.data.expense.current, 1000);
+});
+
+test("official dashboard uses ledger data when no legacy transactions exist", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-dashboard-ledger");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado dashboard ledger-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+  const previousMonthDate = new Date(Date.UTC(year, monthIndex, 0, 12, 0, 0, 0));
+  const previousYear = previousMonthDate.getUTCFullYear();
+  const previousMonthIndex = previousMonthDate.getUTCMonth();
+  const previousDay = previousMonthDate.getUTCDate();
+  const currentMonth = monthKey(now);
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 1),
+    amount: 900,
+    type: "income",
+    direction: "IN",
+    description: "Salario dashboard ledger",
+    accountId: fixture.checkingAccountId
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 3),
+    amount: 220,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado dashboard ledger atual",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(previousYear, previousMonthIndex, previousDay),
+    amount: 80,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado dashboard ledger anterior",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+
+  const response = await deps.GET(
+    await buildAuthenticatedRequest(`/api/metrics/official?view=dashboard&month=${currentMonth}`, fixture, deps.AUTH_SECRET)
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.view, "dashboard");
+  assert.equal(payload.cards.income, 900);
+  assert.equal(payload.cards.expense, 220);
+  assert.equal(payload.cards.result, 680);
+  assert.equal(payload.periodComparison.previous.expense, 80);
+  assert.equal(payload.topCategories[0]?.current ?? 0, 220);
+  assert.equal(payload.topCategories[0]?.previous ?? 0, 80);
+});
+
+test("accounts repo exposes ledger-backed current balance when the user is fully mirrored", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-accounts-ledger");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 2),
+    amount: 1500,
+    type: "income",
+    direction: "IN",
+    description: "Salario accounts ledger",
+    accountId: fixture.checkingAccountId
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 5),
+    amount: 320,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado accounts ledger",
+    accountId: fixture.checkingAccountId
+  });
+
+  const accounts = await deps.accountsRepo.listByUserWithBalance(fixture.userId);
+  const checking = accounts.find((account) => account.id === fixture.checkingAccountId);
+
+  assert.ok(checking);
+  assert.equal(checking?.currentBalance ?? 0, 1180);
+});
+
+test("official analytics stay on legacy data while the compared range still has transactions without ledger mirror", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-legacy-fallback");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado fallback-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+  const previousMonthDate = new Date(Date.UTC(year, monthIndex, 0, 12, 0, 0, 0));
+  const previousYear = previousMonthDate.getUTCFullYear();
+  const previousMonthIndex = previousMonthDate.getUTCMonth();
+  const previousDay = previousMonthDate.getUTCDate();
+  const currentMonth = monthKey(now);
+
+  const previousTx = await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id,
+    date: utcDate(previousYear, previousMonthIndex, previousDay),
+    description: "Mercado legado sem espelho",
+    normalizedDescription: deps.normalizeDescription("Mercado legado sem espelho"),
+    amount: -80,
+    type: "expense",
+    status: "posted"
+  });
+  assert.ok(previousTx);
+
+  const currentTx = await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id,
+    date: utcDate(year, monthIndex, 3),
+    description: "Mercado atual com espelho",
+    normalizedDescription: deps.normalizeDescription("Mercado atual com espelho"),
+    amount: -120,
+    type: "expense",
+    status: "posted"
+  });
+  assert.ok(currentTx);
+
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 3),
+    amount: 120,
+    direction: "OUT",
+    type: "expense",
+    descriptionNormalized: deps.normalizeDescription("Mercado atual com espelho"),
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id,
+    externalRef: `LEGACY_TX:${currentTx.id}`,
+    fingerprint: deps.buildFingerprint({
+      postedAt: utcDate(year, monthIndex, 3),
+      amountCents: 12000,
+      type: "expense",
+      direction: "OUT",
+      descriptionNormalized: deps.normalizeDescription("Mercado atual com espelho"),
+      accountId: fixture.checkingAccountId,
+      creditCardAccountId: null
+    })
+  });
+
+  const dashboardResponse = await deps.GET(
+    await buildAuthenticatedRequest(`/api/metrics/official?view=dashboard&month=${currentMonth}`, fixture, deps.AUTH_SECRET)
+  );
+  assert.equal(dashboardResponse.status, 200);
+  const dashboardPayload = await dashboardResponse.json();
+  assert.equal(dashboardPayload.view, "dashboard");
+  assert.equal(dashboardPayload.cards.expense, 120);
+  assert.equal(dashboardPayload.periodComparison.previous.expense, 80);
+  assert.equal(dashboardPayload.topCategories[0]?.previous ?? 0, 80);
+
+  const reportsResponse = await deps.GET(
+    await buildAuthenticatedRequest("/api/metrics/official?view=reports&preset=1M", fixture, deps.AUTH_SECRET)
+  );
+  assert.equal(reportsResponse.status, 200);
+  const reportsPayload = await reportsResponse.json();
+  assert.equal(reportsPayload.view, "reports");
+  assert.equal(reportsPayload.model.currentTotals.expense, 120);
+  assert.equal(reportsPayload.model.previousTotals.expense, 80);
+
+  const cashflowResponse = await deps.GET(
+    await buildAuthenticatedRequest("/api/metrics/official?view=cashflow&period=1m", fixture, deps.AUTH_SECRET)
+  );
+  assert.equal(cashflowResponse.status, 200);
+  const cashflowPayload = await cashflowResponse.json();
+  assert.equal(cashflowPayload.view, "cashflow");
+  assert.equal(cashflowPayload.data.expense.current, 120);
+  assert.equal(cashflowPayload.data.expense.previous, 80);
 });

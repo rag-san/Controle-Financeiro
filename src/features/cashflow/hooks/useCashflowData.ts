@@ -22,6 +22,7 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     const load = async (): Promise<void> => {
       setLoading(true);
@@ -33,7 +34,9 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
       });
 
       try {
-        const response = await fetch(`/api/metrics/official?${query.toString()}`);
+        const response = await fetch(`/api/metrics/official?${query.toString()}`, {
+          signal: controller.signal
+        });
         const { data: payload, errorMessage } = await parseApiResponse<
           CashflowMetricsResponse | { error?: unknown }
         >(response);
@@ -49,6 +52,9 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
         if (!active) return;
         setData(payload.data);
       } catch (loadError) {
+        if (loadError instanceof DOMException && loadError.name === "AbortError") {
+          return;
+        }
         if (!active) return;
         setData(null);
         setError(
@@ -65,6 +71,7 @@ export function useCashflowData(period: CashflowPeriodKey): UseCashflowDataResul
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [period]);
 

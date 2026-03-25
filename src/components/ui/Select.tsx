@@ -10,7 +10,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
   ({ invalid = false, className, ...props }, ref) => (
     <BaseSelect
       ref={ref}
-      className={cn(invalid ? "border-destructive focus-visible:ring-destructive" : "", className)}
+      className={cn(invalid ? "border-error focus-visible:ring-error" : "", className)}
       aria-invalid={invalid || props["aria-invalid"]}
       {...props}
     />

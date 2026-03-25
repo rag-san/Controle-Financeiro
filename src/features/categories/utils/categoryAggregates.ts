@@ -115,7 +115,7 @@ function buildDonutSlices(items: CategorySpendItem[], totalSpent: number, topN =
     slices.push({
       id: "other",
       label: "Outros",
-      color: "#94a3b8",
+      color: "hsl(var(--muted-foreground))",
       value: round2(otherValue),
       percentage: Number(((otherValue / totalSpent) * 100).toFixed(2))
     });
@@ -200,7 +200,7 @@ function buildGroups(
     groups.push({
       id: "other-group",
       name: "Outros",
-      color: "#94a3b8",
+      color: "hsl(var(--muted-foreground))",
       total: fromAmountCents(orphanItems.reduce((sum, item) => sum + toAmountCents(item.value), 0)),
       children: orphanItems.sort((left, right) => right.value - left.value)
     });

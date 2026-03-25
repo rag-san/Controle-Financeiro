@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { useTheme } from "@/components/layout/ThemeProvider";
 import type { SankeyLink, SankeyNode } from "@/src/features/reports/sankey/types";
 import { formatBRL } from "@/src/utils/format";
 
@@ -184,11 +183,9 @@ function CenterNode({
 }
 
 export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): React.JSX.Element {
-  const { theme } = useTheme();
-  const dark = theme === "dark";
-  const fg = dark ? "#f8fafc" : "#0f172a";
-  const sub = dark ? "#a8b5c7" : "#64748b";
-  const connector = dark ? "rgba(148,163,184,0.36)" : "rgba(100,116,139,0.34)";
+  const fg = "hsl(var(--foreground))";
+  const sub = "hsl(var(--muted-foreground))";
+  const connector = "hsl(var(--border) / 0.28)";
 
   const incomeNode = nodes.find((node) => node.kind === "income");
   const expensesNode = nodes.find((node) => node.kind === "expenses");
@@ -206,8 +203,8 @@ export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): Re
 
   if (!incomeNode || !expensesNode || expenseLinks.length === 0) {
     return (
-      <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed border-white/10">
-        <p className="text-sm text-slate-400">Sem fluxo suficiente para renderizar o Sankey.</p>
+      <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed border-border/80">
+        <p className="text-sm text-muted-foreground">Sem fluxo suficiente para renderizar o Sankey.</p>
       </div>
     );
   }
@@ -319,9 +316,9 @@ export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): Re
                 target.top,
                 target.top + target.height
               )}
-              fill={target.color}
-              opacity={segment.targetId === expensesNode.id ? 0.28 : 0.22}
-            />
+          fill={target.color}
+          opacity={segment.targetId === expensesNode.id ? 0.28 : 0.22}
+        />
           );
         })}
 
@@ -363,7 +360,7 @@ export function SankeyChart({ nodes, links, totalIncome }: SankeyChartProps): Re
               />
               <rect x={RIGHT_X} y={flow.dstTop} width={NODE_W} height={flow.dstHeight} rx={3} fill={flow.color} opacity={0.96} />
               {Math.abs(ly - midY) > 4 ? (
-                <line x1={RIGHT_X + NODE_W} y1={midY} x2={labelX - 3} y2={ly} stroke={connector} strokeWidth={1.2} />
+              <line x1={RIGHT_X + NODE_W} y1={midY} x2={labelX - 3} y2={ly} stroke={connector} strokeWidth={1.2} />
               ) : null}
               <text x={labelX} y={labelStartY} fill={fg} fontSize={11} fontWeight={700}>
                 {labelLines.map((line, lineIndex) => (

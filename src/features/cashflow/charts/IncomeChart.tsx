@@ -77,17 +77,17 @@ export function IncomeChart({
         <AreaChart data={data} margin={{ top: 8, right: 5, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="cashflow-income-gradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
-              <stop offset="100%" stopColor="#10b981" stopOpacity={0.03} />
+              <stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.26} />
+              <stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0.02} />
             </linearGradient>
           </defs>
 
-          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(59,130,246,0.16)" />
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" />
           <XAxis
             dataKey="month"
             tickFormatter={formatMonthLabel}
             interval={xAxisInterval}
-            tick={{ fontSize: 10, fill: "#5f7aa3" }}
+            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false}
             axisLine={false}
             tickMargin={8}
@@ -96,7 +96,7 @@ export function IncomeChart({
           <YAxis
             tickFormatter={formatBRLCompact}
             domain={[0, yDomainUpper]}
-            tick={{ fontSize: 10, fill: "#5f7aa3" }}
+            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false}
             axisLine={false}
             width={76}
@@ -106,7 +106,7 @@ export function IncomeChart({
             type="monotone"
             dataKey="income"
             name="Receitas"
-            stroke="#10b981"
+            stroke="hsl(var(--success))"
             strokeWidth={2.1}
             fill="url(#cashflow-income-gradient)"
             dot={false}

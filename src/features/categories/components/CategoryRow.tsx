@@ -31,7 +31,7 @@ export function CategoryRow({
     >
       <div className="flex min-w-0 items-center gap-2">
         <span
-          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold text-white"
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold text-foreground"
           style={{ backgroundColor: item.color }}
           aria-hidden="true"
         >
@@ -51,4 +51,5 @@ export function CategoryRow({
     </Link>
   );
 }
+
 

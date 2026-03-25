@@ -9,8 +9,8 @@ export interface ProgressBarProps {
 
 const colorClassMap: Record<NonNullable<ProgressBarProps["color"]>, string> = {
   blue: "bg-primary",
-  green: "bg-emerald-500",
-  red: "bg-rose-500",
+  green: "bg-success",
+  red: "bg-error",
   gray: "bg-muted-foreground/40"
 };
 

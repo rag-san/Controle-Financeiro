@@ -6,31 +6,35 @@ function readRepoFile(relativePath: string): string {
   return readFileSync(new URL(`../../${relativePath}`, import.meta.url), "utf8");
 }
 
-test("import flow keeps explicit processing, success, empty and error feedback messages", () => {
-  const importContent = readRepoFile("components/import/ImportTransactionsContent.tsx");
+test("import modal keeps explicit processing, success and error feedback messages", () => {
+  const importContent = readRepoFile("src/features/transactions/components/ImportTransactionsModal.tsx");
 
   assert.ok(
-    importContent.includes('isParsing ? "Analisando arquivo..." : "Analisar arquivo"'),
-    "Import parsing progress message changed."
+    importContent.includes("Importar Extrato"),
+    "Import modal title changed."
   );
   assert.ok(
-    importContent.includes('Etapa 1: Selecionar e analisar arquivo'),
-    "Import stepper guidance changed."
+    importContent.includes("Adicione múltiplas transações de uma vez"),
+    "Import modal subtitle changed."
   );
   assert.ok(
-    importContent.includes('Selecione o arquivo de extrato do seu banco para importar suas transações.'),
-    "Import first-step helper text changed."
+    importContent.includes("Arraste seu extrato aqui"),
+    "Import dropzone guidance changed."
   );
   assert.ok(
-    importContent.includes('Importação concluída: {result.totalImported} novas transações e {result.totalSkipped} ignoradas.'),
+    importContent.includes("Erro ao analisar arquivo"),
+    "Import parse error feedback changed."
+  );
+  assert.ok(
+    importContent.includes("Importação Concluída!"),
     "Import success feedback changed."
   );
   assert.ok(
-    importContent.includes("Nenhuma conta cadastrada"),
-    "Import empty-account feedback changed."
+    importContent.includes("Erro ao importar transações"),
+    "Import commit error feedback changed."
   );
   assert.ok(
-    importContent.includes('{error ? <FeedbackMessage variant="error">{error}</FeedbackMessage> : null}'),
-    "Import error feedback contract changed."
+    importContent.includes("Nome da nova conta (Ex: Nubank Principal)"),
+    "Import new-account prompt changed."
   );
 });

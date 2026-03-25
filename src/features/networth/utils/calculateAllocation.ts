@@ -1,5 +1,6 @@
 import type { AccountDTO } from "@/lib/types";
 import { normalizeDateKey } from "@/src/features/shared/utils/dateKey";
+import { chartColors } from "@/src/lib/theme/colors";
 import type {
   AllocationFallbackSource,
   AllocationHistoryPoint,
@@ -20,22 +21,21 @@ type AllocationBreakdownItem = {
 };
 
 const paletteBySemanticGroup: Record<string, string> = {
-  Caixa: "#68b57d",
-  "Renda Fixa": "#5b7ddb",
-  "Renda Variável": "#7bbf7a",
-  Dívidas: "#f08c45",
-  Outros: "#94a3b8"
+  Caixa: chartColors.success,
+  "Renda Fixa": chartColors.info,
+  "Renda Variável": chartColors.accent,
+  Dívidas: chartColors.warning,
+  Outros: chartColors.muted
 };
 
 const fallbackPalette = [
-  "#4f86e3",
-  "#53b58a",
-  "#5cc5df",
-  "#7c6ce0",
-  "#4da4b3",
-  "#8a77d4",
-  "#46a2f3",
-  "#53a97c"
+  chartColors.info,
+  chartColors.success,
+  chartColors.accent,
+  chartColors.warning,
+  chartColors.error,
+  chartColors.brand,
+  chartColors.muted
 ] as const;
 
 function toSafeCurrency(value: number): number {

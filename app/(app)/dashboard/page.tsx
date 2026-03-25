@@ -1,5 +1,9 @@
-import { DashboardPage as DashboardFeaturePage } from "@/src/features/dashboard/DashboardPage";
+"use client";
+
+import { Dashboard } from "@/src/features/dashboard/DashboardPage";
+import { useNovaShell } from "@/src/app-shell/AppShellContext";
 
 export default function DashboardPage(): React.JSX.Element {
-  return <DashboardFeaturePage />;
+  const { hideValues, openTransactionModal } = useNovaShell();
+  return <Dashboard hideValues={hideValues} onNewTransaction={() => openTransactionModal()} />;
 }

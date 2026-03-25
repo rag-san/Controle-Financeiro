@@ -5,8 +5,10 @@ import { requireUser } from "@/lib/api-auth";
 import { getCache, setCache } from "@/lib/cache";
 import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
+import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { dashboardRepo } from "@/lib/server/dashboard.repo";
+import { ledgerRepo } from "@/lib/server/ledger.repo";
 import { officialMetricSnapshotsRepo } from "@/lib/server/official-metric-snapshots.repo";
 import {
   getOfficialCashflowData,
@@ -16,6 +18,7 @@ import { transactionsRepo } from "@/lib/server/transactions.repo";
 import { buildCategoryMonthAggregates } from "@/src/features/categories/utils/categoryAggregates";
 import type { CashflowPeriodKey } from "@/src/features/cashflow/types";
 import type { ReportsPeriodPreset } from "@/src/features/reports/types";
+import type { TransactionDTO } from "@/lib/types";
 
 type DashboardViewPayload = { view: "dashboard" } & Awaited<ReturnType<typeof dashboardRepo.fullDashboard>>;
 
@@ -89,6 +92,66 @@ function toTransactionDTO(
   };
 }
 
+function toLedgerTransactionDTO(
+  item: Awaited<ReturnType<typeof ledgerRepo.listAnalyticsEntries>>[number]
+): TransactionDTO | null {
+  if (item.type !== "expense" && item.type !== "cc_purchase" && item.type !== "fee") {
+    return null;
+  }
+
+  const accountId = item.accountId ?? item.creditCardAccountId ?? null;
+  if (!accountId) {
+    return null;
+  }
+
+  const account =
+    item.account ??
+    (item.creditCardAccount
+      ? {
+          id: item.creditCardAccount.id,
+          name: item.creditCardAccount.name,
+          type: "credit" as const,
+          institution: null,
+          currency: item.creditCardAccount.currency,
+          parentAccountId: null
+        }
+      : null);
+
+  if (!account) {
+    return null;
+  }
+
+  return {
+    id: item.id,
+    accountId,
+    categoryId: item.categoryId ?? null,
+    importBatchId: item.importSourceId ?? null,
+    date: item.postedAt.toISOString(),
+    description: item.descriptionNormalized,
+    amount: -Math.abs(item.amount),
+    type: "expense",
+    direction: "out",
+    excluded: item.excluded,
+    isInternalTransfer: false,
+    status: "posted",
+    transferGroupId: item.transferGroupId ?? null,
+    transferPeerTxId: null,
+    transferFromAccountId: null,
+    transferToAccountId: null,
+    raw: null,
+    account,
+    category: item.category
+      ? {
+          id: item.category.id,
+          name: item.category.name,
+          color: item.category.color,
+          icon: item.category.icon ?? null,
+          parentId: item.category.parentId ?? null
+        }
+      : null
+  };
+}
+
 async function buildReportsViewPayload(input: {
   userId: string;
   preset: "1M" | "3M" | "6M" | "YTD" | "1Y" | "ALL";
@@ -136,15 +199,32 @@ async function buildCategoriesViewPayload(input: { userId: string; month: string
   const monthStart = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), 1, 0, 0, 0));
   const monthEnd = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth() + 1, 0, 23, 59, 59, 999));
   const categories = await categoriesRepo.listByUser(input.userId);
-  const transactions = (await transactionsRepo
-    .listAll({
-      userId: input.userId,
-      dateFrom: monthStart,
-      dateTo: monthEnd,
-      accountId: input.accountId,
-      excluded: false
-    }))
-    .map(toTransactionDTO);
+  const useLedger = await shouldUseLedgerForAnalytics({
+    userId: input.userId,
+    from: monthStart,
+    to: monthEnd,
+    accountId: input.accountId,
+    excluded: false,
+    transactionTypes: ["expense"]
+  });
+  const transactions = useLedger
+    ? (await ledgerRepo.listAnalyticsEntries({
+        userId: input.userId,
+        from: monthStart,
+        to: monthEnd,
+        accountId: input.accountId
+      }))
+        .map((item) => toLedgerTransactionDTO(item))
+        .filter((item): item is TransactionDTO => item !== null)
+    : (await transactionsRepo
+        .listAll({
+          userId: input.userId,
+          dateFrom: monthStart,
+          dateTo: monthEnd,
+          accountId: input.accountId,
+          excluded: false
+        }))
+        .map(toTransactionDTO);
   const aggregates = buildCategoryMonthAggregates(categories, transactions, referenceDate);
 
   return {

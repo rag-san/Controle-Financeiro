@@ -1,6 +1,7 @@
 import { normalizeDescription } from "@/lib/normalize";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { categoryRulesRepo } from "@/lib/server/category-rules.repo";
+import { themeColors } from "@/src/lib/theme/colors";
 
 type DefaultCategoryPreset = {
   name: string;
@@ -12,13 +13,13 @@ type DefaultCategoryPreset = {
 const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   {
     name: "Moradia",
-    color: "#f97316",
+    color: themeColors.primary,
     icon: "Home",
     patterns: ["ALUGUEL", "ALUG", "CONDOMINIO", "CONDOM", "IPTU", "IMOBILIARIA", "FINANCIAMENTO IMOBILIARIO"]
   },
   {
     name: "Supermercado",
-    color: "#10b981",
+    color: themeColors.success,
     icon: "ShoppingCart",
     patterns: [
       "SUPERMERCADO",
@@ -40,7 +41,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Restaurantes",
-    color: "#a855f7",
+    color: themeColors.warning,
     icon: "UtensilsCrossed",
     patterns: [
       "IFOOD",
@@ -64,7 +65,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Transporte",
-    color: "#0ea5e9",
+    color: themeColors.info,
     icon: "Car",
     patterns: [
       "UBER",
@@ -82,7 +83,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Utilidades",
-    color: "#14b8a6",
+    color: themeColors.accent,
     icon: "Zap",
     patterns: [
       "ENERGIA",
@@ -103,7 +104,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Saude",
-    color: "#ef4444",
+    color: themeColors.error,
     icon: "HeartPulse",
     patterns: [
       "FARMACIA",
@@ -122,13 +123,13 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Educacao",
-    color: "#6366f1",
+    color: themeColors.primary,
     icon: "GraduationCap",
     patterns: ["ESCOLA", "FACULDADE", "CURSO", "ALURA", "UDEMY", "ESTACIO", "UNIP", "KUMON", "IDIOMA", "CURSINHO"]
   },
   {
     name: "Assinaturas",
-    color: "#8b5cf6",
+    color: themeColors.accent,
     icon: "Repeat",
     patterns: [
       "NETFLIX",
@@ -149,7 +150,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Transferencias",
-    color: "#64748b",
+    color: themeColors.mutedForeground,
     icon: "ArrowLeftRight",
     patterns: [
       "PIX RECEBIDO",
@@ -167,7 +168,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Investimentos",
-    color: "#22c55e",
+    color: themeColors.success,
     icon: "TrendingUp",
     patterns: [
       "INVESTIMENTO",
@@ -190,13 +191,13 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Lazer",
-    color: "#ec4899",
+    color: themeColors.accent,
     icon: "PartyPopper",
     patterns: ["CINEMA", "SHOW", "TEATRO", "PARQUE", "PLAYSTATION", "STEAM", "XBOX", "EPIC GAMES", "BOLICHE"]
   },
   {
     name: "Renda",
-    color: "#16a34a",
+    color: themeColors.success,
     icon: "Wallet",
     patterns: [
       "SALARIO",
@@ -213,7 +214,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Seguros e Protecao",
-    color: "#0f766e",
+    color: themeColors.info,
     icon: "Shield",
     patterns: [
       "MAPFRE",
@@ -229,7 +230,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Taxas e Encargos",
-    color: "#475569",
+    color: themeColors.warning,
     icon: "Receipt",
     patterns: [
       "IOF",
@@ -247,7 +248,7 @@ const DEFAULT_CATEGORY_PRESETS: DefaultCategoryPreset[] = [
   },
   {
     name: "Financiamentos e Consorcios",
-    color: "#334155",
+    color: themeColors.mutedForeground,
     icon: "Landmark",
     patterns: [
       "FINANCIAM",

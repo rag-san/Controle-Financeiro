@@ -58,11 +58,11 @@ function MarkerBubble({ x = 0, y = 0, value = "", viewBox }: MarkerBubbleProps):
         height={24}
         rx={8}
         ry={8}
-        fill="#10b981"
-        stroke="#047857"
+        fill="hsl(var(--primary))"
+        stroke="hsl(var(--card))"
         strokeWidth={1}
       />
-      <text x={x} y={y - 20} textAnchor="middle" fill="#ffffff" fontSize={12} fontWeight={600}>
+      <text x={x} y={y - 20} textAnchor="middle" fill="hsl(var(--primary-foreground))" fontSize={12} fontWeight={600}>
         {label}
       </text>
     </g>
@@ -118,7 +118,7 @@ export function SpendingPaceChart({
     <div className="h-[220px] min-h-[220px] w-full min-w-0">
       <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
         <LineChart data={data} margin={{ top: 24, right: 10, left: 10, bottom: 10 }}>
-          <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="rgba(100,116,139,0.28)" />
+          <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="hsl(var(--border) / 0.22)" />
           <XAxis
             dataKey="day"
             ticks={dayTicks}
@@ -137,12 +137,12 @@ export function SpendingPaceChart({
             tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
           />
           <Tooltip content={<DefaultChartTooltip titleFormatter={(value) => `Dia ${value ?? ""}`.trim()} />} />
-          <Legend verticalAlign="bottom" align="left" iconType="line" wrapperStyle={{ paddingTop: 10, fontSize: 11 }} />
+          <Legend verticalAlign="bottom" align="left" iconType="line" wrapperStyle={{ paddingTop: 10, fontSize: 11, color: "hsl(var(--muted-foreground))" }} />
           <Line
             type="monotone"
             dataKey="previous"
             name={previousLabel}
-            stroke="#94a3b8"
+            stroke="hsl(var(--muted-foreground))"
             strokeWidth={2.1}
             strokeDasharray="6 6"
             strokeOpacity={0.95}
@@ -153,20 +153,20 @@ export function SpendingPaceChart({
             type="monotone"
             dataKey="current"
             name={currentLabel}
-            stroke="#f59e0b"
+            stroke="hsl(var(--primary))"
             strokeWidth={2.6}
             dot={false}
             activeDot={{ r: 4 }}
           />
           {markerPoint ? (
             <>
-              <ReferenceLine x={markerPoint.day} stroke="#6ee7b7" strokeDasharray="3 3" strokeOpacity={0.75} />
+              <ReferenceLine x={markerPoint.day} stroke="hsl(var(--accent))" strokeDasharray="3 3" strokeOpacity={0.7} />
               <ReferenceDot
                 x={markerPoint.day}
                 y={markerPoint.current}
                 r={6}
-                fill="#10b981"
-                stroke="#ffffff"
+                fill="hsl(var(--accent))"
+                stroke="hsl(var(--card))"
                 strokeWidth={2}
                 label={<MarkerBubble value={markerLabel} />}
               />

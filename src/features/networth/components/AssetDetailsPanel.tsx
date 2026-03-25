@@ -45,8 +45,8 @@ function SparklineTooltip({
   const labelValue = typeof label === "string" ? formatDateLong(label) : String(label ?? "");
 
   return (
-    <div className="rounded-lg border border-border bg-card px-2.5 py-2 text-xs shadow-lg dark:border-border dark:bg-secondary/60">
-      <p className="font-medium text-foreground">{labelValue}</p>
+    <div className="rounded-2xl border border-border/90 bg-card/95 px-2.5 py-2 text-xs shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{labelValue}</p>
       <p className="tabular-nums font-semibold text-foreground">{formatBRL(value)}</p>
     </div>
   );
@@ -211,7 +211,7 @@ export function AssetDetailsPanel({
                         tickFormatter={formatShortDate}
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fontSize: 11 }}
+                        tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                         minTickGap={14}
                       />
                       <Tooltip content={<SparklineTooltip />} />

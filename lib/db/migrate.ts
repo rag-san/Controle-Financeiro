@@ -132,7 +132,7 @@ async function runMigrations(): Promise<void> {
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
       name TEXT NOT NULL,
-      color TEXT NOT NULL DEFAULT '#3b82f6',
+      color TEXT NOT NULL DEFAULT 'hsl(var(--info))',
       icon TEXT,
       parent_id TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

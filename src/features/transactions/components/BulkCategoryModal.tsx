@@ -61,7 +61,7 @@ export function BulkCategoryModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 p-4" role="presentation">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-overlay/35 p-4" role="presentation">
       <div
         role="dialog"
         aria-modal="true"

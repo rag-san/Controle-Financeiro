@@ -1,6 +1,8 @@
 import { addDays, subMonths } from "date-fns";
 import { db } from "@/lib/db";
+import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
 import { escapeLike } from "@/lib/server/sql";
+import { themeColors } from "@/src/lib/theme/colors";
 
 export type DashboardGranularity = "day" | "week" | "month";
 
@@ -45,6 +47,8 @@ export type DashboardSummary = {
     previousExcludedTotal: number;
   };
 };
+
+const CATEGORY_FALLBACK_COLOR = themeColors.mutedForeground;
 
 export type DashboardCategory = {
   categoryId: string | null;
@@ -641,35 +645,73 @@ function ledgerCashDeltaCase(alias = ""): string {
   END`;
 }
 
-async function hasLedgerEntries(input: { userId: string; fromDate: Date; toDate: Date }): Promise<boolean> {
-  const row = (await db
-    .prepare(
-      `SELECT COUNT(*) AS count
-       FROM ledger_entries
-       WHERE user_id = ?
-         AND posted_at >= ?
-         AND posted_at <= ?`
-    )
-    .get(input.userId, input.fromDate.toISOString(), input.toDate.toISOString())) as
-    | { count: number | string | null }
-    | undefined;
-
-  return Number(row?.count ?? 0) > 0;
+async function shouldUseLedgerForDashboardSummary(input: {
+  userId: string;
+  range: DashboardDateRange;
+  filters?: DashboardMetricsFilters;
+}): Promise<boolean> {
+  return shouldUseLedgerForAnalytics({
+    userId: input.userId,
+    from: input.range.previousFromDate,
+    to: input.range.toDate,
+    accountId: input.filters?.accountId,
+    categoryId: input.filters?.categoryId,
+    excluded: input.filters?.excluded ?? false,
+    normalizedQuery: input.filters?.normalizedQuery,
+    transactionTypes: input.filters?.type ? [input.filters.type] : ["income", "expense", "transfer"],
+    includeBalanceAdjustments: true
+  });
 }
 
-async function hasLedgerEntriesThrough(input: { userId: string; toDate: Date }): Promise<boolean> {
-  const row = (await db
-    .prepare(
-      `SELECT COUNT(*) AS count
-       FROM ledger_entries
-       WHERE user_id = ?
-         AND posted_at <= ?`
-    )
-    .get(input.userId, input.toDate.toISOString())) as
-    | { count: number | string | null }
-    | undefined;
+async function shouldUseLedgerForDashboardCategories(input: {
+  userId: string;
+  range: DashboardDateRange;
+  filters?: DashboardMetricsFilters;
+}): Promise<boolean> {
+  return shouldUseLedgerForAnalytics({
+    userId: input.userId,
+    from: input.range.previousFromDate,
+    to: input.range.toDate,
+    accountId: input.filters?.accountId,
+    categoryId: input.filters?.categoryId,
+    excluded: input.filters?.excluded ?? false,
+    normalizedQuery: input.filters?.normalizedQuery,
+    transactionTypes: input.filters?.type ? [input.filters.type] : ["expense"]
+  });
+}
 
-  return Number(row?.count ?? 0) > 0;
+async function shouldUseLedgerForDashboardTrends(input: {
+  userId: string;
+  range: DashboardDateRange;
+  filters?: DashboardMetricsFilters;
+}): Promise<boolean> {
+  return shouldUseLedgerForAnalytics({
+    userId: input.userId,
+    from: input.range.previousFromDate,
+    to: input.range.toDate,
+    accountId: input.filters?.accountId,
+    categoryId: input.filters?.categoryId,
+    excluded: input.filters?.excluded ?? false,
+    normalizedQuery: input.filters?.normalizedQuery,
+    transactionTypes: input.filters?.type ? [input.filters.type] : ["income", "expense"]
+  });
+}
+
+async function shouldUseLedgerForDashboardPatrimony(input: {
+  userId: string;
+  range: DashboardDateRange;
+  filters?: DashboardMetricsFilters;
+}): Promise<boolean> {
+  return shouldUseLedgerForAnalytics({
+    userId: input.userId,
+    to: input.range.toDate,
+    accountId: input.filters?.accountId,
+    categoryId: input.filters?.categoryId,
+    excluded: input.filters?.excluded ?? false,
+    normalizedQuery: input.filters?.normalizedQuery,
+    accountTypes: ["checking", "cash"],
+    includeBalanceAdjustments: true
+  });
 }
 
 async function aggregateIncomeExpenseTotalsFromLedger(input: {
@@ -877,7 +919,7 @@ async function getTopCategoriesFromLedger(input: {
          SELECT
            COALESCE(le.category_id, 'uncategorized') AS category_key,
            COALESCE(c.name, 'Sem categoria') AS name,
-           COALESCE(c.color, '#94a3b8') AS color,
+           COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}') AS color,
            SUM(${ledgerExpenseCase("le")}) AS total_cents
          FROM ledger_entries le
          LEFT JOIN categories c
@@ -889,7 +931,7 @@ async function getTopCategoriesFromLedger(input: {
            AND ${currentExcludedClause}
            AND le.type IN ('expense', 'cc_purchase', 'fee', 'refund')
            ${currentFilterClause.sql}
-         GROUP BY COALESCE(le.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '#94a3b8')
+         GROUP BY COALESCE(le.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}')
          HAVING SUM(${ledgerExpenseCase("le")}) > 0
        ),
        total_expenses AS (
@@ -946,7 +988,7 @@ async function getTopCategoriesFromLedger(input: {
     return {
       categoryId,
       name: row.name ?? "Sem categoria",
-      color: row.color ?? "#94a3b8",
+      color: row.color ?? CATEGORY_FALLBACK_COLOR,
       total,
       percent: toPercent(Number(row.percent ?? 0)),
       previousTotal,
@@ -970,7 +1012,7 @@ function mapPreviousOnlyCategories(
     return {
       categoryId,
       name: row.name ?? "Sem categoria",
-      color: row.color ?? "#94a3b8",
+      color: row.color ?? CATEGORY_FALLBACK_COLOR,
       total: 0,
       percent: 0,
       previousTotal,
@@ -994,7 +1036,7 @@ async function getTopCategoriesFromPreviousLedger(input: {
       `SELECT
          COALESCE(le.category_id, 'uncategorized') AS category_key,
          COALESCE(c.name, 'Sem categoria') AS name,
-         COALESCE(c.color, '#94a3b8') AS color,
+         COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}') AS color,
          SUM(${ledgerExpenseCase("le")}) AS previous_total_cents
        FROM ledger_entries le
        LEFT JOIN categories c
@@ -1006,7 +1048,7 @@ async function getTopCategoriesFromPreviousLedger(input: {
          AND ${excludedClause}
          AND le.type IN ('expense', 'cc_purchase', 'fee', 'refund')
          ${filterClause.sql}
-       GROUP BY COALESCE(le.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '#94a3b8')
+       GROUP BY COALESCE(le.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}')
        HAVING SUM(${ledgerExpenseCase("le")}) > 0
        ORDER BY previous_total_cents DESC
        LIMIT ?`
@@ -1113,7 +1155,7 @@ async function getTopCategoriesFromPreviousTransactions(input: {
       `SELECT
          COALESCE(t.category_id, 'uncategorized') AS category_key,
          COALESCE(c.name, 'Sem categoria') AS name,
-         COALESCE(c.color, '#94a3b8') AS color,
+         COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}') AS color,
          SUM(ABS(t.amount_cents)) AS previous_total_cents
        FROM transactions t
        LEFT JOIN categories c
@@ -1125,7 +1167,7 @@ async function getTopCategoriesFromPreviousTransactions(input: {
          AND t.type = 'expense'::transaction_type
          AND t.excluded = ?
          ${filterClause.sql}
-       GROUP BY COALESCE(t.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '#94a3b8')
+       GROUP BY COALESCE(t.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}')
        ORDER BY previous_total_cents DESC
        LIMIT ?`
     )
@@ -1152,17 +1194,7 @@ export const dashboardMetricsRepo = {
     range: DashboardDateRange;
     filters?: DashboardMetricsFilters;
   }): Promise<DashboardSummary> {
-    const useLedger =
-      (await hasLedgerEntries({
-        userId: input.userId,
-        fromDate: input.range.fromDate,
-        toDate: input.range.toDate
-      })) ||
-      (await hasLedgerEntries({
-        userId: input.userId,
-        fromDate: input.range.previousFromDate,
-        toDate: input.range.previousToDate
-      }));
+    const useLedger = await shouldUseLedgerForDashboardSummary(input);
 
     const totals = useLedger
       ? await aggregateIncomeExpenseTotalsFromLedger({
@@ -1234,17 +1266,7 @@ export const dashboardMetricsRepo = {
     filters?: DashboardMetricsFilters;
   }): Promise<{ from: string; to: string; topCategories: DashboardCategory[] }> {
     const limit = input.limit ?? 8;
-    const useLedger =
-      (await hasLedgerEntries({
-        userId: input.userId,
-        fromDate: input.range.fromDate,
-        toDate: input.range.toDate
-      })) ||
-      (await hasLedgerEntries({
-        userId: input.userId,
-        fromDate: input.range.previousFromDate,
-        toDate: input.range.previousToDate
-      }));
+    const useLedger = await shouldUseLedgerForDashboardCategories(input);
 
     if (useLedger) {
       let topCategories = await getTopCategoriesFromLedger({
@@ -1279,7 +1301,7 @@ export const dashboardMetricsRepo = {
            SELECT
              COALESCE(t.category_id, 'uncategorized') AS category_key,
              COALESCE(c.name, 'Sem categoria') AS name,
-             COALESCE(c.color, '#94a3b8') AS color,
+             COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}') AS color,
              SUM(ABS(t.amount_cents)) AS total_cents
            FROM transactions t
            LEFT JOIN categories c
@@ -1291,7 +1313,7 @@ export const dashboardMetricsRepo = {
              AND t.type = 'expense'::transaction_type
              AND t.excluded = ?
              ${currentFilterClause.sql}
-           GROUP BY COALESCE(t.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '#94a3b8')
+           GROUP BY COALESCE(t.category_id, 'uncategorized'), COALESCE(c.name, 'Sem categoria'), COALESCE(c.color, '${CATEGORY_FALLBACK_COLOR}')
          ),
          total_expenses AS (
            SELECT COALESCE(SUM(total_cents), 0) AS all_expense_cents
@@ -1349,7 +1371,7 @@ export const dashboardMetricsRepo = {
       return {
         categoryId,
         name: row.name ?? "Sem categoria",
-        color: row.color ?? "#94a3b8",
+        color: row.color ?? CATEGORY_FALLBACK_COLOR,
         total,
         percent: toPercent(Number(row.percent ?? 0)),
         previousTotal,
@@ -1386,17 +1408,7 @@ export const dashboardMetricsRepo = {
     series: DashboardTrendPoint[];
     previousSeries: DashboardTrendPoint[];
   }> {
-    const useLedger =
-      (await hasLedgerEntries({
-        userId: input.userId,
-        fromDate: input.range.fromDate,
-        toDate: input.range.toDate
-      })) ||
-      (await hasLedgerEntries({
-        userId: input.userId,
-        fromDate: input.range.previousFromDate,
-        toDate: input.range.previousToDate
-      }));
+    const useLedger = await shouldUseLedgerForDashboardTrends(input);
 
     const currentMap = useLedger
       ? await aggregateTrendsRawFromLedger({
@@ -1477,10 +1489,7 @@ export const dashboardMetricsRepo = {
     granularity: DashboardGranularity;
     series: DashboardPatrimonyPoint[];
   }> {
-    const useLedger = await hasLedgerEntriesThrough({
-      userId: input.userId,
-      toDate: input.range.toDate
-    });
+    const useLedger = await shouldUseLedgerForDashboardPatrimony(input);
     const buckets = buildBucketSeries(input.range.fromDate, input.range.toDate, input.granularity);
     const baselineCents = useLedger
       ? await getPatrimonyBaselineCentsFromLedger({

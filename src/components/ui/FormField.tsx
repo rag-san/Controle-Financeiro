@@ -52,7 +52,7 @@ export function FormField({
         </p>
       ) : null}
       {error ? (
-        <p id={errorId} className="text-xs text-destructive" role="alert">
+        <p id={errorId} className="text-xs text-error" role="alert">
           {error}
         </p>
       ) : null}

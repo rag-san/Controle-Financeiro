@@ -35,11 +35,11 @@ function formatVariationLabel(value: number): string {
 
 function resolveVariationClass(status: "positive" | "negative" | "neutral"): string {
   if (status === "negative") {
-    return "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-200";
+    return "bg-error/10 text-error";
   }
 
   if (status === "positive") {
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200";
+    return "bg-success/10 text-success";
   }
 
   return "bg-secondary text-secondary-foreground";

@@ -1493,6 +1493,39 @@ test("critical backend flow via API", async () => {
   assert.ok(Array.isArray(parsedGeneratedNubankInvoice.payload?.rows));
   assert.ok(parsedGeneratedNubankInvoice.payload?.rows?.length >= 2);
 
+  const nubankInvoiceCommit = await apiRequest("/api/imports/commit", {
+    method: "POST",
+    cookies: authCookies,
+    json: {
+      sourceType: "pdf",
+      fileName: "fixture-nubank-invoice.pdf",
+      defaultAccountId: creditAccountId,
+      applyRules: false,
+      applyLocalAi: false,
+      rows: parsedGeneratedNubankInvoice.payload.rows
+    }
+  });
+  assert.equal(nubankInvoiceCommit.status, 201);
+  assert.ok(nubankInvoiceCommit.payload?.totalImported >= 1);
+  assert.ok(nubankInvoiceCommit.payload?.totalSkipped >= 1);
+  assert.ok(
+    nubankInvoiceCommit.payload?.warnings?.some((item) =>
+      String(item).includes("linha(s) de pagamento foram ignoradas")
+    )
+  );
+
+  const januaryCreditTransactionsAfterNubankImport = await apiRequest(
+    `/api/transactions?period=custom&from=${encodeURIComponent("2026-01-01")}&to=${encodeURIComponent("2026-01-31")}&accountId=${encodeURIComponent(creditAccountId)}&page=1&pageSize=200`,
+    {
+      cookies: authCookies
+    }
+  );
+  assert.equal(januaryCreditTransactionsAfterNubankImport.status, 200);
+  const nubankPaymentRow = januaryCreditTransactionsAfterNubankImport.payload.items.find((item) =>
+    item.description.includes("Pagamento em")
+  );
+  assert.equal(nubankPaymentRow, undefined);
+
   const importCommitPayload = {
     sourceType: "csv",
     fileName: "import-transactions.csv",

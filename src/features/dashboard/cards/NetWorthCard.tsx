@@ -236,10 +236,7 @@ export function NetWorthCard({
         </div>
 
         {isDataAvailable ? (
-          <div
-            ref={chartContainer.ref}
-            className="app-surface-inset relative mt-4 h-[190px] min-h-[190px] w-full min-w-0 rounded-xl px-1 py-2"
-          >
+          <div ref={chartContainer.ref} className="relative mt-4 h-[190px] min-h-[190px] w-full min-w-0 rounded-xl border border-border/80 bg-muted/40 px-1 py-2">
             {canRenderChart ? (
               <AreaChart
                 width={chartContainer.size.width}
@@ -253,7 +250,7 @@ export function NetWorthCard({
                     <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="rgba(100,116,139,0.2)" />
+                <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="hsl(var(--muted-foreground) / 0.2)" />
                 <XAxis
                   dataKey="date"
                   tickFormatter={(value) => formatDateLabel(String(value))}
@@ -276,7 +273,7 @@ export function NetWorthCard({
                   tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                 />
                 {flatSeries ? (
-                  <ReferenceLine y={Number(normalizedSeries[0]?.value ?? 0)} stroke="rgba(56,189,248,0.55)" strokeDasharray="3 3" />
+                  <ReferenceLine y={Number(normalizedSeries[0]?.value ?? 0)} stroke="hsl(var(--info) / 0.55)" strokeDasharray="3 3" />
                 ) : null}
                 <Tooltip
                   content={

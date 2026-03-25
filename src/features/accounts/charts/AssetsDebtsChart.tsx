@@ -113,16 +113,16 @@ export function AssetsDebtsChart({
         >
           <defs>
             <linearGradient id="accountsAssetsFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#5b7ddb" stopOpacity={0.3} />
-              <stop offset="100%" stopColor="#5b7ddb" stopOpacity={0} />
+              <stop offset="0%" stopColor="hsl(var(--info))" stopOpacity={0.24} />
+              <stop offset="100%" stopColor="hsl(var(--info))" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.12} />
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" />
           <XAxis
             dataKey="date"
             tickFormatter={formatShortDate}
             interval={xAxisInterval}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false}
             axisLine={false}
             tickMargin={10}
@@ -132,7 +132,7 @@ export function AssetsDebtsChart({
             tickFormatter={(value) => formatBRL(Number(value))}
             domain={yAxis.domain}
             ticks={yAxis.ticks}
-            tick={{ fontSize: 12 }}
+            tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
             tickLine={false}
             axisLine={false}
             width={84}
@@ -142,11 +142,11 @@ export function AssetsDebtsChart({
             type="monotone"
             dataKey="assets"
             name="Ativos"
-            stroke="#5b7ddb"
+            stroke="hsl(var(--info))"
             strokeWidth={2.2}
             fill="url(#accountsAssetsFill)"
             dot={false}
-            activeDot={{ r: 4, fill: "#5b7ddb", strokeWidth: 0 }}
+            activeDot={{ r: 4, fill: "hsl(var(--info))", strokeWidth: 0 }}
             isAnimationActive={true}
             animationDuration={350}
             animationEasing="ease-out"
@@ -155,10 +155,10 @@ export function AssetsDebtsChart({
             type="monotone"
             dataKey="debts"
             name="Dívidas"
-            stroke="#f08c45"
+            stroke="hsl(var(--warning))"
             strokeWidth={2.1}
             dot={false}
-            activeDot={{ r: 4, fill: "#f08c45", strokeWidth: 0 }}
+            activeDot={{ r: 4, fill: "hsl(var(--warning))", strokeWidth: 0 }}
             isAnimationActive={true}
             animationDuration={350}
             animationEasing="ease-out"

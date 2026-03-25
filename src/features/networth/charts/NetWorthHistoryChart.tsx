@@ -100,19 +100,19 @@ export function NetWorthHistoryChart({
               >
                 <defs>
                   <linearGradient id="netWorthHistoryGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#5b7ddb" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#5b7ddb" stopOpacity={0.01} />
+                    <stop offset="0%" stopColor="hsl(var(--info))" stopOpacity={0.24} />
+                    <stop offset="100%" stopColor="hsl(var(--info))" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
 
-                <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.12} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" />
                 <XAxis
                   dataKey="date"
                   tickFormatter={formatShortDate}
                   interval={xAxisInterval}
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fontSize: 12 }}
+                  tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                   tickMargin={10}
                   minTickGap={24}
                 />
@@ -123,19 +123,19 @@ export function NetWorthHistoryChart({
                   tickLine={false}
                   axisLine={false}
                   width={84}
-                  tick={{ fontSize: 12 }}
+                  tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }}
                 />
-                <ReferenceLine y={0} stroke="rgb(148 163 184 / 0.35)" strokeWidth={1} />
+                <ReferenceLine y={0} stroke="hsl(var(--border) / 0.45)" strokeWidth={1} />
                 <Tooltip content={<NetWorthComparisonTooltip />} />
                 <Area
                   type="monotone"
                   dataKey="net"
                   name="Patrimônio"
-                  stroke="#5b7ddb"
+                  stroke="hsl(var(--info))"
                   strokeWidth={2.2}
                   fill="url(#netWorthHistoryGradient)"
                   dot={false}
-                  activeDot={{ r: 4, fill: "#5b7ddb", strokeWidth: 0 }}
+                  activeDot={{ r: 4, fill: "hsl(var(--info))", strokeWidth: 0 }}
                   isAnimationActive={true}
                   animationDuration={400}
                   animationEasing="ease-out"
@@ -144,7 +144,7 @@ export function NetWorthHistoryChart({
                   type="monotone"
                   dataKey="previousNet"
                   name="Período anterior"
-                  stroke="#94a3b8"
+                  stroke="hsl(var(--muted-foreground))"
                   strokeWidth={1.8}
                   strokeDasharray="4 4"
                   dot={false}
@@ -152,7 +152,7 @@ export function NetWorthHistoryChart({
                   isAnimationActive={true}
                   animationDuration={400}
                   animationEasing="ease-out"
-                  activeDot={{ r: 3, fill: "#94a3b8", strokeWidth: 0 }}
+                  activeDot={{ r: 3, fill: "hsl(var(--muted-foreground))", strokeWidth: 0 }}
                 />
               </ComposedChart>
             </ResponsiveContainer>

@@ -57,15 +57,15 @@ function NetResultTooltip({
   const labelText = typeof label === "string" ? formatMonthLabel(label) : String(label ?? "");
 
   return (
-    <div className="min-w-[12rem] rounded-xl border border-border bg-card/95 p-3 text-xs text-foreground shadow-xl backdrop-blur dark:bg-secondary/85">
-      <p className="mb-2 font-semibold">{labelText}</p>
+    <div className="min-w-[12rem] rounded-2xl border border-border/90 bg-card/95 p-3 text-xs text-foreground shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{labelText}</p>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-muted-foreground">Resultado liquido</span>
+        <span className="text-[13px] text-foreground/90">Resultado liquido</span>
         <span
           className={
             value >= 0
-              ? "font-bold text-emerald-700 dark:text-emerald-300"
-              : "font-bold text-rose-700 dark:text-rose-300"
+              ? "font-bold text-success"
+              : "font-bold text-error"
           }
         >
           {formatBRL(value)}
@@ -107,16 +107,16 @@ export function NetResultChart({
         <BarChart data={chartData} margin={{ top: 8, right: 10, left: 0, bottom: 0 }} barSize={44}>
           <defs>
             <linearGradient id="cashflow-net-positive" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#10b981" stopOpacity={0.9} />
-              <stop offset="100%" stopColor="#10b981" stopOpacity={0.42} />
+              <stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.9} />
+              <stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0.42} />
             </linearGradient>
             <linearGradient id="cashflow-net-negative" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ef4444" stopOpacity={0.92} />
-              <stop offset="100%" stopColor="#ef4444" stopOpacity={0.45} />
+              <stop offset="0%" stopColor="hsl(var(--error))" stopOpacity={0.92} />
+              <stop offset="100%" stopColor="hsl(var(--error))" stopOpacity={0.45} />
             </linearGradient>
           </defs>
 
-          <CartesianGrid vertical={false} strokeDasharray="3 3" strokeOpacity={0.18} />
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" />
           <XAxis
             dataKey="month"
             tickFormatter={formatMonthLabel}
@@ -136,7 +136,7 @@ export function NetResultChart({
             width={72}
           />
           <ReferenceLine y={0} stroke="hsl(var(--border))" strokeWidth={1.2} strokeDasharray="4 3" />
-          <Tooltip content={<NetResultTooltip />} cursor={{ fill: "rgba(148,163,184,0.12)" }} />
+          <Tooltip content={<NetResultTooltip />} cursor={{ fill: "hsl(var(--muted-foreground) / 0.08)" }} />
           <Bar dataKey="net" name="Resultado liquido" radius={[6, 6, 0, 0]}>
             {chartData.map((entry) => (
               <Cell
@@ -150,4 +150,5 @@ export function NetResultChart({
     </div>
   );
 }
+
 

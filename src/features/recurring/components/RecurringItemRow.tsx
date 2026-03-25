@@ -72,7 +72,7 @@ export function RecurringItemRow({
         >
           {paidThisMonth ? (
             <>
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="h-3.5 w-3.5 text-success dark:text-success" />
               Pago
             </>
           ) : (
@@ -86,5 +86,6 @@ export function RecurringItemRow({
     </div>
   );
 }
+
 
 

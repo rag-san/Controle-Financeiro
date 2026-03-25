@@ -169,7 +169,7 @@ function MobileTransactionCard({
           : "Transferência";
   const amount = `${transaction.amount < 0 ? "-" : "+"} ${amountFormatter.format(Math.abs(transaction.amount))}`;
   const amountClassName =
-    transaction.amount >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300";
+    transaction.amount >= 0 ? "text-success dark:text-success" : "text-error dark:text-error";
   const actionMenuItems = [
     ...(!isTransfer
       ? [
@@ -354,7 +354,7 @@ export function TransactionsTable({
 
   return (
     <section
-      className="overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-secondary/60 shadow-[0_10px_30px_rgba(15,23,42,0.09)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70"
+      className="overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-secondary/60 shadow-[0_10px_30px_hsl(var(--overlay) / 0.09)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70"
       aria-label="Tabela de transações"
       data-testid="transactions-table"
     >
@@ -482,3 +482,4 @@ export function TransactionsTable({
     </section>
   );
 }
+

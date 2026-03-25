@@ -108,7 +108,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 backdrop-blur-[1px] sm:items-center sm:p-4"
+      className="fixed inset-0 z-[120] flex items-end justify-center bg-overlay/60 backdrop-blur-[1px] sm:items-center sm:p-4"
       role="presentation"
     >
       <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Fechar modal" />
@@ -118,12 +118,12 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="modal-title"
         className={cn(
-          "app-surface-card relative z-[121] flex h-[100dvh] w-full max-w-none flex-col overflow-hidden border-0 rounded-none shadow-xl",
+          "glass-card relative z-[121] flex h-[100dvh] w-full max-w-none flex-col overflow-hidden rounded-none border-0 shadow-xl",
           "sm:h-auto sm:max-h-[min(90dvh,42rem)] sm:max-w-lg sm:rounded-2xl sm:border",
           className
         )}
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border/70 bg-card/95 px-4 py-4 backdrop-blur sm:px-5">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border/70 bg-popover/95 px-4 py-4 backdrop-blur sm:px-5">
           <div className="space-y-1">
             <h2 id="modal-title" className="text-lg font-semibold text-foreground">
               {title}
@@ -151,7 +151,7 @@ export function Modal({
         </div>
 
         {footer ? (
-          <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-border/70 bg-card/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-5 sm:pb-3">
+          <div className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-border/70 bg-popover/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:flex-row sm:items-center sm:justify-end sm:px-5 sm:pb-3">
             {footer}
           </div>
         ) : null}

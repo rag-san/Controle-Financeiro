@@ -63,21 +63,21 @@ export function AssetsDebtsTooltip({
   const title = typeof label === "string" ? formatDateLong(label) : "";
 
   return (
-    <div className="min-w-[13rem] rounded-xl border border-border bg-card p-3 text-sm shadow-xl">
-      {title ? <p className="mb-2 font-semibold text-foreground">{title}</p> : null}
+    <div className="min-w-[13rem] rounded-2xl border border-border/90 bg-card/95 p-3 text-sm shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+      {title ? <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}</p> : null}
 
       <ul className="space-y-1.5">
         <li className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#5b7ddb]" aria-hidden="true" />
-            <span className="text-muted-foreground">Ativos</span>
+            <span className="h-2.5 w-2.5 rounded-full bg-info" aria-hidden="true" />
+            <span className="text-[13px] text-foreground/90">Ativos</span>
           </div>
           <span className="font-semibold text-foreground">{formatBRL(values.assets)}</span>
         </li>
         <li className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#f08c45]" aria-hidden="true" />
-            <span className="text-muted-foreground">Dívidas</span>
+            <span className="h-2.5 w-2.5 rounded-full bg-warning" aria-hidden="true" />
+            <span className="text-[13px] text-foreground/90">Dívidas</span>
           </div>
           <span className="font-semibold text-foreground">{formatBRL(values.debts)}</span>
         </li>

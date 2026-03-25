@@ -60,7 +60,7 @@ function resolveDeltaDisplay(
 
   return {
     text: `${arrow} ${value}`,
-    className: isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+    className: isPositive ? "text-success dark:text-success" : "text-error dark:text-error"
   };
 }
 
@@ -149,7 +149,7 @@ export function AssetsDebtsCard({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="grid gap-4 sm:flex sm:flex-wrap sm:items-start sm:gap-8">
           <MetricBlock
-            dotClassName="bg-blue-500"
+            dotClassName="bg-info"
             label="Ativos"
             valueText={assetsValueText}
             delta={hideValues ? hiddenDelta : assetsDelta}
@@ -157,7 +157,7 @@ export function AssetsDebtsCard({
             loading={loading}
           />
           <MetricBlock
-            dotClassName="bg-orange-400"
+            dotClassName="bg-warning"
             label="Dívidas"
             valueText={debtsValueText}
             delta={hideValues ? hiddenDelta : debtsDelta}
@@ -194,5 +194,6 @@ export function AssetsDebtsCard({
     </Card>
   );
 }
+
 
 

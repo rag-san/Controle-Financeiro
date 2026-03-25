@@ -7,7 +7,7 @@ function readRepoFile(relativePath: string): string {
 }
 
 test("page container keeps responsive paddings as mobile baseline", () => {
-  const pageContainer = readRepoFile("components/layout/PageContainer.tsx");
+  const pageContainer = readRepoFile("src/components/layout/PageContainer.tsx");
 
   assert.ok(
     pageContainer.includes('"px-4 py-5 md:px-6 md:py-6 xl:px-8"'),
@@ -16,7 +16,7 @@ test("page container keeps responsive paddings as mobile baseline", () => {
 });
 
 test("page shell keeps global x-overflow guards for all app screens", () => {
-  const pageShell = readRepoFile("components/layout/PageShell.tsx");
+  const pageShell = readRepoFile("src/components/layout/PageShell.tsx");
 
   assert.ok(
     pageShell.includes('className="min-h-screen overflow-x-hidden"'),
@@ -33,7 +33,7 @@ test("page shell keeps global x-overflow guards for all app screens", () => {
 });
 
 test("sidebar keeps mobile drawer and desktop split behavior", () => {
-  const sidebar = readRepoFile("components/layout/Sidebar.tsx");
+  const sidebar = readRepoFile("src/components/layout/Sidebar.tsx");
 
   assert.ok(
     sidebar.includes('className="fixed left-0 top-0 z-30 hidden h-screen w-72 border-r border-border bg-card md:block"'),
@@ -50,7 +50,7 @@ test("sidebar keeps mobile drawer and desktop split behavior", () => {
 });
 
 test("topbar keeps mobile menu trigger visibility contract", () => {
-  const topbar = readRepoFile("components/layout/Topbar.tsx");
+  const topbar = readRepoFile("src/components/layout/Topbar.tsx");
 
   assert.ok(
     topbar.includes('className="md:hidden"'),

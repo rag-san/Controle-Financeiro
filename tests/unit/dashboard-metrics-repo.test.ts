@@ -527,6 +527,109 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
   assert.equal(Number(trendsExpense.toFixed(2)), 100);
 });
 
+test("dashboard metrics stay on legacy data while the compared range still has transactions without ledger mirror", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+  const fixture = await createFixtureUser("dashboard-mixed-coverage");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado misto-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const range = deps.resolveDashboardDateRange({
+    from: new Date("2026-02-10T00:00:00.000Z"),
+    to: new Date("2026-02-12T00:00:00.000Z")
+  });
+
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: new Date("2026-02-05T12:00:00.000Z"),
+    description: "Base legado sem espelho",
+    normalizedDescription: deps.normalizeDescription("Base legado sem espelho"),
+    amount: 500,
+    type: "income",
+    status: "posted"
+  });
+
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    categoryId: groceries.id,
+    date: new Date("2026-02-08T12:00:00.000Z"),
+    description: "Mercado anterior legado",
+    normalizedDescription: deps.normalizeDescription("Mercado anterior legado"),
+    amount: -80,
+    type: "expense",
+    status: "posted"
+  });
+
+  const currentTx = await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    categoryId: groceries.id,
+    date: new Date("2026-02-10T12:00:00.000Z"),
+    description: "Mercado atual com espelho",
+    normalizedDescription: deps.normalizeDescription("Mercado atual com espelho"),
+    amount: -120,
+    type: "expense",
+    status: "posted"
+  });
+  assert.ok(currentTx);
+
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-10T12:00:00.000Z"),
+    amount: 120,
+    direction: "OUT",
+    type: "expense",
+    descriptionNormalized: deps.normalizeDescription("Mercado atual com espelho"),
+    accountId: fixture.primaryAccountId,
+    categoryId: groceries.id,
+    externalRef: `LEGACY_TX:${currentTx.id}`,
+    fingerprint: `dashboard-mixed-coverage-${Date.now()}`
+  });
+
+  const summary = await deps.dashboardMetricsRepo.getSummary({
+    userId: fixture.userId,
+    range
+  });
+  assert.equal(summary.totalIncome, 0);
+  assert.equal(summary.totalExpense, 120);
+  assert.equal(summary.previousPeriodComparison.previousExpense, 80);
+
+  const categories = await deps.dashboardMetricsRepo.getTopCategories({
+    userId: fixture.userId,
+    range
+  });
+  assert.equal(categories.topCategories[0]?.total ?? 0, 120);
+  assert.equal(categories.topCategories[0]?.previousTotal ?? 0, 80);
+
+  const trends = await deps.dashboardMetricsRepo.getTrends({
+    userId: fixture.userId,
+    range,
+    granularity: "day"
+  });
+  assert.equal(trends.series.reduce((sum, point) => sum + point.expense, 0), 120);
+  assert.equal(trends.previousSeries.reduce((sum, point) => sum + point.expense, 0), 80);
+
+  const patrimony = await deps.dashboardMetricsRepo.getPatrimony({
+    userId: fixture.userId,
+    range,
+    granularity: "day"
+  });
+  assert.deepEqual(
+    patrimony.series.map((item) => item.value),
+    [300, 300, 300]
+  );
+});
+
 test("resolveDashboardDateRange keeps previous month aligned for month-anchored ranges", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;

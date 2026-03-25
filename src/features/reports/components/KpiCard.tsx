@@ -19,8 +19,8 @@ function renderTrendText(trend: KpiTrend): string {
 }
 
 function resolveTrendTone(trend: KpiTrend): string {
-  if (trend.direction === "up") return "text-emerald-600 dark:text-emerald-400";
-  if (trend.direction === "down") return "text-rose-600 dark:text-rose-400";
+  if (trend.direction === "up") return "text-success";
+  if (trend.direction === "down") return "text-error";
   return "text-muted-foreground";
 }
 
@@ -40,9 +40,9 @@ export function KpiCard({
 }: KpiCardProps): React.JSX.Element {
   const valueClassName =
     tone === "income"
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-success"
       : tone === "expense"
-        ? "text-rose-600 dark:text-rose-400"
+        ? "text-error"
         : "text-foreground";
 
   return (

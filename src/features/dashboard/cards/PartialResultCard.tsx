@@ -77,15 +77,15 @@ export function PartialResultCard({
 
         <ProgressBar percentage={porcentagemProgresso} color="blue" className="h-1.5 bg-secondary/90" />
 
-        <div className="grid grid-cols-1 gap-4 border-t border-border/70 pt-4 text-sm sm:grid-cols-3">
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Entrada caixa</p>
-            <p className="text-xl font-semibold text-emerald-700 dark:text-emerald-300">{formatBRL(receita)}</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-muted-foreground">Saida caixa</p>
-            <p className="text-xl font-semibold text-rose-700 dark:text-rose-300">{formatBRL(gasto)}</p>
-          </div>
+          <div className="grid grid-cols-1 gap-4 border-t border-border/70 pt-4 text-sm sm:grid-cols-3">
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Entrada caixa</p>
+            <p className="text-xl font-semibold text-success">{formatBRL(receita)}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Saida caixa</p>
+            <p className="text-xl font-semibold text-error">{formatBRL(gasto)}</p>
+            </div>
           <div className="space-y-1">
             <p className="text-muted-foreground">Excluido</p>
             <p className="text-xl font-semibold text-foreground">{formatBRL(excluido)}</p>

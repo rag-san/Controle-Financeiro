@@ -1,69 +1,40 @@
-"use client";
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import {
+  Search,
+  Plus,
+  ChevronDown,
+  MoreHorizontal,
+  Circle,
+  CheckCircle2,
+  ArrowDownRight,
+  ArrowUpRight,
+  ListFilter,
+  Tag,
+  Trash2,
+  UploadCloud
+} from 'lucide-react';
+import { endOfMonth, startOfMonth, subDays, subMonths } from 'date-fns';
+import type { AccountDTO, CategoryDTO, TransactionDTO } from '@/lib/types';
+import { extractApiError, parseApiResponse } from '@/lib/client/api-response';
+import { useToast } from '@/src/components/ui/ToastProvider';
+import { formatCurrency, cn } from '@/src/app-shell/utils';
 
-import { endOfMonth, format, startOfMonth, subDays, subMonths } from "date-fns";
-import { AlertTriangle, Plus, Upload } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import useSWR, { mutate as mutateCache } from "swr";
-import { ImportTransactionsModal } from "@/components/import/ImportTransactionsModal";
-import { PageShell } from "@/components/layout/PageShell";
-import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
-import type { AccountDTO, CategoryDTO, TransactionDTO } from "@/lib/types";
-import {
-  getMappings,
-  removeMapping,
-  setMapping
-} from "@/src/features/categorization/mappingsStore";
-import { extractMerchantKey, normalizeText } from "@/src/features/categorization/normalizeMerchant";
-import { buildCategoryRules } from "@/src/features/categorization/rules";
-import {
-  buildSuggestionContext,
-  isTransactionUncategorized,
-  suggestCategory,
-  type Suggestion
-} from "@/src/features/categorization/suggestCategory";
-import { Button } from "@/src/components/ui/Button";
-import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
-import { GuidanceCard } from "@/src/components/ui/GuidanceCard";
-import { useToast } from "@/src/components/ui/ToastProvider";
-import { buildInsights } from "@/src/features/insights/buildInsights";
-import { InsightsBanner } from "@/src/features/insights/components/InsightsBanner";
-import { buildPeriodComparison } from "@/src/features/insights/utils/period";
-import { BulkActionsBar } from "@/src/features/transactions/components/BulkActionsBar";
-import { BulkCategoryModal } from "@/src/features/transactions/components/BulkCategoryModal";
-import { BulkDeleteModal } from "@/src/features/transactions/components/BulkDeleteModal";
-import {
-  type NewTransactionDraft,
-  TransactionForm
-} from "@/src/features/transactions/TransactionForm";
-import {
-  type TransactionsFiltersState,
-  type TransactionsPeriod,
-  TransactionsFiltersBar
-} from "@/src/features/transactions/components/TransactionsFiltersBar";
-import { TransactionsKpiCards } from "@/src/features/transactions/components/TransactionsKpiCards";
-import { TransactionsTable } from "@/src/features/transactions/components/TransactionsTable";
-import { useSelection } from "@/src/features/transactions/hooks/useSelection";
-import { parseSharedFilters, resolveDefaultRange } from "@/src/features/filters/sharedFilters";
+interface TransactionsProps {
+  hideValues: boolean;
+  onNewTransaction: (transaction?: TransactionDTO | null) => void;
+  onImport?: () => void;
+}
 
-type TransactionResponse = {
+export { Transactions as TransactionsPage };
+
+type TransactionsResponse = {
   items: TransactionDTO[];
-  summary: {
+  summary?: {
     income: number;
     expense: number;
     balance: number;
-    periodCashInflow?: number;
-    periodCashOutflow?: number;
-    periodCashFlow?: number;
     cashBalance?: number;
-  };
-  pagination: {
-    page: number;
-    pageSize: number;
-    totalCount: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
   };
   meta?: {
     accounts: AccountDTO[];
@@ -71,1432 +42,736 @@ type TransactionResponse = {
   };
 };
 
-type SortState = {
-  field: "date" | "amount";
-  direction: "asc" | "desc";
+const PERIOD_LABELS = ['Últimos 7 dias', 'Últimos 30 dias', 'Este mês', 'Mês passado', 'Este ano'] as const;
+const TYPE_LABELS = ['Todas as Transações', 'Apenas Receitas', 'Apenas Despesas'] as const;
+
+type TransactionsPeriodMode =
+  | '7d'
+  | '30d'
+  | '90d'
+  | 'this-month'
+  | 'last-month'
+  | 'this-year'
+  | 'all'
+  | 'custom';
+
+type TransactionsPeriodSelection = {
+  mode: TransactionsPeriodMode;
+  label: (typeof PERIOD_LABELS)[number];
+  from?: string;
+  to?: string;
 };
 
-type TransactionsSortQuery = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
-
-const initialDraft: NewTransactionDraft = {
-  date: new Date().toISOString().slice(0, 10),
-  description: "",
-  amount: "",
-  accountId: "",
-  categoryId: ""
+type TransactionsRouteState = {
+  period: TransactionsPeriodSelection;
+  typeLabel: (typeof TYPE_LABELS)[number];
+  categoryId: string;
+  uncategorizedOnly: boolean;
+  accountId: string;
+  excludedOnly: boolean;
+  searchQuery: string;
 };
 
-const initialFilters: TransactionsFiltersState = {
-  period: "this-month",
-  accountId: "",
-  type: "",
-  excluded: "included",
-  categoryId: "",
-  from: "",
-  to: ""
-};
-
-export function resolveTransactionsRefreshMessage(input: {
+type TransactionsRefreshInput = {
   refreshing: boolean;
   page: number;
   debouncedQuery: string;
-  filters: Pick<TransactionsFiltersState, "accountId" | "categoryId" | "type" | "period">;
-}): string {
-  if (!input.refreshing) {
-    return "";
-  }
-
-  if (input.page > 1) {
-    return "Atualizando transações e paginação...";
-  }
-
-  if (
-    input.debouncedQuery ||
-    input.filters.accountId ||
-    input.filters.categoryId ||
-    input.filters.type ||
-    input.filters.period === "custom"
-  ) {
-    return "Aplicando filtros e recalculando indicadores...";
-  }
-
-  return "Buscando transações e atualizando indicadores...";
-}
-
-function resolveSortStateFromQuery(value: string | null): SortState {
-  if (value === "date_asc") return { field: "date", direction: "asc" };
-  if (value === "amount_desc") return { field: "amount", direction: "desc" };
-  if (value === "amount_asc") return { field: "amount", direction: "asc" };
-  return { field: "date", direction: "desc" };
-}
-
-function serializeSortState(sort: SortState): TransactionsSortQuery {
-  if (sort.field === "amount") {
-    return sort.direction === "asc" ? "amount_asc" : "amount_desc";
-  }
-  return sort.direction === "asc" ? "date_asc" : "date_desc";
-}
-
-function resolvePeriodFromQuery(value: string | null): TransactionsFiltersState["period"] | null {
-  if (!value) return null;
-  if (value === "current-month") return "this-month";
-  if (
-    value === "7d" ||
-    value === "30d" ||
-    value === "90d" ||
-    value === "this-month" ||
-    value === "last-month" ||
-    value === "custom" ||
-    value === "all"
-  ) {
-    return value;
-  }
-  return null;
-}
-
-function resolvePeriodQuery(filters: TransactionsFiltersState): {
-  period: "all" | "7d" | "30d" | "90d" | "last-month" | "current-month" | "custom";
-  from?: string;
-  to?: string;
-} {
-  if (filters.period === "all") return { period: "all" };
-  if (filters.period === "7d") return { period: "7d" };
-  if (filters.period === "30d") return { period: "30d" };
-  if (filters.period === "90d") return { period: "90d" };
-  if (filters.period === "last-month") return { period: "last-month" };
-  if (filters.period === "this-month") return { period: "current-month" };
-  return {
-    period: "custom",
-    from: filters.from || undefined,
-    to: filters.to ? endOfDayIso(filters.to) : undefined
+  filters: {
+    accountId: string;
+    categoryId: string;
+    type: '' | 'income' | 'expense' | 'transfer';
+    period: '7d' | '30d' | '90d' | 'this-month' | 'last-month' | 'custom' | 'all';
   };
-}
-
-function endOfDayIso(dateInput: string): string {
-  return `${dateInput}T23:59:59.999`;
-}
-
-function escapeCsvValue(value: string): string {
-  if (/[,"\n]/.test(value)) {
-    return `"${value.replace(/"/g, "\"\"")}"`;
-  }
-  return value;
-}
-
-async function runWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  worker: (item: T, index: number) => Promise<void>,
-  onProgress?: (done: number, total: number) => void
-): Promise<{ successCount: number; failureCount: number; errors: string[] }> {
-  const errors: string[] = [];
-  let cursor = 0;
-  let successCount = 0;
-  let done = 0;
-
-  const runWorker = async (): Promise<void> => {
-    while (true) {
-      const index = cursor;
-      cursor += 1;
-      if (index >= items.length) return;
-
-      try {
-        await worker(items[index], index);
-        successCount += 1;
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : "Erro desconhecido");
-      } finally {
-        done += 1;
-        onProgress?.(done, items.length);
-      }
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, Math.max(items.length, 1)) }, () => runWorker())
-  );
-
-  return {
-    successCount,
-    failureCount: items.length - successCount,
-    errors
-  };
-}
-
-async function fetchTransactionsResource(url: string): Promise<TransactionResponse> {
-  const response = await fetch(url, { cache: "no-store" });
-  const { data, errorMessage } = await parseApiResponse<TransactionResponse | { error?: unknown }>(response);
-
-  if (errorMessage) {
-    throw new Error(errorMessage);
-  }
-
-  if (!response.ok || !data || !("items" in data)) {
-    throw new Error(extractApiError(data, "Não foi possível carregar transações."));
-  }
-
-  return data;
-}
-
-const periodOptions: Record<TransactionsPeriod, { label: string; resolver: (now: Date) => { from: string; to: string } }> = {
-  "7d": { label: "Últimos 7 dias", resolver: (now) => rangeDays(now, 7) },
-  "30d": { label: "Últimos 30 dias", resolver: (now) => rangeDays(now, 30) },
-  "90d": { label: "Últimos 90 dias", resolver: (now) => rangeDays(now, 90) },
-  "this-month": { label: "Este mês", resolver: (now) => resolveDefaultRange(now) },
-  "last-month": { label: "Mês passado", resolver: (now) => rangeLastMonth(now) },
-  custom: { label: "Personalizado", resolver: (now) => resolveDefaultRange(now) },
-  all: { label: "Todo período", resolver: (now) => resolveDefaultRange(now) }
 };
 
-function rangeDays(reference: Date, days: number): { from: string; to: string } {
-  const to = new Date(reference);
-  const from = subDays(to, days);
-  return { from: formatDateISO(from), to: endOfDayIso(formatDateISO(to)) };
+function formatTransactionDate(value: string): string {
+  return new Date(value).toLocaleDateString('pt-BR');
 }
 
-function rangeLastMonth(reference: Date): { from: string; to: string } {
-  const last = subMonths(reference, 1);
-  return {
-    from: formatDateISO(startOfMonth(last)),
-    to: endOfDayIso(formatDateISO(endOfMonth(last)))
-  };
+function normalizeValue(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
-function formatDateISO(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+function categoryEmoji(category?: CategoryDTO | null): string {
+  const name = normalizeValue(category?.name ?? '');
+  if (name.includes('merc')) return '🛒';
+  if (name.includes('rest') || name.includes('aliment')) return '🍔';
+  if (name.includes('morad') || name.includes('alug')) return '🏠';
+  if (name.includes('transp') || name.includes('comb')) return '⛽';
+  if (name.includes('internet')) return '🌐';
+  if (name.includes('saud') || name.includes('farm')) return '💊';
+  if (name.includes('lazer')) return '🎉';
+  if (name.includes('renda') || name.includes('salario')) return '💼';
+  return '✨';
+}
+
+function isDateInput(value: string | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function formatDateInput(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-function resolveTransactionsPeriodLabel(filters: Pick<TransactionsFiltersState, "period" | "from" | "to">): string {
-  const option = periodOptions[filters.period];
-  if (!option) return "Período atual";
-  if (filters.period !== "custom") return option.label;
-  const fromLabel = filters.from ? format(new Date(`${filters.from}T00:00:00`), "dd/MM/yyyy") : "";
-  const toLabel = filters.to ? format(new Date(`${filters.to}T00:00:00`), "dd/MM/yyyy") : "";
-  if (fromLabel && toLabel) return `${fromLabel} a ${toLabel}`;
-  if (fromLabel) return `A partir de ${fromLabel}`;
-  if (toLabel) return `Até ${toLabel}`;
-  return option.label;
-}
+function inferSupportedPeriodLabel(from?: string, to?: string, now = new Date()): (typeof PERIOD_LABELS)[number] {
+  if (!from || !to) return 'Últimos 30 dias';
 
-function isUncategorizedTransaction(transaction: TransactionDTO): boolean {
-  if (!transaction.categoryId) {
-    return true;
+  const currentMonthStart = formatDateInput(startOfMonth(now));
+  const currentMonthEnd = formatDateInput(endOfMonth(now));
+  if (from === currentMonthStart && to === currentMonthEnd) {
+    return 'Este mês';
   }
-  const categoryName = normalizeText(transaction.category?.name ?? "");
-  return categoryName.includes("sem categoria") || categoryName.includes("uncategorized");
+
+  const previousMonth = subMonths(now, 1);
+  const previousMonthStart = formatDateInput(startOfMonth(previousMonth));
+  const previousMonthEnd = formatDateInput(endOfMonth(previousMonth));
+  if (from === previousMonthStart && to === previousMonthEnd) {
+    return 'Mês passado';
+  }
+
+  const lastSevenDaysStart = formatDateInput(subDays(now, 7));
+  const today = formatDateInput(now);
+  if (from === lastSevenDaysStart && to === today) {
+    return 'Últimos 7 dias';
+  }
+
+  const lastThirtyDaysStart = formatDateInput(subDays(now, 30));
+  if (from === lastThirtyDaysStart && to === today) {
+    return 'Últimos 30 dias';
+  }
+
+  const thisYearStart = formatDateInput(new Date(now.getFullYear(), 0, 1));
+  const thisYearEnd = formatDateInput(new Date(now.getFullYear(), 11, 31));
+  if (from === thisYearStart && to === thisYearEnd) {
+    return 'Este ano';
+  }
+
+  return 'Últimos 30 dias';
 }
 
-export function TransactionsPage(): React.JSX.Element {
-  const router = useRouter();
-  const pathname = usePathname();
+function resolveTransactionsRouteState(searchParams: URLSearchParams, now = new Date()): TransactionsRouteState {
+  const periodParam = searchParams.get('period');
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
+
+  let period: TransactionsPeriodSelection = {
+    mode: '30d',
+    label: 'Últimos 30 dias'
+  };
+
+  if (periodParam === '7d') {
+    period = { mode: '7d', label: 'Últimos 7 dias' };
+  } else if (periodParam === '30d') {
+    period = { mode: '30d', label: 'Últimos 30 dias' };
+  } else if (periodParam === 'this-month' || periodParam === 'current-month') {
+    period = { mode: 'this-month', label: 'Este mês' };
+  } else if (periodParam === 'last-month') {
+    period = { mode: 'last-month', label: 'Mês passado' };
+  } else if (periodParam === '90d') {
+    period = { mode: '90d', label: 'Últimos 30 dias' };
+  } else if (periodParam === 'all') {
+    period = { mode: 'all', label: 'Últimos 30 dias' };
+  } else if ((periodParam === 'custom' || isDateInput(from) || isDateInput(to)) && isDateInput(from) && isDateInput(to)) {
+    period = {
+      mode: 'custom',
+      label: inferSupportedPeriodLabel(from, to, now),
+      from,
+      to
+    };
+  }
+
+  const typeParam = searchParams.get('type');
+  const typeLabel =
+    typeParam === 'income'
+      ? 'Apenas Receitas'
+      : typeParam === 'expense'
+        ? 'Apenas Despesas'
+        : 'Todas as Transações';
+
+  return {
+    period,
+    typeLabel,
+    categoryId: searchParams.get('categoryId') ?? '',
+    uncategorizedOnly: searchParams.get('category') === 'uncategorized',
+    accountId: searchParams.get('accountId') ?? '',
+    excludedOnly: searchParams.get('excluded') === 'true' || searchParams.get('excluded') === 'excluded',
+    searchQuery: searchParams.get('q') ?? ''
+  };
+}
+export { resolveTransactionsRouteState };
+
+function buildTransactionsRequestParams(input: {
+  period: TransactionsPeriodSelection;
+  typeLabel: (typeof TYPE_LABELS)[number];
+  categoryId: string;
+  accountId: string;
+  excludedOnly: boolean;
+  searchQuery: string;
+}): URLSearchParams {
+  const params = new URLSearchParams();
+
+  if (input.period.mode === 'custom' && input.period.from && input.period.to) {
+    params.set('period', 'custom');
+    params.set('from', input.period.from);
+    params.set('to', input.period.to);
+  } else if (input.period.mode === 'this-year') {
+    params.set('period', 'custom');
+    params.set('from', `${new Date().getFullYear()}-01-01`);
+    params.set('to', `${new Date().getFullYear()}-12-31`);
+  } else {
+    params.set('period', input.period.mode);
+  }
+
+  if (input.typeLabel === 'Apenas Receitas') {
+    params.set('type', 'income');
+  } else if (input.typeLabel === 'Apenas Despesas') {
+    params.set('type', 'expense');
+  }
+
+  if (input.categoryId) {
+    params.set('categoryId', input.categoryId);
+  }
+  if (input.accountId) {
+    params.set('accountId', input.accountId);
+  }
+  if (input.excludedOnly) {
+    params.set('excluded', 'true');
+  }
+
+  const normalizedSearch = input.searchQuery.trim();
+  if (normalizedSearch) {
+    params.set('q', normalizedSearch);
+  }
+
+  params.set('pageSize', '200');
+  params.set('includeMeta', 'true');
+  params.set('sort', 'date_desc');
+
+  return params;
+}
+
+export function resolveTransactionsRefreshMessage(input: TransactionsRefreshInput): string {
+  if (!input.refreshing) return '';
+
+  if (input.page > 1) {
+    return 'Atualizando transações e paginação...';
+  }
+
+  if (
+    input.debouncedQuery.trim().length > 0 ||
+    input.filters.accountId ||
+    input.filters.categoryId ||
+    input.filters.type ||
+    input.filters.period !== 'this-month'
+  ) {
+    return 'Aplicando filtros e recalculando indicadores...';
+  }
+
+  return 'Buscando transações e atualizando indicadores...';
+}
+
+function categoryChipStyle(category?: CategoryDTO | null): React.CSSProperties | undefined {
+  if (!category?.color) return undefined;
+  return {
+    color: category.color,
+    borderColor: `${category.color}40`,
+    backgroundColor: `${category.color}1A`
+  };
+}
+
+export function Transactions({ hideValues, onNewTransaction, onImport }: TransactionsProps) {
   const searchParams = useSearchParams();
-  const now = useMemo(() => new Date(), []);
-  const defaultRange = useMemo(() => resolveDefaultRange(now), [now]);
   const { toast } = useToast();
-  const {
-    selectedIds,
-    selectedCount,
-    selectedSet,
-    isSelected,
-    toggleSelection,
-    toggleSelectAll,
-    clearSelection,
-    syncWithAvailableIds
-  } = useSelection();
-  const [accounts, setAccounts] = useState<AccountDTO[]>([]);
-  const [categories, setCategories] = useState<CategoryDTO[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionDTO[]>([]);
-  const [summary, setSummary] = useState({
-    income: 0,
-    expense: 0,
-    balance: 0,
-    periodCashInflow: 0,
-    periodCashOutflow: 0,
-    periodCashFlow: 0,
-    cashBalance: 0
+  const [categories, setCategories] = useState<CategoryDTO[]>([]);
+  const [summary, setSummary] = useState({ income: 0, expense: 0, balance: 0, cashBalance: 0 });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState<TransactionsPeriodSelection>({
+    mode: '30d',
+    label: 'Últimos 30 dias'
   });
-  const [filters, setFilters] = useState<TransactionsFiltersState>({
-    period: "this-month",
-    accountId: "",
-    type: "",
-    excluded: "included",
-    categoryId: "",
-    from: defaultRange.from,
-    to: defaultRange.to
-  });
-  const [searchQuery, setSearchQuery] = useState("");
-  const [pendingCategoryQuery, setPendingCategoryQuery] = useState("");
-  const [uncategorizedOnly, setUncategorizedOnly] = useState(false);
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(50);
-  const [sortState, setSortState] = useState<SortState>({ field: "date", direction: "desc" });
-  const [merchantMappings, setMerchantMappings] = useState<Record<string, string>>({});
-  const [pagination, setPagination] = useState({
-    page: 1,
-    pageSize: 50,
-    totalCount: 0,
-    totalPages: 1,
-    hasNextPage: false,
-    hasPreviousPage: false
-  });
-  const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [bulkCategorizing, setBulkCategorizing] = useState(false);
-  const [bulkApplyingSuggestions, setBulkApplyingSuggestions] = useState(false);
-  const [bulkCategoryProgress, setBulkCategoryProgress] = useState<{ done: number; total: number } | null>(null);
-  const [exportingSelected, setExportingSelected] = useState(false);
-  const [applyingSuggestionId, setApplyingSuggestionId] = useState<string | null>(null);
-  const [showBulkCategoryModal, setShowBulkCategoryModal] = useState(false);
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [actionError, setActionError] = useState("");
-  const [createError, setCreateError] = useState("");
-  const didHydrateQueryRef = useRef(false);
-  const skipPageResetRef = useRef(true);
-  const importButtonRef = useRef<HTMLButtonElement | null>(null);
-  const [newTx, setNewTx] = useState<NewTransactionDraft>(initialDraft);
-  const isImportOpen = searchParams.get("import") === "1";
-  const isCreateOpen = searchParams.get("new") === "1";
-  const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
-  const manualTransactionAccounts = useMemo(
-    () => accounts.filter((account) => account.type !== "credit"),
-    [accounts]
-  );
-
-  const setQueryFlag = useCallback(
-    (key: "new" | "import", nextOpen: boolean): void => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (nextOpen) {
-        params.set(key, "1");
-      } else {
-        params.delete(key);
-      }
-
-      const queryString = params.toString();
-      router.push(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
-    },
-    [pathname, router, searchParams]
-  );
-
-  const setCreatePanelOpen = useCallback(
-    (nextOpen: boolean): void => {
-      setShowCreate(nextOpen);
-      setQueryFlag("new", nextOpen);
-    },
-    [setQueryFlag]
-  );
-
-  const setImportModalOpen = useCallback(
-    (nextOpen: boolean): void => {
-      setQueryFlag("import", nextOpen);
-    },
-    [setQueryFlag]
-  );
+  const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+  const [selectedType, setSelectedType] = useState<(typeof TYPE_LABELS)[number]>('Todas as Transações');
+  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [deletingIds, setDeletingIds] = useState<string[]>([]);
+  const [routeAccountId, setRouteAccountId] = useState('');
+  const [routeExcludedOnly, setRouteExcludedOnly] = useState(false);
+  const [routeUncategorizedOnly, setRouteUncategorizedOnly] = useState(false);
+  const hasInitializedFromRoute = useRef(false);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
-    if (didHydrateQueryRef.current) return;
-
-    const parsed = parseSharedFilters(searchParams, now);
-    const periodParam = searchParams.get("period") ?? searchParams.get("range");
-    const period = resolvePeriodFromQuery(periodParam) ?? "this-month";
-
-    skipPageResetRef.current = true;
-
-    setFilters((previous) => ({
-      ...previous,
-      period,
-      accountId: parsed.accountId,
-      type: parsed.type,
-      excluded: parsed.excluded,
-      categoryId: parsed.categoryId,
-      from: parsed.from,
-      to: parsed.to
-    }));
-
-    if (parsed.q) {
-      setSearchQuery(parsed.q);
-      setDebouncedQuery(parsed.q.trim());
-    }
-
-    const queryPageValue = Number(searchParams.get("page"));
-    const querySortState = resolveSortStateFromQuery(searchParams.get("sort"));
-
-    if (Number.isFinite(queryPageValue) && queryPageValue > 0) {
-      setPage(Math.floor(queryPageValue));
-    }
-
-    setSortState(querySortState);
-
-    const queryCategoryName = searchParams.get("category") ?? "";
-    if (queryCategoryName) {
-      if (queryCategoryName.toLowerCase() === "uncategorized") {
-        setUncategorizedOnly(true);
-      } else {
-        setPendingCategoryQuery(queryCategoryName);
-      }
-    }
-
-    didHydrateQueryRef.current = true;
-  }, [now, searchParams]);
-
-  useEffect(() => {
-    setShowCreate(isCreateOpen);
-  }, [isCreateOpen]);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedQuery(searchQuery.trim());
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timeoutId);
+    const handleClickOutside = () => {
+      setOpenMenuId(null);
+      setIsPeriodDropdownOpen(false);
+      setIsTypeDropdownOpen(false);
+      setIsCategoryDropdownOpen(false);
     };
-  }, [searchQuery]);
-
-  useEffect(() => {
-    if (!showCreate) return;
-
-    const handleEscape = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setCreatePanelOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleEscape);
-    return () => {
-      window.removeEventListener("keydown", handleEscape);
-    };
-  }, [setCreatePanelOpen, showCreate]);
-
-  useEffect(() => {
-    setMerchantMappings(getMappings());
-  }, []);
-
-  const upsertMerchantMapping = useCallback((merchantKey: string, categoryId: string): void => {
-    if (!merchantKey || !categoryId) return;
-    setMapping(merchantKey, categoryId);
-    setMerchantMappings((previous) => {
-      if (previous[merchantKey] === categoryId) {
-        return previous;
-      }
-
-      return {
-        ...previous,
-        [merchantKey]: categoryId
-      };
-    });
-  }, []);
-
-  const removeMerchantMapping = useCallback((merchantKey: string): void => {
-    if (!merchantKey) return;
-    removeMapping(merchantKey);
-    setMerchantMappings((previous) => {
-      if (!(merchantKey in previous)) {
-        return previous;
-      }
-
-      const next = { ...previous };
-      delete next[merchantKey];
-      return next;
-    });
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
   useEffect(() => {
-    if (!pendingCategoryQuery || categories.length === 0) {
+    const resolved = resolveTransactionsRouteState(new URLSearchParams(searchParams.toString()));
+
+    setSelectedPeriod(resolved.period);
+    setSelectedType(resolved.typeLabel);
+    setSelectedCategoryFilter(resolved.categoryId);
+    setSearchQuery(resolved.searchQuery);
+    setRouteAccountId(resolved.accountId);
+    setRouteExcludedOnly(resolved.excludedOnly);
+    setRouteUncategorizedOnly(resolved.uncategorizedOnly);
+    hasInitializedFromRoute.current = true;
+  }, [searchParams]);
+
+  const requestQuery = useMemo(() => {
+    if (!hasInitializedFromRoute.current) return '';
+    return buildTransactionsRequestParams({
+      period: selectedPeriod,
+      typeLabel: selectedType,
+      categoryId: selectedCategoryFilter,
+      accountId: routeAccountId,
+      excludedOnly: routeExcludedOnly,
+      searchQuery: deferredSearchQuery
+    }).toString();
+  }, [deferredSearchQuery, routeAccountId, routeExcludedOnly, selectedCategoryFilter, selectedPeriod, selectedType]);
+
+  useEffect(() => {
+    if (!hasInitializedFromRoute.current || !requestQuery) {
       return;
     }
 
-    const normalizedQuery = normalizeText(pendingCategoryQuery);
-    const matchedCategory = categories.find((category) => {
-      const normalizedCategoryName = normalizeText(category.name);
-      return (
-        normalizedCategoryName === normalizedQuery || normalizedCategoryName.includes(normalizedQuery)
-      );
-    });
+    let active = true;
 
-    if (matchedCategory) {
-      setFilters((previous) => ({ ...previous, categoryId: matchedCategory.id }));
-      setPendingCategoryQuery("");
-    }
-  }, [categories, pendingCategoryQuery]);
+    const load = async (): Promise<void> => {
+      setLoading(true);
+      setError('');
 
-  useEffect(() => {
-    if (filters.categoryId) {
-      setUncategorizedOnly(false);
-    }
-  }, [filters.categoryId]);
+      try {
+        const response = await fetch(`/api/transactions?${requestQuery}`, {
+          cache: 'no-store'
+        });
+        const { data, errorMessage } = await parseApiResponse<TransactionsResponse | { error?: unknown }>(response);
 
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    const sortQuery = serializeSortState(sortState);
-    const periodQuery = resolvePeriodQuery(filters);
+        if (errorMessage) throw new Error(errorMessage);
+        if (!response.ok || !data || !('items' in data)) {
+          throw new Error(extractApiError(data, 'Não foi possível carregar transações.'));
+        }
 
-    params.set("period", periodQuery.period);
-    if (periodQuery.from) params.set("from", periodQuery.from);
-    if (periodQuery.to) params.set("to", periodQuery.to);
-    if (filters.type) params.set("type", filters.type);
-    if (filters.accountId) params.set("accountId", filters.accountId);
-    if (filters.categoryId) params.set("categoryId", filters.categoryId);
-    if (filters.excluded === "excluded") params.set("excluded", "true");
-    if (debouncedQuery) params.set("q", debouncedQuery);
-
-    params.set("page", String(page));
-    params.set("pageSize", String(pageSize));
-    params.set("sort", sortQuery);
-    return params.toString();
-  }, [debouncedQuery, filters, page, pageSize, sortState]);
-
-  const {
-    data: transactionsResponse,
-    error: transactionsError,
-    isLoading,
-    isValidating,
-    mutate: mutateTransactions
-  } = useSWR(`/api/transactions?${queryString}&includeMeta=1`, fetchTransactionsResource, {
-    revalidateOnFocus: false,
-    keepPreviousData: true
-  });
-
-  const loading = isLoading && !transactionsResponse;
-  const refreshing = isValidating && Boolean(transactionsResponse) && !loading;
-  const refreshMessage = resolveTransactionsRefreshMessage({
-    refreshing,
-    page,
-    debouncedQuery,
-    filters
-  });
-
-  useEffect(() => {
-    if (!transactionsResponse) return;
-
-    setTransactions(transactionsResponse.items);
-    setSummary({
-      income: transactionsResponse.summary.income,
-      expense: transactionsResponse.summary.expense,
-      balance: transactionsResponse.summary.balance,
-      periodCashInflow: transactionsResponse.summary.periodCashInflow ?? transactionsResponse.summary.income,
-      periodCashOutflow: transactionsResponse.summary.periodCashOutflow ?? transactionsResponse.summary.expense,
-      periodCashFlow: transactionsResponse.summary.periodCashFlow ?? transactionsResponse.summary.balance,
-      cashBalance: transactionsResponse.summary.cashBalance ?? transactionsResponse.summary.balance
-    });
-    setPagination(transactionsResponse.pagination);
-
-    if (transactionsResponse.meta) {
-      setAccounts(transactionsResponse.meta.accounts);
-      setCategories(transactionsResponse.meta.categories);
-    }
-
-    setActionError("");
-  }, [transactionsResponse]);
-
-  useEffect(() => {
-    if (!transactionsError) return;
-    const message = transactionsError instanceof Error ? transactionsError.message : "Falha ao carregar transações.";
-    setActionError(message);
-  }, [transactionsError]);
-
-  useEffect(() => {
-    if (!manualTransactionAccounts.length) return;
-    setNewTx((previous) => {
-      if (previous.accountId && manualTransactionAccounts.some((account) => account.id === previous.accountId)) {
-        return previous;
+        if (!active) return;
+        setTransactions(data.items);
+        setCategories(data.meta?.categories ?? []);
+        setSummary({
+          income: data.summary?.income ?? 0,
+          expense: data.summary?.expense ?? 0,
+          balance: data.summary?.balance ?? 0,
+          cashBalance: data.summary?.cashBalance ?? 0
+        });
+      } catch (loadError) {
+        if (!active) return;
+        setTransactions([]);
+        setCategories([]);
+        setSummary({ income: 0, expense: 0, balance: 0, cashBalance: 0 });
+        setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar transações.');
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
       }
-      return { ...previous, accountId: manualTransactionAccounts[0].id };
-    });
-  }, [manualTransactionAccounts]);
+    };
 
-  useEffect(() => {
-    if (skipPageResetRef.current) {
-      skipPageResetRef.current = false;
-      return;
-    }
+    void load();
 
-    setPage(1);
-  }, [
-    debouncedQuery,
-    filters.accountId,
-    filters.categoryId,
-    filters.excluded,
-    filters.from,
-    filters.period,
-    filters.to,
-    filters.type,
-    sortState.direction,
-    sortState.field
-  ]);
-
-  useEffect(() => {
-    if (!didHydrateQueryRef.current) return;
-
-    const params = new URLSearchParams(searchParams.toString());
-    const periodQuery = resolvePeriodQuery(filters);
-    const sortQuery = serializeSortState(sortState);
-    const fromValue = periodQuery.from ? periodQuery.from.slice(0, 10) : "";
-    const toValue = periodQuery.to ? periodQuery.to.slice(0, 10) : "";
-
-    params.set("period", periodQuery.period);
-
-    if (fromValue) params.set("from", fromValue);
-    else params.delete("from");
-
-    if (toValue) params.set("to", toValue);
-    else params.delete("to");
-
-    if (filters.accountId) params.set("accountId", filters.accountId);
-    else params.delete("accountId");
-
-    if (filters.type) params.set("type", filters.type);
-    else params.delete("type");
-
-    if (filters.excluded === "included") params.set("excluded", "false");
-    else if (filters.excluded === "excluded") params.set("excluded", "true");
-    else params.delete("excluded");
-
-    if (filters.categoryId) params.set("categoryId", filters.categoryId);
-    else params.delete("categoryId");
-
-    if (debouncedQuery) params.set("q", debouncedQuery);
-    else params.delete("q");
-
-    if (sortQuery !== "date_desc") params.set("sort", sortQuery);
-    else params.delete("sort");
-
-    if (page > 1) params.set("page", String(page));
-    else params.delete("page");
-
-    params.delete("range");
-    if (!uncategorizedOnly) {
-      params.delete("category");
-    }
-
-    const nextQuery = params.toString();
-    const currentQuery = searchParams.toString();
-    if (nextQuery === currentQuery) return;
-
-    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
-  }, [
-    debouncedQuery,
-    filters,
-    page,
-    pathname,
-    router,
-    searchParams,
-    sortState,
-    uncategorizedOnly
-  ]);
-
-  const loadTransactions = useCallback(async (): Promise<void> => {
-    await mutateTransactions();
-  }, [mutateTransactions]);
-
-  const refreshFinanceData = useCallback(async (): Promise<void> => {
-    await loadTransactions();
-    await Promise.all([
-      mutateCache(
-        (key) => typeof key === "string" && key.startsWith("/api/dashboard/"),
-        undefined,
-        { revalidate: true }
-      ),
-      mutateCache(
-        (key) => typeof key === "string" && key.startsWith("/api/metrics/official"),
-        undefined,
-        { revalidate: true }
-      ),
-      mutateCache(
-        (key) => typeof key === "string" && key.startsWith("/api/accounts"),
-        undefined,
-        { revalidate: true }
-      ),
-      mutateCache(
-        (key) => typeof key === "string" && key.startsWith("/api/net-worth"),
-        undefined,
-        { revalidate: true }
-      ),
-      mutateCache(
-        (key) => typeof key === "string" && key.startsWith("/api/reports"),
-        undefined,
-        { revalidate: true }
-      ),
-      mutateCache(
-        (key) => typeof key === "string" && key.startsWith("/api/reconcile/review"),
-        undefined,
-        { revalidate: true }
-      )
-    ]);
-  }, [loadTransactions]);
-
-  const refreshFinanceDataAndRoute = useCallback(async (): Promise<void> => {
-    await refreshFinanceData();
-    router.refresh();
-  }, [refreshFinanceData, router]);
-
-  useEffect(() => {
-    if (selectedCount > 0) return;
-    setShowBulkCategoryModal(false);
-    setShowBulkDeleteModal(false);
-  }, [selectedCount]);
+    return () => {
+      active = false;
+    };
+  }, [requestQuery]);
 
   const visibleTransactions = useMemo(() => {
-    if (!uncategorizedOnly) {
+    if (!routeUncategorizedOnly) {
       return transactions;
     }
 
-    return transactions.filter((transaction) => isUncategorizedTransaction(transaction));
-  }, [transactions, uncategorizedOnly]);
+    return transactions.filter((transaction) => !transaction.categoryId);
+  }, [routeUncategorizedOnly, transactions]);
 
-  const uncategorizedStats = useMemo(() => {
-    const total = transactions.length;
-    const count = transactions.filter((transaction) => isUncategorizedTransaction(transaction)).length;
+  const visibleSummary = useMemo(() => {
+    if (!routeUncategorizedOnly) {
+      return summary;
+    }
 
-    return {
-      total,
-      count,
-      percentage: total > 0 ? Math.round((count / total) * 100) : 0
-    };
-  }, [transactions]);
+    return visibleTransactions.reduce(
+      (accumulator, transaction) => {
+        if (transaction.amount >= 0) {
+          accumulator.income += Math.abs(transaction.amount);
+        } else {
+          accumulator.expense += Math.abs(transaction.amount);
+        }
+        accumulator.balance = accumulator.income - accumulator.expense;
+        return accumulator;
+      },
+      { income: 0, expense: 0, balance: 0 }
+    );
+  }, [routeUncategorizedOnly, summary, visibleTransactions]);
 
   useEffect(() => {
-    syncWithAvailableIds(visibleTransactions.map((transaction) => transaction.id));
-  }, [syncWithAvailableIds, visibleTransactions]);
+    setSelectedIds((previous) => new Set([...previous].filter((id) => visibleTransactions.some((transaction) => transaction.id === id))));
+  }, [visibleTransactions]);
 
-  const insightsPeriod = useMemo(
-    () =>
-      buildPeriodComparison({
-        range: filters.period,
-        from: filters.from || undefined,
-        to: filters.to || undefined,
-        referenceDate: new Date()
-      }),
-    [filters.period, filters.from, filters.to]
-  );
-
-  const insights = useMemo(
-    () =>
-      buildInsights({
-        transactions: visibleTransactions,
-        categories,
-        period: insightsPeriod,
-        today: new Date()
-      }),
-    [visibleTransactions, categories, insightsPeriod]
-  );
-
-  const categoryRules = useMemo(() => buildCategoryRules(categories), [categories]);
-
-  const suggestionContext = useMemo(
-    () =>
-      buildSuggestionContext({
-        categories,
-        transactions: visibleTransactions,
-        mappings: merchantMappings,
-        rules: categoryRules
-      }),
-    [categories, visibleTransactions, merchantMappings, categoryRules]
-  );
-
-  const suggestionsById = useMemo(() => {
-    const next = new Map<string, Suggestion>();
-
-    for (const transaction of visibleTransactions) {
-      if (!isTransactionUncategorized(transaction)) {
-        continue;
-      }
-
-      const suggestion = suggestCategory(transaction, suggestionContext);
-      if (!suggestion) continue;
-      if (suggestion.categoryId === transaction.categoryId) continue;
-      next.set(transaction.id, suggestion);
+  const toggleSelection = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextSelected = new Set(selectedIds);
+    if (nextSelected.has(id)) {
+      nextSelected.delete(id);
+    } else {
+      nextSelected.add(id);
     }
+    setSelectedIds(nextSelected);
+  };
 
-    return next;
-  }, [visibleTransactions, suggestionContext]);
-
-  const selectedSuggestionEntries = useMemo(
-    () =>
-      visibleTransactions.flatMap((transaction) => {
-        if (!selectedSet.has(transaction.id)) return [];
-        const suggestion = suggestionsById.get(transaction.id);
-        if (!suggestion) return [];
-        return [{ transaction, suggestion }];
-      }),
-    [selectedSet, visibleTransactions, suggestionsById]
-  );
-
-  const handleCreate = async (): Promise<void> => {
-    const trimmedDescription = newTx.description.trim();
-    const selectedAccount = accountById.get(newTx.accountId);
-
-    if (!trimmedDescription || !newTx.amount.trim() || !newTx.accountId) {
-      const message = "Preencha descrição, valor e conta para criar uma transação.";
-      setCreateError(message);
-      toast({ variant: "error", title: "Campos obrigatórios", description: message });
-      return;
-    }
-    if (!selectedAccount || selectedAccount.type === "credit") {
-      const message = "Selecione uma conta corrente/caixa/investimento. Conta de cartão aceita apenas fatura/transferência.";
-      setCreateError(message);
-      toast({ variant: "error", title: "Conta inválida", description: message });
-      return;
-    }
-
-    setCreating(true);
-    setCreateError("");
-    try {
-      const response = await fetch("/api/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: newTx.date,
-          description: trimmedDescription,
-          amount: Number(newTx.amount),
-          accountId: newTx.accountId,
-          categoryId: newTx.categoryId || null
-        })
-      });
-      const { data, errorMessage } = await parseApiResponse<TransactionDTO | { error?: unknown }>(response);
-
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-
-      if (!response.ok || !data || !("id" in data)) {
-        throw new Error(extractApiError(data, "Falha ao criar transação."));
-      }
-
-      setNewTx((previous) => ({ ...previous, description: "", amount: "", categoryId: "" }));
-      setCreatePanelOpen(false);
-      await refreshFinanceData();
-      toast({ variant: "success", title: "Transação criada", description: "A lista foi atualizada." });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao criar transação.";
-      setCreateError(message);
-      toast({ variant: "error", title: "Erro ao criar transação", description: message });
-    } finally {
-      setCreating(false);
+  const toggleAll = () => {
+    if (selectedIds.size === visibleTransactions.length && visibleTransactions.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visibleTransactions.map((transaction) => transaction.id)));
     }
   };
 
-  const patchTransactionCategory = useCallback(
-    async (transactionId: string, categoryId: string | null): Promise<void> => {
-      const response = await fetch(`/api/transactions/${transactionId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categoryId })
-      });
-      const { data, errorMessage } = await parseApiResponse<TransactionDTO | { error?: unknown }>(response);
-
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-
-      if (!response.ok || !data || !("id" in data)) {
-        throw new Error(extractApiError(data, "Falha ao atualizar categoria."));
-      }
-    },
-    []
-  );
-
-  const handleCategoryChange = async (
-    transactionId: string,
-    categoryId: string | null,
-    options?: {
-      learnMapping?: boolean;
-      showSuccessToast?: boolean;
-      successMessage?: string;
-    }
-  ): Promise<boolean> => {
-    const shouldLearn = options?.learnMapping ?? true;
+  const deleteTransactions = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    setDeletingIds(ids);
 
     try {
-      await patchTransactionCategory(transactionId, categoryId);
+      const response =
+        ids.length === 1
+          ? await fetch(`/api/transactions/${ids[0]}`, { method: 'DELETE' })
+          : await fetch('/api/transactions', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids })
+            });
 
-      if (shouldLearn) {
-        const transaction = transactions.find((item) => item.id === transactionId);
-        if (transaction) {
-          const merchantKey = extractMerchantKey(transaction);
-          if (categoryId) {
-            upsertMerchantMapping(merchantKey, categoryId);
-          } else {
-            removeMerchantMapping(merchantKey);
-          }
-        }
+      const { data, errorMessage } = await parseApiResponse<{ success?: boolean } | { error?: unknown }>(response);
+
+      if (errorMessage) throw new Error(errorMessage);
+      if (!response.ok) {
+        throw new Error(extractApiError(data, 'Não foi possível excluir transações.'));
       }
 
-      await refreshFinanceData();
-
-      if (options?.showSuccessToast) {
-        toast({
-          variant: "success",
-          title: "Categoria aplicada",
-          description: options.successMessage ?? "Categoria atualizada com sucesso."
-        });
-      }
-
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao atualizar categoria.";
-      setActionError(message);
-      toast({ variant: "error", title: "Erro ao atualizar categoria", description: message });
-      return false;
-    }
-  };
-
-  const handleDelete = async (transactionId: string): Promise<void> => {
-    setActionError("");
-    try {
-      const response = await fetch(`/api/transactions/${transactionId}`, { method: "DELETE" });
-      const { data, errorMessage } = await parseApiResponse<{ success?: boolean; error?: unknown }>(response);
-
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-
-      if (!response.ok || !data?.success) {
-        throw new Error(extractApiError(data, "Falha ao excluir transação."));
-      }
-
-      await refreshFinanceDataAndRoute();
-      toast({ variant: "success", title: "Transação excluída", description: "Lançamento removido com sucesso." });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir transação.";
-      setActionError(message);
-      toast({ variant: "error", title: "Erro ao excluir transação", description: message });
-    }
-  };
-
-  const handleDeleteSelected = async (): Promise<void> => {
-    if (selectedIds.length === 0 || bulkDeleting) return;
-
-    const ids = [...new Set(selectedIds)];
-    setBulkDeleting(true);
-    setActionError("");
-    try {
-      const response = await fetch("/api/transactions", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids })
-      });
-
-      const { data, errorMessage } = await parseApiResponse<
-        | {
-            success: boolean;
-            requestedCount: number;
-            deletedCount: number;
-          }
-        | {
-            error?: unknown;
-          }
-      >(response);
-
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-
-      if (!response.ok || !data || !("success" in data)) {
-        throw new Error(extractApiError(data, "Falha ao excluir transações selecionadas."));
-      }
-
-      clearSelection();
-      setShowBulkDeleteModal(false);
-      await refreshFinanceDataAndRoute();
+      setTransactions((previous) => previous.filter((transaction) => !ids.includes(transaction.id)));
+      setSelectedIds((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
       toast({
-        variant: "success",
-        title: "Exclusão concluída",
-        description: `${data.deletedCount} transação(ões) removida(s).`
+        variant: 'success',
+        title: ids.length === 1 ? 'Transação excluída' : 'Transações excluídas',
+        description: ids.length === 1 ? 'O lançamento foi removido.' : 'Os lançamentos selecionados foram removidos.'
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao excluir transações selecionadas.";
-      setActionError(message);
-      toast({ variant: "error", title: "Erro na exclusão em massa", description: message });
-    } finally {
-      setBulkDeleting(false);
-    }
-  };
-
-  const handleBulkCategoryApply = async (categoryId: string | null): Promise<void> => {
-    if (selectedIds.length === 0 || bulkCategorizing) return;
-
-    const ids = [...new Set(selectedIds)];
-    const categoryLabel = categoryId
-      ? categories.find((category) => category.id === categoryId)?.name ?? "categoria selecionada"
-      : "Sem categoria";
-
-    setBulkCategoryProgress({ done: 0, total: ids.length });
-    setBulkCategorizing(true);
-    setActionError("");
-
-    try {
-      const result = await runWithConcurrency(
-        ids,
-        4,
-        async (transactionId) => {
-          await patchTransactionCategory(transactionId, categoryId);
-        },
-        (done, total) => {
-          setBulkCategoryProgress({ done, total });
-        }
-      );
-
-      if (result.successCount > 0) {
-        clearSelection();
-        setShowBulkCategoryModal(false);
-      }
-
-      await refreshFinanceData();
-
-      if (result.failureCount === 0) {
-        toast({
-          variant: "success",
-          title: "Categoria aplicada",
-          description: `${result.successCount} transação(ões) atualizada(s) para ${categoryLabel}.`
-        });
-      } else {
-        toast({
-          variant: "error",
-          title: "Atualização parcial",
-          description: `${result.successCount} atualizada(s) e ${result.failureCount} com falha.`
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao categorizar transações selecionadas.";
-      setActionError(message);
-      toast({ variant: "error", title: "Erro ao categorizar em lote", description: message });
-    } finally {
-      setBulkCategorizing(false);
-      setBulkCategoryProgress(null);
-    }
-  };
-
-  const handleExportSelected = async (): Promise<void> => {
-    if (selectedIds.length === 0 || exportingSelected) return;
-
-    setExportingSelected(true);
-    try {
-      const rows = visibleTransactions.filter((transaction) => isSelected(transaction.id));
-
-      if (rows.length === 0) {
-        toast({
-          variant: "info",
-          title: "Nada para exportar",
-          description: "Nenhuma transação selecionada no conjunto atual."
-        });
-        return;
-      }
-
-      const csvRows = [
-        [
-          "Descrição",
-          "Categoria",
-          "Conta",
-          "Data",
-          "Valor",
-          "Tipo",
-          "Status"
-        ].join(","),
-        ...rows.map((transaction) =>
-          [
-            transaction.description,
-            transaction.category?.name ?? "Sem categoria",
-            transaction.account.name,
-            format(new Date(transaction.date), "dd/MM/yyyy"),
-            transaction.amount.toFixed(2).replace(".", ","),
-            transaction.type,
-            transaction.status
-          ]
-            .map((value) => escapeCsvValue(String(value)))
-            .join(",")
-        )
-      ];
-
-      const fileDate = format(new Date(), "yyyy-MM-dd");
-      const fileName = `transactions_selected_${rows.length}_${fileDate}.csv`;
-      const csvContent = `\uFEFF${csvRows.join("\n")}`;
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
+    } catch (deleteError) {
       toast({
-        variant: "success",
-        title: "Exportação concluída",
-        description: `${rows.length} transação(ões) exportada(s).`
+        variant: 'error',
+        title: 'Erro ao excluir',
+        description: deleteError instanceof Error ? deleteError.message : 'Falha ao excluir transações.'
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Falha ao exportar transações selecionadas.";
-      setActionError(message);
-      toast({ variant: "error", title: "Erro ao exportar", description: message });
     } finally {
-      setExportingSelected(false);
+      setDeletingIds([]);
     }
   };
 
-  const handleApplySuggestion = async (
-    transaction: TransactionDTO,
-    suggestion: Suggestion
-  ): Promise<void> => {
-    if (applyingSuggestionId) return;
-
-    setApplyingSuggestionId(transaction.id);
-    try {
-      const applied = await handleCategoryChange(transaction.id, suggestion.categoryId, {
-        learnMapping: false,
-        showSuccessToast: true,
-        successMessage: `${transaction.description} foi categorizada automaticamente.`
-      });
-
-      if (applied) {
-        upsertMerchantMapping(suggestion.merchantKey, suggestion.categoryId);
-      }
-    } finally {
-      setApplyingSuggestionId(null);
-    }
-  };
-
-  const handleApplySuggestionsBulk = async (): Promise<void> => {
-    if (selectedSuggestionEntries.length === 0 || bulkApplyingSuggestions) {
-      return;
-    }
-
-    setBulkApplyingSuggestions(true);
-    setActionError("");
-
-    try {
-      const successfulMappings: Array<{ merchantKey: string; categoryId: string }> = [];
-
-      const result = await runWithConcurrency(
-        selectedSuggestionEntries,
-        4,
-        async (entry) => {
-          await patchTransactionCategory(entry.transaction.id, entry.suggestion.categoryId);
-          successfulMappings.push({
-            merchantKey: entry.suggestion.merchantKey,
-            categoryId: entry.suggestion.categoryId
-          });
-        }
-      );
-
-      if (successfulMappings.length > 0) {
-        for (const mapping of successfulMappings) {
-          upsertMerchantMapping(mapping.merchantKey, mapping.categoryId);
-        }
-        clearSelection();
-      }
-
-      await refreshFinanceData();
-
-      if (result.failureCount === 0) {
-        toast({
-          variant: "success",
-          title: "Sugestões aplicadas",
-          description: `${result.successCount} transação(ões) categorizada(s) automaticamente.`
-        });
-      } else {
-        toast({
-          variant: "error",
-          title: "Aplicação parcial",
-          description: `${result.successCount} aplicada(s) e ${result.failureCount} com falha.`
-        });
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Falha ao aplicar sugestões selecionadas.";
-      setActionError(message);
-      toast({ variant: "error", title: "Erro ao aplicar sugestões", description: message });
-    } finally {
-      setBulkApplyingSuggestions(false);
-    }
-  };
-
-  const refreshMetaAndData = async (): Promise<void> => {
-    await refreshFinanceData();
-  };
-
-  const clearAllFilters = useCallback(() => {
-    setFilters(initialFilters);
-    setSortState({ field: "date", direction: "desc" });
-    setPage(1);
-    setSearchQuery("");
-    setDebouncedQuery("");
-    setPendingCategoryQuery("");
-    setUncategorizedOnly(false);
-  }, []);
-
-  const organizeUncategorized = useCallback(() => {
-    setUncategorizedOnly(true);
-    setFilters((previous) => ({ ...previous, categoryId: "" }));
-    setPage(1);
-  }, []);
-
-  const actions = (
-    <>
-      <Button
-        variant="outline"
-        onClick={() => setCreatePanelOpen(!showCreate)}
-        className="flex-1 whitespace-nowrap border-border/90 bg-card/90 text-foreground shadow-sm hover:bg-secondary dark:border-border dark:bg-secondary/60 dark:text-foreground dark:hover:bg-secondary sm:flex-none"
-        aria-label={showCreate ? "Fechar formulário de nova transação" : "Adicionar transação manualmente"}
-      >
-        <Plus className="h-4 w-4" />
-        {showCreate ? "Fechar" : "Nova"}
-      </Button>
-      <Button
-        ref={importButtonRef}
-        onClick={() => setImportModalOpen(true)}
-        className="flex-1 whitespace-nowrap border border-primary/35 bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 sm:flex-none"
-        aria-label="Importar extrato"
-      >
-        <Upload className="h-4 w-4" />
-        <span className="sm:hidden">Importar</span>
-        <span className="hidden sm:inline">Importar extrato</span>
-      </Button>
-    </>
+  const categoryOptions = useMemo(
+    () => categories.slice().sort((left, right) => left.name.localeCompare(right.name)),
+    [categories]
   );
-
-  const periodLabel = useMemo(
-    () =>
-      resolveTransactionsPeriodLabel({
-        period: filters.period,
-        from: filters.from,
-        to: filters.to
-      }),
-    [filters.period, filters.from, filters.to]
-  );
+  const selectedCategoryLabel = useMemo(() => {
+    if (!selectedCategoryFilter) return 'Categorias';
+    return categories.find((category) => category.id === selectedCategoryFilter)?.name ?? 'Categorias';
+  }, [categories, selectedCategoryFilter]);
 
   return (
-    <PageShell
-      title="Transações"
-      subtitle="Veja todas as movimentações importadas do seu banco e registre lançamentos quando precisar."
-      actions={actions}
-    >
-      <ImportTransactionsModal
-        open={isImportOpen}
-        accounts={accounts}
-        triggerRef={importButtonRef}
-        onOpenChange={setImportModalOpen}
-        onSuccess={async () => {
-          await refreshMetaAndData();
-          router.refresh();
-        }}
-        onAccountsRefresh={() => refreshMetaAndData()}
-      />
-      <div className="space-y-5">
-        <section className="grid gap-4 xl:grid-cols-2" aria-label="Guias da tela de transações">
-          <GuidanceCard
-            eyebrow="Transações"
-            title="Veja todas as movimentações importadas do seu banco"
-            description="Use esta tela para filtrar, revisar categorias, corrigir lançamentos e acompanhar o que entrou e saiu."
-            tooltip="Depois da importação, esta é a área principal para revisar transações, aplicar categorias e fazer ajustes manuais."
-            ctaLabel="Importar extrato"
-            ctaHref="/transactions?import=1"
-          />
-          <GuidanceCard
-            eyebrow="Iniciante"
-            title="Sem conta bancária? Comece com lançamentos manuais"
-            description="Se você ainda não usa extratos bancários, clique em Nova para cadastrar receitas e gastos manualmente."
-            tooltip="O app já aceita lançamentos manuais. Isso ajuda usuários iniciantes ou quem ainda não centraliza tudo no banco."
-            ctaLabel="Novo lançamento"
-            ctaHref="/transactions?new=1"
-          />
-        </section>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <header className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Transações</h1>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <button onClick={onImport} className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-secondary/40 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary/80">
+            <UploadCloud size={16} className="text-muted-foreground" />
+            Importar extrato
+          </button>
+          <button onClick={() => onNewTransaction()} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-primary/90">
+            <Plus size={16} />
+            Nova Transação
+          </button>
+        </div>
+      </header>
 
-        <TransactionsKpiCards
-          income={summary.income}
-          expense={summary.expense}
-          cashOutflow={summary.periodCashOutflow}
-          periodBalance={summary.periodCashFlow}
-          cashBalance={summary.cashBalance}
-          periodLabel={periodLabel}
-        />
-
-        {uncategorizedStats.count > 0 && !uncategorizedOnly ? (
-          <section className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50/90 via-amber-50/60 to-card px-4 py-3 shadow-sm dark:border-amber-900/60 dark:from-amber-950/30 dark:via-card dark:to-card sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                <AlertTriangle className="h-4 w-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm text-amber-900 dark:text-amber-100">
-                  <span className="font-semibold">Transações sem categoria:</span> você tem{" "}
-                  <span className="font-semibold">{uncategorizedStats.count}</span> lançamento(s) sem categoria no
-                  período atual.
-                </p>
-                <p className="text-xs text-amber-700/90 dark:text-amber-300/90">
-                  Isso representa {uncategorizedStats.percentage}% das transações carregadas.
-                </p>
+      <div className="flex flex-col gap-3 text-sm sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative">
+          <button onClick={(e) => { e.stopPropagation(); setIsPeriodDropdownOpen(!isPeriodDropdownOpen); setIsTypeDropdownOpen(false); setIsCategoryDropdownOpen(false); }} className={cn('flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 transition-colors sm:w-auto', isPeriodDropdownOpen ? 'bg-secondary/80 border-border text-foreground' : 'bg-secondary/40 border-border hover:bg-secondary/80')}>
+            {selectedPeriod.label} <ChevronDown size={14} className={cn('text-muted-foreground transition-transform', isPeriodDropdownOpen && 'rotate-180')} />
+          </button>
+          {isPeriodDropdownOpen ? (
+            <div className="absolute left-0 top-full mt-2 w-48 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-col py-1">
+                {PERIOD_LABELS.map((period) => (
+                  <button
+                    key={period}
+                    className={cn('px-4 py-2 text-xs text-left transition-colors', selectedPeriod.label === period ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40')}
+                    onClick={() => {
+                      if (period === 'Últimos 7 dias') setSelectedPeriod({ mode: '7d', label: period });
+                      if (period === 'Últimos 30 dias') setSelectedPeriod({ mode: '30d', label: period });
+                      if (period === 'Este mês') setSelectedPeriod({ mode: 'this-month', label: period });
+                      if (period === 'Mês passado') setSelectedPeriod({ mode: 'last-month', label: period });
+                      if (period === 'Este ano') setSelectedPeriod({ mode: 'this-year', label: period });
+                      setIsPeriodDropdownOpen(false);
+                    }}
+                  >
+                    {period}
+                  </button>
+                ))}
               </div>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-8 shrink-0 rounded-lg px-3 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-950/50"
-              onClick={organizeUncategorized}
-            >
-              Organizar agora
-            </Button>
-          </section>
-        ) : null}
+          ) : null}
+        </div>
 
-        {showCreate ? (
-          <TransactionForm
-            values={newTx}
-            accounts={manualTransactionAccounts}
-            categories={categories}
-            busy={creating}
-            error={createError}
-            onChange={(next) => setNewTx((previous) => ({ ...previous, ...next }))}
-            onSubmit={() => handleCreate()}
-            onCancel={() => setCreatePanelOpen(false)}
-          />
-        ) : null}
+        <div className="relative">
+          <button onClick={(e) => { e.stopPropagation(); setIsTypeDropdownOpen(!isTypeDropdownOpen); setIsPeriodDropdownOpen(false); setIsCategoryDropdownOpen(false); }} className={cn('flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 transition-colors sm:w-auto', isTypeDropdownOpen || selectedType !== 'Todas as Transações' ? 'bg-secondary/80 border-border text-foreground' : 'bg-secondary/40 border-border hover:bg-secondary/80')}>
+            {selectedType} <ChevronDown size={14} className={cn('text-muted-foreground transition-transform', isTypeDropdownOpen && 'rotate-180')} />
+          </button>
+          {isTypeDropdownOpen ? (
+            <div className="absolute left-0 top-full mt-2 w-48 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-col py-1">
+                {TYPE_LABELS.map((typeLabel) => (
+                  <button key={typeLabel} className={cn('px-4 py-2 text-xs text-left transition-colors', selectedType === typeLabel ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40')} onClick={() => { setSelectedType(typeLabel); setIsTypeDropdownOpen(false); }}>
+                    {typeLabel}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
 
-        <TransactionsFiltersBar
-          filters={filters}
-          accounts={accounts}
-          categories={categories}
-          searchQuery={searchQuery}
-          busy={loading}
-          onSearchQueryChange={setSearchQuery}
-          onChange={(next) => setFilters((previous) => ({ ...previous, ...next }))}
-          onClear={clearAllFilters}
-        />
+        <div className="relative">
+          <button onClick={(e) => { e.stopPropagation(); setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsPeriodDropdownOpen(false); setIsTypeDropdownOpen(false); }} className={cn('flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 transition-colors sm:w-auto', isCategoryDropdownOpen || selectedCategoryFilter ? 'bg-secondary/80 border-border text-foreground' : 'bg-secondary/40 border-border hover:bg-secondary/80')}>
+            {selectedCategoryLabel} <ChevronDown size={14} className={cn('text-muted-foreground transition-transform', isCategoryDropdownOpen && 'rotate-180')} />
+          </button>
+          {isCategoryDropdownOpen ? (
+            <div className="absolute left-0 top-full mt-2 w-48 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200" onClick={(e) => e.stopPropagation()}>
+              <div className="flex flex-col py-1 max-h-48 overflow-y-auto">
+                <button className={cn('px-4 py-2 text-xs text-left transition-colors', !selectedCategoryFilter ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40')} onClick={() => { setSelectedCategoryFilter(''); setIsCategoryDropdownOpen(false); }}>
+                  Todas as Categorias
+                </button>
+                {categoryOptions.map((category) => (
+                  <button key={category.id} className={cn('px-4 py-2 text-xs text-left transition-colors', selectedCategoryFilter === category.id ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40')} onClick={() => { setSelectedCategoryFilter(category.id); setIsCategoryDropdownOpen(false); }}>
+                    {category.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
 
-        <InsightsBanner insights={insights} />
-
-        <BulkActionsBar
-          selectedCount={selectedCount}
-          suggestionCount={selectedSuggestionEntries.length}
-          deleting={bulkDeleting}
-          categorizing={bulkCategorizing}
-          exporting={exportingSelected}
-          applyingSuggestions={bulkApplyingSuggestions}
-          onClearSelection={clearSelection}
-          onDelete={() => setShowBulkDeleteModal(true)}
-          onSetCategory={() => setShowBulkCategoryModal(true)}
-          onExport={() => void handleExportSelected()}
-          onApplySuggestions={() => void handleApplySuggestionsBulk()}
-        />
-
-        {refreshMessage ? (
-          <FeedbackMessage variant="info" data-testid="transactions-refresh-feedback">
-            {refreshMessage}
-          </FeedbackMessage>
-        ) : null}
-
-        {actionError ? <FeedbackMessage variant="error">{actionError}</FeedbackMessage> : null}
-
-        <TransactionsTable
-          items={visibleTransactions}
-          categories={categories}
-          selectedIds={selectedIds}
-          suggestionsById={suggestionsById}
-          applyingSuggestionId={applyingSuggestionId}
-          loading={loading}
-          sortField={sortState.field}
-          sortDirection={sortState.direction}
-          totalCount={pagination.totalCount}
-          visibleCount={visibleTransactions.length}
-          onToggleSort={(field) =>
-            setSortState((previous) => {
-              if (previous.field === field) {
-                return {
-                  field,
-                  direction: previous.direction === "asc" ? "desc" : "asc"
-                };
-              }
-
-              return { field, direction: field === "date" ? "desc" : "asc" };
-            })
-          }
-          onToggleSelectAll={(checked) =>
-            toggleSelectAll(
-              visibleTransactions.map((transaction) => transaction.id),
-              checked
-            )
-          }
-          onToggleSelect={(id, checked) => toggleSelection(id, checked)}
-          onCategoryChange={(id, categoryId) => void handleCategoryChange(id, categoryId)}
-          onApplySuggestion={(transaction, suggestion) => void handleApplySuggestion(transaction, suggestion)}
-          onDelete={(id) => void handleDelete(id)}
-          onEdit={() => {
-            toast({
-              variant: "info",
-              title: "Edição em breve",
-              description: "A edição completa da transação será disponibilizada nas próximas iterações."
-            });
+        <button
+          onClick={() => {
+            setSelectedPeriod({ mode: '30d', label: 'Últimos 30 dias' });
+            setSelectedType('Todas as Transações');
+            setSelectedCategoryFilter('');
+            setSearchQuery('');
+            setRouteAccountId('');
+            setRouteExcludedOnly(false);
+            setRouteUncategorizedOnly(false);
           }}
-          onClearFilters={clearAllFilters}
-          onCreateTransaction={() => setCreatePanelOpen(true)}
-          onImportStatement={() => setImportModalOpen(true)}
-        />
+          className={cn('self-start px-2 text-xs text-muted-foreground transition-colors hover:text-foreground sm:self-auto', (selectedPeriod.mode !== '30d' || selectedType !== 'Todas as Transações' || selectedCategoryFilter || searchQuery) ? 'opacity-100' : 'pointer-events-none opacity-0')}
+        >
+          Limpar filtros
+        </button>
+      </div>
 
-        <BulkCategoryModal
-          open={showBulkCategoryModal}
-          categories={categories}
-          selectedCount={selectedCount}
-          busy={bulkCategorizing}
-          progress={bulkCategoryProgress}
-          onClose={() => {
-            if (bulkCategorizing) return;
-            setShowBulkCategoryModal(false);
-          }}
-          onApply={(categoryId) => handleBulkCategoryApply(categoryId)}
-        />
-
-        <BulkDeleteModal
-          open={showBulkDeleteModal}
-          selectedCount={selectedCount}
-          busy={bulkDeleting}
-          onClose={() => {
-            if (bulkDeleting) return;
-            setShowBulkDeleteModal(false);
-          }}
-          onConfirm={() => handleDeleteSelected()}
-        />
-
-        <div className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-gradient-to-r from-card via-card to-secondary/70 px-4 py-3 shadow-[0_8px_20px_rgba(15,23,42,0.08)] dark:border-border dark:from-card dark:via-card dark:to-secondary/70 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Exibindo <span className="font-semibold text-foreground">{visibleTransactions.length}</span> de{" "}
-              <span className="font-semibold text-foreground">{pagination.totalCount}</span> transação(ões)
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Página {pagination.page} de {pagination.totalPages}
-            </p>
+      <div className="glass-card overflow-hidden">
+        <div className="flex flex-col gap-4 border-b border-border/60 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full max-w-md">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar transações..." className="w-full bg-muted/30 border border-border/60 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-primary/50 focus:bg-muted/50 transition-all duration-300 placeholder:text-muted-foreground" />
           </div>
-          <div className="flex w-full gap-2 sm:w-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 sm:flex-none"
-              disabled={!pagination.hasPreviousPage || loading}
-              onClick={() => setPage((previous) => Math.max(previous - 1, 1))}
-            >
-              Anterior
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 sm:flex-none"
-              disabled={!pagination.hasNextPage || loading}
-              onClick={() => setPage((previous) => previous + 1)}
-            >
-              Próxima
-            </Button>
+
+          <div className="flex flex-wrap items-center gap-3 text-sm font-medium lg:gap-6">
+            <div className="flex items-center gap-2 text-muted-foreground"><ListFilter size={16} /><span>{visibleTransactions.length}</span></div>
+            <div className="flex items-center gap-2 text-success"><ArrowDownRight size={16} /><span className="geist-mono">{formatCurrency(visibleSummary.income, hideValues)}</span></div>
+            <div className="flex items-center gap-2 text-error"><ArrowUpRight size={16} /><span className="geist-mono">{formatCurrency(visibleSummary.expense, hideValues)}</span></div>
+            <div className="flex items-center gap-2 text-success"><span className="text-muted-foreground mr-1">=</span><span className="geist-mono">{formatCurrency(visibleSummary.balance, hideValues)}</span></div>
           </div>
         </div>
+
+        {selectedIds.size > 0 ? (
+          <div className="animate-in fade-in slide-in-from-top-2 duration-300 border-b border-primary/20 bg-primary/10 px-4 py-3 sm:px-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-sm font-medium text-primary">{selectedIds.size} {selectedIds.size === 1 ? 'transação selecionada' : 'transações selecionadas'}</span>
+            <button onClick={() => void deleteTransactions([...selectedIds])} disabled={deletingIds.length > 0} className="inline-flex items-center justify-center gap-2 rounded-md bg-error/10 px-3 py-1.5 text-sm font-medium text-error transition-colors hover:bg-error/20 disabled:opacity-50">
+              <Trash2 size={14} />
+              Deletar selecionadas
+            </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 p-4 md:hidden">
+          {loading ? (
+            <div className="py-8 text-center text-muted-foreground">Carregando transações...</div>
+          ) : error ? (
+            <div className="py-8 text-center text-error">{error}</div>
+          ) : visibleTransactions.length === 0 ? (
+            <div className="space-y-3 py-8 text-center text-muted-foreground">
+              <p>Nenhuma transação encontrada.</p>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+                <button onClick={() => onNewTransaction()} className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-primary/90">Adicionar transação</button>
+                <button onClick={onImport} className="rounded-lg border border-border bg-secondary/40 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary/80">Importar extrato</button>
+              </div>
+            </div>
+          ) : (
+            visibleTransactions.map((transaction, index) => (
+              <div
+                key={transaction.id}
+                className={cn('glass-card cursor-pointer rounded-2xl p-4 transition-colors', selectedIds.has(transaction.id) ? 'bg-primary/5' : 'hover:bg-muted/30')}
+                onClick={(e) => toggleSelection(transaction.id, e)}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    {selectedIds.has(transaction.id) ? <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-primary fill-primary/20 scale-110 transition-all duration-200" /> : <Circle size={16} className="mt-0.5 shrink-0 text-muted-foreground transition-all duration-200" />}
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="text-xs text-muted-foreground">{index + 1}.</span>
+                        <span className="truncate font-medium text-foreground">{transaction.description}</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span className="px-2.5 py-1 rounded-md border text-[10px] font-medium tracking-wide" style={categoryChipStyle(transaction.category)}>
+                          {categoryEmoji(transaction.category)} {transaction.category?.name ?? 'Sem categoria'}
+                        </span>
+                        <span>{formatTransactionDate(transaction.date)}</span>
+                        <span>{transaction.account.name}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className={cn('geist-mono text-right text-sm font-medium', transaction.amount >= 0 ? 'text-success' : 'text-foreground')}>
+                      R$ {formatCurrency(Math.abs(transaction.amount), hideValues).replace('R$', '').trim()}
+                    </div>
+                    <div className="relative" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === transaction.id ? null : transaction.id); }} className={cn('rounded p-1 transition-colors', openMenuId === transaction.id ? 'bg-secondary/80 text-foreground' : 'hover:bg-secondary/80 hover:text-foreground')}>
+                        <MoreHorizontal size={16} />
+                      </button>
+                      {openMenuId === transaction.id ? (
+                        <div className="absolute right-0 top-full z-50 mt-2 w-48 overflow-hidden rounded-lg border border-border bg-popover shadow-xl" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-col py-1">
+                            <button className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground" onClick={() => { onNewTransaction(transaction); setOpenMenuId(null); }}>
+                              <Tag size={14} />
+                              Editar categoria
+                            </button>
+                            <button className="flex w-full items-center gap-2 px-4 py-2 text-left text-xs text-error transition-colors hover:bg-error/10" onClick={() => { void deleteTransactions([transaction.id]); setOpenMenuId(null); }}>
+                              <Trash2 size={14} />
+                              Excluir transação
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="hidden md:block md:overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest border-b border-border/60 bg-muted/10">
+              <tr>
+                <th className="px-6 py-4 w-10 cursor-pointer group" onClick={toggleAll}>
+                  {selectedIds.size === visibleTransactions.length && visibleTransactions.length > 0 ? <CheckCircle2 size={16} className="text-primary fill-primary/20 scale-110 transition-all duration-200" /> : <Circle size={16} className="text-muted-foreground group-hover:text-foreground transition-all duration-200" />}
+                </th>
+                <th className="px-6 py-4">Descrição</th>
+                <th className="px-6 py-4">Categoria</th>
+                <th className="px-6 py-4">Data <ChevronDown size={12} className="inline ml-1" /></th>
+                <th className="px-6 py-4 text-right">Valor</th>
+                <th className="px-6 py-4 text-center w-16">Ação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {loading ? (
+                <tr><td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">Carregando transações...</td></tr>
+              ) : error ? (
+                <tr><td colSpan={6} className="px-6 py-10 text-center text-error">{error}</td></tr>
+              ) : visibleTransactions.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-10 text-center text-muted-foreground">
+                    <div className="space-y-3">
+                      <p>Nenhuma transação encontrada.</p>
+                      <div className="flex items-center justify-center gap-3">
+                        <button onClick={() => onNewTransaction()} className="bg-primary hover:bg-primary/90 text-background px-4 py-2 rounded-lg text-sm font-medium transition-colors">Adicionar transação</button>
+                        <button onClick={onImport} className="bg-secondary/40 hover:bg-secondary/80 text-foreground px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-border">Importar extrato</button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                visibleTransactions.map((transaction, index) => (
+                  <tr key={transaction.id} onClick={(e) => toggleSelection(transaction.id, e)} className={cn('transition-colors group cursor-pointer', selectedIds.has(transaction.id) ? 'bg-primary/5' : 'hover:bg-muted/30')}>
+                    <td className="px-6 py-4">
+                      {selectedIds.has(transaction.id) ? <CheckCircle2 size={16} className="text-primary fill-primary/20 scale-110 transition-all duration-200" /> : <Circle size={16} className="text-muted-foreground group-hover:text-muted-foreground transition-all duration-200" />}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-foreground group-hover:text-foreground transition-colors">
+                      <div className="flex items-center gap-4">
+                        <span className="text-muted-foreground text-xs w-4 text-center">{index + 1}</span>
+                        {transaction.description}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="px-2.5 py-1 rounded-md border text-[10px] font-medium tracking-wide flex items-center gap-1.5 w-fit" style={categoryChipStyle(transaction.category)}>
+                        <span>{categoryEmoji(transaction.category)}</span>
+                        {transaction.category?.name ?? 'Sem categoria'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-muted-foreground text-xs">{formatTransactionDate(transaction.date)}</td>
+                    <td className={cn('px-6 py-4 text-right geist-mono font-medium', transaction.amount >= 0 ? 'text-success' : 'text-foreground')}>
+                      R$ {formatCurrency(Math.abs(transaction.amount), hideValues).replace('R$', '').trim()}
+                    </td>
+                    <td className="px-6 py-4 text-center text-muted-foreground transition-colors relative">
+                      <button onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === transaction.id ? null : transaction.id); }} className={cn('p-1 rounded transition-colors', openMenuId === transaction.id ? 'bg-secondary/80 text-foreground' : 'hover:bg-secondary/80 hover:text-foreground')}>
+                        <MoreHorizontal size={16} />
+                      </button>
+                      {openMenuId === transaction.id ? (
+                        <div className="absolute right-12 top-1/2 -translate-y-1/2 w-48 bg-popover border border-border rounded-lg shadow-xl z-50 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex flex-col py-1">
+                            <button className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors text-left w-full" onClick={() => { onNewTransaction(transaction); setOpenMenuId(null); }}>
+                              <Tag size={14} />
+                              Editar categoria
+                            </button>
+                            <button className="flex items-center gap-2 px-4 py-2 text-xs text-error hover:bg-error/10 transition-colors text-left w-full" onClick={() => { void deleteTransactions([transaction.id]); setOpenMenuId(null); }}>
+                              <Trash2 size={14} />
+                              Excluir transação
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </PageShell>
+    </div>
   );
 }
-
 

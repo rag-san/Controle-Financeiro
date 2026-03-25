@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import { AppProviders } from "@/components/layout/AppProviders";
+import { Inter, JetBrains_Mono } from "next/font/google";
+import { AppProviders } from "@/src/components/layout/AppProviders";
 import "@/styles/globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" });
 
 export const metadata: Metadata = {
   title: "Finance Control",
@@ -17,7 +18,10 @@ export default function RootLayout({
 }): React.JSX.Element {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <body suppressHydrationWarning className={`${inter.className} overflow-x-hidden`}>
+      <body
+        suppressHydrationWarning
+        className={`${inter.variable} ${jetbrainsMono.variable} ${inter.className} overflow-x-hidden`}
+      >
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

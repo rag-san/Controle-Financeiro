@@ -1,642 +1,517 @@
-"use client";
-
-import { format, parseISO } from "date-fns";
-import Link from "next/link";
-import { LayoutDashboard, SlidersHorizontal, Upload } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import React from "react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import useSWR from "swr";
-import { PageShell } from "@/components/layout/PageShell";
-import { Skeleton } from "@/src/components/ui/Skeleton";
-import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
-import { cn } from "@/lib/utils";
-import { Button } from "@/src/components/ui/Button";
-import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";
-import { GuidanceCard } from "@/src/components/ui/GuidanceCard";
-import { Input } from "@/src/components/ui/Input";
-import { NetWorthCard } from "@/src/features/dashboard/cards/NetWorthCard";
-import { PartialResultCard } from "@/src/features/dashboard/cards/PartialResultCard";
-import { SpendingPaceCard } from "@/src/features/dashboard/cards/SpendingPaceCard";
-import { TopCategoriesCard } from "@/src/features/dashboard/cards/TopCategoriesCard";
-import { NotificationsBell } from "@/src/features/insights/components/NotificationsBell";
+import React from 'react';
 import {
-  isValidSharedDateInput,
-  parseSharedFilters,
-  resolveDefaultRange
-} from "@/src/features/filters/sharedFilters";
+  Clock
+} from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  ComposedChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
+import { motion } from 'motion/react';
+import { extractApiError, parseApiResponse } from '@/lib/client/api-response';
+import { DashboardSkeleton } from '@/src/app-shell/components/ShellSkeleton';
+import { formatCurrency, cn } from '@/src/app-shell/utils';
 
-type ApiEnvelope<T> = {
-  data: T;
-};
+interface DashboardProps {
+  hideValues: boolean;
+  onNewTransaction: () => void;
+}
 
-type DashboardSummaryPayload = {
-  from: string;
-  to: string;
-  totalIncome: number;
-  totalExpense: number;
-  net: number;
-  cashInflow?: number;
-  cashOutflow?: number;
-  cashNet?: number;
-  excludedTotal: number;
-  previousPeriodComparison: {
-    delta: number;
-    percent: number;
-    previousNet: number;
-    previousIncome: number;
-    previousExpense: number;
-    previousCashInflow?: number;
-    previousCashOutflow?: number;
-    previousCashNet?: number;
-    previousExcludedTotal: number;
-  };
-};
+export { Dashboard as DashboardPage };
 
-type DashboardCategoriesPayload = {
-  from: string;
-  to: string;
-  topCategories: Array<{
-    categoryId: string | null;
-    name: string;
-    color: string;
-    total: number;
-    percent: number;
-    previousTotal: number;
-    variationPercent: number;
-  }>;
-};
-
-type DashboardTrendPoint = {
-  bucket: string;
-  income: number;
-  expense: number;
-  net: number;
-};
-
-type DashboardTrendsPayload = {
-  from: string;
-  to: string;
-  granularity: "day" | "week" | "month";
-  series: DashboardTrendPoint[];
-  previousSeries: DashboardTrendPoint[];
-};
-
-type DashboardPatrimonyPayload = {
-  from: string;
-  to: string;
-  granularity: "day" | "week" | "month";
-  series: Array<{
-    bucket: string;
-    value: number;
-  }>;
-};
-
-type DashboardOverviewPayload = {
-  from: string;
-  to: string;
-  summary: DashboardSummaryPayload;
-  categories: DashboardCategoriesPayload["topCategories"];
-  trends: DashboardTrendsPayload;
-  patrimony: DashboardPatrimonyPayload;
-};
-
-type DashboardPacePoint = {
-  day: number;
+type CategoryRowProps = {
+  icon: string;
+  color: string;
+  name: string;
   current: number;
   previous: number;
+  variation: number;
+  hideValues: boolean;
 };
 
-function clamp(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 100) return 100;
-  return value;
-}
+type DashboardMetricsResponse = {
+  view: 'dashboard';
+  referenceMonth: string;
+  isCurrentMonthReference: boolean;
+  cards: {
+    income: number;
+    expense: number;
+    result: number;
+    netWorth: number;
+    spendPaceDelta: number;
+    resultDelta: number;
+  };
+  periodComparison: {
+    current: {
+      income: number;
+      expense: number;
+      result: number;
+      excluded: number;
+    };
+    previous: {
+      income: number;
+      expense: number;
+      result: number;
+      excluded: number;
+    };
+  };
+  netWorthDelta: number;
+  netWorthSeries: Array<{
+    date: string;
+    value: number;
+  }>;
+  spendingTrend: Array<{
+    day: number;
+    current: number;
+    previous: number;
+  }>;
+  topCategories: Array<{
+    categoryId: string;
+    name: string;
+    color: string;
+    icon: string | null;
+    current: number;
+    previous: number;
+    variation: number;
+  }>;
+  cashflow: Array<{
+    month: string;
+    income: number;
+    expense: number;
+    balance: number;
+  }>;
+};
 
-function safeVariationPercent(current: number, previous: number): number {
-  if (previous === 0) return current === 0 ? 0 : 100;
-  return Number((((current - previous) / Math.abs(previous)) * 100).toFixed(2));
-}
+const CHART_TOOLTIP_STYLE = {
+  backgroundColor: "hsl(var(--card) / 0.96)",
+  backdropFilter: "blur(16px)",
+  border: "1px solid hsl(var(--border) / 0.9)",
+  borderRadius: "16px",
+  boxShadow: "0 18px 42px hsl(var(--overlay) / 0.18)"
+} as const;
 
-function formatRangeLabel(from: string, to: string): string {
-  const fromDate = parseISO(from);
-  const toDate = parseISO(to);
-  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-    return `${from} - ${to}`;
-  }
-  return `${format(fromDate, "dd/MM/yyyy")} - ${format(toDate, "dd/MM/yyyy")}`;
-}
+const CHART_TOOLTIP_ITEM_STYLE = {
+  color: "hsl(var(--foreground))",
+  fontSize: "12px",
+  fontWeight: 500
+} as const;
 
-function buildSpendingPaceSeries(current: DashboardTrendPoint[], previous: DashboardTrendPoint[]): DashboardPacePoint[] {
-  const length = Math.max(current.length, previous.length);
-  const chartData: DashboardPacePoint[] = [];
-  let currentAccumulated = 0;
-  let previousAccumulated = 0;
+const CategoryRow = ({ icon, color, name, current, previous, variation, hideValues }: CategoryRowProps) => {
+  const varColor = variation > 0 ? 'text-error bg-error/10' : variation < 0 ? 'text-success bg-success/10' : 'text-muted-foreground bg-secondary/40';
+  const varText = variation > 0 ? `+${variation}%` : variation === 0 ? '=' : `${variation}%`;
+  const currentWidth = previous > 0 ? (current / previous) * 100 : current > 0 ? 100 : 0;
 
-  for (let index = 0; index < length; index += 1) {
-    currentAccumulated += current[index]?.expense ?? 0;
-    previousAccumulated += previous[index]?.expense ?? 0;
-    chartData.push({
-      day: index + 1,
-      current: Number(currentAccumulated.toFixed(2)),
-      previous: Number(previousAccumulated.toFixed(2))
-    });
-  }
-
-  return chartData;
-}
-
-export function isDashboardOverviewEmpty(overview: DashboardOverviewPayload): boolean {
-  const hasSummaryActivity =
-    Math.abs(overview.summary.totalIncome) > 0 ||
-    Math.abs(overview.summary.totalExpense) > 0 ||
-    Math.abs(overview.summary.cashInflow ?? 0) > 0 ||
-    Math.abs(overview.summary.cashOutflow ?? 0) > 0 ||
-    Math.abs(overview.summary.excludedTotal) > 0 ||
-    Math.abs(overview.summary.previousPeriodComparison.previousIncome) > 0 ||
-    Math.abs(overview.summary.previousPeriodComparison.previousExpense) > 0;
-
-  const hasCategories = overview.categories.some(
-    (item) => Math.abs(item.total) > 0 || Math.abs(item.previousTotal) > 0
-  );
-  const hasTrendData =
-    overview.trends.series.some(
-      (point) => Math.abs(point.income) > 0 || Math.abs(point.expense) > 0 || Math.abs(point.net) > 0
-    ) ||
-    overview.trends.previousSeries.some(
-      (point) => Math.abs(point.income) > 0 || Math.abs(point.expense) > 0 || Math.abs(point.net) > 0
-    );
-  const hasPatrimony = overview.patrimony.series.some((point) => Math.abs(point.value) > 0);
-
-  return !(hasSummaryActivity || hasCategories || hasTrendData || hasPatrimony);
-}
-
-export function DashboardEmptyState(): React.JSX.Element {
   return (
-    <section
-      className="app-surface-card rounded-2xl border border-dashed border-border/80 px-5 py-8 text-center sm:px-8 sm:py-10"
-      data-testid="dashboard-empty-state"
-    >
-      <div className="mx-auto flex max-w-2xl flex-col items-center gap-4">
-        <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <LayoutDashboard className="h-6 w-6" aria-hidden="true" />
+    <div className="grid grid-cols-1 gap-3 border-b border-border/60 py-3 text-sm last:border-0 sm:grid-cols-12 sm:items-center sm:gap-4 sm:py-2">
+      <div className="flex items-center gap-3 sm:col-span-4">
+        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }}></div>
+        <span>{icon}</span>
+        <span className="truncate text-foreground font-medium">{name}</span>
+      </div>
+      <div className="geist-mono font-semibold text-foreground sm:col-span-2 sm:text-right">
+        {formatCurrency(current, hideValues)}
+      </div>
+      <div className="flex items-center sm:col-span-3">
+        <div className="w-full h-1.5 bg-secondary/40 rounded-full overflow-hidden">
+          <div className={cn('h-full rounded-full', variation > 0 ? 'bg-error' : 'bg-success')} style={{ width: `${Math.min(currentWidth, 100)}%` }}></div>
+        </div>
+      </div>
+      <div className="sm:col-span-1 sm:text-right">
+        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${varColor}`}>
+          {varText}
         </span>
-        <div className="space-y-2">
-          <h2 className="text-2xl font-semibold text-foreground">Você ainda não possui dados financeiros.</h2>
-          <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-            Importe seu extrato bancário para começar. Depois disso, o Finance Control preenche o dashboard,
-            organiza categorias e facilita sua leitura mensal.
-          </p>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Se você ainda não usa conta bancária, também pode começar adicionando gastos manualmente em Transações.
-          </p>
-        </div>
-        <div className="flex w-full flex-col items-center justify-center gap-3 sm:flex-row">
-          <Link
-            id="tour-dashboard-empty-import"
-            href="/transactions?import=1"
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            <Upload className="h-4 w-4" aria-hidden="true" />
-            Importar extrato
-          </Link>
-          <Link
-            href="/transactions?new=1"
-            className="inline-flex h-11 items-center justify-center rounded-lg border border-border bg-card px-5 text-sm font-semibold text-foreground transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            Adicionar manualmente
-          </Link>
-        </div>
       </div>
-    </section>
+      <div className="geist-mono font-medium text-muted-foreground sm:col-span-2 sm:text-right">
+        {formatCurrency(previous, hideValues)}
+      </div>
+    </div>
+  );
+};
+
+const BigCurrency = ({ value, hideValues, className = "", children }: { value: number, hideValues: boolean, className?: string, children?: React.ReactNode }) => {
+  const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  return (
+    <div className={cn("flex items-baseline gap-1.5 geist-mono text-foreground", className)}>
+      <span className="text-lg text-muted-foreground font-medium tracking-normal">R$</span>
+      <span className="text-3xl font-semibold tracking-tight">{hideValues ? '••••••' : formatted}</span>
+      {children}
+    </div>
+  );
+};
+
+function categoryEmoji(name: string): string {
+  const normalized = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (normalized.includes('morad') || normalized.includes('alug')) return '🏠';
+  if (normalized.includes('merc') || normalized.includes('super')) return '🛒';
+  if (normalized.includes('rest') || normalized.includes('aliment')) return '🍔';
+  if (normalized.includes('comb') || normalized.includes('transp')) return '⛽';
+  if (normalized.includes('internet')) return '🌐';
+  return '✨';
+}
+
+function filterNetWorthSeries(series: DashboardMetricsResponse['netWorthSeries'], period: string) {
+  if (period === 'ALL') return series;
+  if (series.length === 0) return [];
+
+  const latest = new Date(`${series[series.length - 1].date}T12:00:00`);
+  const start = new Date(latest);
+
+  if (period === '1D') start.setDate(start.getDate() - 1);
+  if (period === '1W') start.setDate(start.getDate() - 6);
+  if (period === '1M') start.setMonth(start.getMonth() - 1);
+  if (period === '3M') start.setMonth(start.getMonth() - 3);
+  if (period === 'YTD') start.setMonth(0, 1);
+  if (period === '1Y') start.setFullYear(start.getFullYear() - 1);
+
+  return series.filter((item) => new Date(`${item.date}T12:00:00`).getTime() >= start.getTime());
+}
+
+function isDashboardEmpty(data: DashboardMetricsResponse | null): boolean {
+  if (!data) return true;
+  return (
+    Math.abs(data.cards.income) === 0 &&
+    Math.abs(data.cards.expense) === 0 &&
+    Math.abs(data.cards.result) === 0 &&
+    Math.abs(data.cards.netWorth) === 0 &&
+    data.topCategories.length === 0 &&
+    data.spendingTrend.length === 0 &&
+    data.netWorthSeries.length === 0
   );
 }
 
-export function DashboardLoading(): React.JSX.Element {
-  return (
-    <div className="space-y-6" data-testid="dashboard-loading">
-      <div className="grid gap-6 xl:grid-cols-12">
-        <Skeleton className="h-[420px] xl:col-span-7" />
-        <Skeleton className="h-[420px] xl:col-span-5" />
+export function Dashboard({ hideValues, onNewTransaction }: DashboardProps) {
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [wealthPeriod, setWealthPeriod] = React.useState('1W');
+  const [error, setError] = React.useState('');
+  const [data, setData] = React.useState<DashboardMetricsResponse | null>(null);
+
+  const load = React.useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/metrics/official?view=dashboard', { cache: 'no-store' });
+      const { data: payload, errorMessage } = await parseApiResponse<DashboardMetricsResponse | { error?: unknown }>(response);
+
+      if (errorMessage) throw new Error(errorMessage);
+      if (!response.ok || !payload || !('view' in payload) || payload.view !== 'dashboard') {
+        throw new Error(extractApiError(payload, 'Não foi possível carregar o dashboard.'));
+      }
+
+      setData(payload);
+    } catch (loadError) {
+      setData(null);
+      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar dashboard.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  const spendingView = React.useMemo(() => {
+    const lastPoint = data?.spendingTrend[data.spendingTrend.length - 1];
+    const currentSpent = lastPoint?.current ?? data?.periodComparison.current.expense ?? 0;
+    const previousSpent = lastPoint?.previous ?? data?.periodComparison.previous.expense ?? 0;
+    const delta = previousSpent - currentSpent;
+    const deltaPercent = previousSpent > 0 ? Number((((previousSpent - currentSpent) / previousSpent) * 100).toFixed(1)) : 0;
+    return {
+      currentSpent,
+      previousSpent,
+      delta,
+      deltaPercent
+    };
+  }, [data]);
+
+  const filteredNetWorthSeries = React.useMemo(() => filterNetWorthSeries(data?.netWorthSeries ?? [], wealthPeriod), [data, wealthPeriod]);
+  const hasNetWorthSeries = filteredNetWorthSeries.length >= 2;
+  const resultProgress = React.useMemo(() => {
+    const income = data?.periodComparison.current.income ?? 0;
+    const expense = data?.periodComparison.current.expense ?? 0;
+    if (income <= 0) return 0;
+    return Math.max(0, Math.min((expense / income) * 100, 100));
+  }, [data]);
+
+  if (isLoading) return <DashboardSkeleton />;
+
+  if (error) {
+    return (
+      <div className="glass-card p-8 text-center">
+        <p className="text-sm text-error mb-4">{error}</p>
+        <button
+          onClick={() => void load()}
+          className="bg-primary hover:bg-primary/90 text-background px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          Tentar novamente
+        </button>
       </div>
-      <div className="grid gap-6 xl:grid-cols-12">
-        <Skeleton className="h-[320px] xl:col-span-5" />
-        <Skeleton className="h-[320px] xl:col-span-7" />
+    );
+  }
+
+  if (isDashboardEmpty(data)) {
+    return (
+      <div className="glass-card p-10 text-center space-y-4">
+        <h2 className="text-xl font-semibold text-foreground">Seu dashboard ainda não tem dados</h2>
+        <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+          Importe transações ou adicione movimentações manualmente para liberar os insights principais.
+        </p>
+        <button
+          onClick={onNewTransaction}
+          className="bg-primary hover:bg-primary/90 text-background px-4 py-2 rounded-lg font-medium transition-colors"
+        >
+          Adicionar transação
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <header className="mb-6 flex flex-col gap-2 sm:mb-8">
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Bem-vindo de volta, Gabriel</h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">Aqui está uma visão geral das suas finanças</p>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="glass-card p-6"
+        >
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Ritmo de Gastos</h2>
+            <a href="/transactions" className="text-xs text-primary hover:underline">Ver todas ↗</a>
+          </div>
+          <div className="mb-6">
+            <BigCurrency value={Math.abs(spendingView.delta)} hideValues={hideValues}>
+              <span className="text-lg text-muted-foreground font-sans font-medium tracking-normal ml-1">
+                {spendingView.delta >= 0 ? 'abaixo' : 'acima'}
+              </span>
+            </BigCurrency>
+            <div className="flex items-center gap-2 text-xs mt-3">
+              <span className="text-success bg-success/10 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
+                {spendingView.deltaPercent >= 0 ? '↓' : '↑'} {Math.abs(spendingView.deltaPercent)}%
+              </span>
+              <span className="text-muted-foreground">vs {formatCurrency(spendingView.previousSpent, hideValues)} mês anterior</span>
+            </div>
+          </div>
+          <div className="mt-4 h-[220px] w-full sm:h-[160px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={data?.spendingTrend ?? []} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="paceGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.22} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="0" stroke="hsl(var(--border) / 0.22)" vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  dy={10}
+                />
+                <YAxis
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(value) => value === 0 ? 'R$ 0' : `R$ ${Number(value)/1000}k`}
+                  dx={-5}
+                  width={45}
+                />
+                <Tooltip
+                  cursor={{ stroke: 'hsl(var(--muted-foreground) / 0.1)', strokeWidth: 1, strokeDasharray: '4 4' }}
+                  content={({ active, payload, label }) => {
+                    if (active && payload && payload.length) {
+                      const point = payload[0]?.payload as { current: number; previous: number } | undefined;
+                      if (!point) return null;
+                      const diff = point.previous - point.current;
+                      return (
+                        <div className="min-w-[12rem] rounded-2xl border border-border/90 bg-card/95 px-3 py-2 text-xs shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+                          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                            {label ?? 'Dia'}
+                          </p>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[13px] text-foreground/90">
+                              {diff >= 0 ? 'abaixo' : 'acima'}
+                            </span>
+                            <span className={`font-semibold ${diff >= 0 ? 'text-success' : 'text-error'}`}>
+                              {formatCurrency(Math.abs(diff), hideValues)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Line type="monotone" dataKey="previous" stroke="hsl(var(--muted-foreground))" strokeWidth={2} strokeDasharray="4 4" dot={false} activeDot={false} name="Mês passado" />
+                <Area type="monotone" dataKey="current" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#paceGradient)" activeDot={{ r: 5, fill: 'hsl(var(--accent))', stroke: 'hsl(var(--card))', strokeWidth: 2 }} dot={false} name="Este mês" />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 flex items-center gap-4 pl-0 text-xs text-muted-foreground sm:justify-start sm:pl-10">
+            <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-primary"></div> Este mês</div>
+            <div className="flex items-center gap-1"><div className="w-3 h-0.5 bg-border/50 border-t border-dashed border-border/50"></div> Mês passado</div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="glass-card p-6 flex flex-col"
+        >
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Patrimônio</h2>
+            <a href="/net-worth" className="text-xs text-primary hover:underline">Ver todas ↗</a>
+          </div>
+          <div className="mb-6">
+            <BigCurrency value={data?.cards.netWorth ?? 0} hideValues={hideValues} />
+            <div className="flex items-center gap-2 text-xs mt-3">
+              <span className="text-success bg-success/10 px-2 py-0.5 rounded flex items-center gap-1 font-medium">
+                ↑ {formatCurrency(data?.netWorthDelta ?? 0, hideValues)}
+              </span>
+            </div>
+          </div>
+          {hasNetWorthSeries ? (
+            <div className="min-h-[220px] flex-1 sm:min-h-[180px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={filteredNetWorthSeries}>
+                  <defs>
+                    <linearGradient id="dashboardNetWorthGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--info))" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="hsl(var(--info))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" vertical={false} />
+                  <XAxis dataKey="date" hide />
+                  <YAxis hide />
+                  <Tooltip
+                    contentStyle={CHART_TOOLTIP_STYLE}
+                    itemStyle={CHART_TOOLTIP_ITEM_STYLE}
+                    formatter={(value) => formatCurrency(Number(value ?? 0), hideValues)}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="hsl(var(--info))" strokeWidth={3} fillOpacity={1} fill="url(#dashboardNetWorthGradient)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+              <div className="w-12 h-12 rounded-full bg-secondary/40 flex items-center justify-center mb-3">
+                <Clock size={20} />
+              </div>
+              <p className="text-sm">Dados disponíveis após 7 dias</p>
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {['1D', '1W', '1M', '3M', 'YTD', '1Y', 'ALL'].map(period => (
+              <button
+                key={period}
+                onClick={() => setWealthPeriod(period)}
+                className={`text-[10px] font-medium px-3 py-1.5 rounded-full transition-colors ${wealthPeriod === period ? 'bg-primary text-foreground' : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/80'}`}
+              >
+                {period}
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="glass-card p-6 lg:col-span-1"
+        >
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Resultado Parcial</h2>
+            <a href="/cashflow" className="text-xs text-primary hover:underline">fluxo de caixa ↗</a>
+          </div>
+          <div className="mb-8">
+            <BigCurrency value={data?.cards.result ?? 0} hideValues={hideValues} />
+            <div className="flex items-center gap-2 text-xs mt-3">
+              <span className={cn('px-2 py-0.5 rounded flex items-center gap-1 font-medium', (data?.cards.resultDelta ?? 0) >= 0 ? 'text-success bg-success/10' : 'text-error bg-error/10')}>
+                {(data?.cards.resultDelta ?? 0) >= 0 ? '↑' : '↓'} {Math.abs(data?.cards.resultDelta ?? 0)}%
+              </span>
+              <span className="text-muted-foreground">vs {formatCurrency(data?.periodComparison.previous.result ?? 0, hideValues)} mês anterior</span>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="w-full h-2 bg-secondary/40 rounded-full overflow-hidden flex">
+              <div className="bg-primary h-full" style={{ width: `${resultProgress}%` }}></div>
+              <div className="bg-secondary h-full" style={{ width: `${100 - resultProgress}%` }}></div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3 sm:gap-1">
+              <div>
+                <div className="text-muted-foreground text-[10px] mb-1 font-medium uppercase tracking-wider">Receita</div>
+                <div className="geist-mono font-semibold text-sm text-foreground">{formatCurrency(data?.periodComparison.current.income ?? 0, hideValues)}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-[10px] mb-1 font-medium uppercase tracking-wider">Gasto</div>
+                <div className="geist-mono font-semibold text-sm text-foreground">{formatCurrency(data?.periodComparison.current.expense ?? 0, hideValues)}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground text-[10px] mb-1 font-medium uppercase tracking-wider">Excluído</div>
+                <div className="geist-mono font-medium text-sm text-muted-foreground">{formatCurrency(data?.periodComparison.current.excluded ?? 0, hideValues)}</div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+          className="glass-card p-6 lg:col-span-2"
+        >
+          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Principais Categorias</h2>
+            <a href="/categories" className="text-xs text-primary hover:underline">Ver mais ↗</a>
+          </div>
+
+          <div className="space-y-2">
+            <div className="mb-4 hidden grid-cols-12 gap-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground sm:grid">
+              <div className="col-span-4">Categoria</div>
+              <div className="col-span-2 text-right">Atual</div>
+              <div className="col-span-3 text-center">vs Mês Anterior</div>
+              <div className="col-span-1 text-right">Variação</div>
+              <div className="col-span-2 text-right">Anterior</div>
+            </div>
+
+            {data?.topCategories.length ? data.topCategories.map((category) => (
+              <CategoryRow
+                key={category.categoryId}
+                icon={categoryEmoji(category.name)}
+                color={category.color}
+                name={category.name}
+                current={category.current}
+                previous={category.previous}
+                variation={Number(category.variation.toFixed(0))}
+                hideValues={hideValues}
+              />
+            )) : (
+              <div className="text-sm text-muted-foreground py-8 text-center">Sem categorias com movimentação no período.</div>
+            )}
+          </div>
+        </motion.div>
       </div>
     </div>
   );
 }
 
-async function fetchDashboardResource<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  const { data: payload, errorMessage } = await parseApiResponse<ApiEnvelope<T> | { error?: unknown }>(response);
-
-  if (errorMessage) {
-    throw new Error(errorMessage);
-  }
-
-  if (!response.ok || !payload || !("data" in payload)) {
-    throw new Error(extractApiError(payload, "Nao foi possivel carregar os dados do dashboard."));
-  }
-
-  return payload.data;
-}
-
-export function DashboardPage(): React.JSX.Element {
-  const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const filtersPopoverId = `dashboard-filters-${useId().replace(/:/g, "")}`;
-  const filtersRootRef = useRef<HTMLDivElement | null>(null);
-  const filtersFromInputRef = useRef<HTMLInputElement | null>(null);
-  const now = useMemo(() => new Date(), []);
-  const defaultRange = useMemo(() => resolveDefaultRange(now), [now]);
-  const defaultFrom = defaultRange.from;
-  const defaultTo = defaultRange.to;
-  const [showFilters, setShowFilters] = useState(false);
-  const [draftFrom, setDraftFrom] = useState(defaultFrom);
-  const [draftTo, setDraftTo] = useState(defaultTo);
-
-  const sharedFilters = useMemo(() => parseSharedFilters(searchParams, now), [now, searchParams]);
-  const selectedFrom = sharedFilters.from || defaultFrom;
-  const selectedTo = sharedFilters.to || defaultTo;
-
-  useEffect(() => {
-    const hasValidFrom = isValidSharedDateInput(searchParams.get("from"));
-    const hasValidTo = isValidSharedDateInput(searchParams.get("to"));
-    if (hasValidFrom && hasValidTo) return;
-
-    const nextParams = new URLSearchParams(searchParams.toString());
-    nextParams.set("from", hasValidFrom ? (searchParams.get("from") as string) : defaultFrom);
-    nextParams.set("to", hasValidTo ? (searchParams.get("to") as string) : defaultTo);
-    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
-  }, [defaultFrom, defaultTo, pathname, router, searchParams]);
-
-  const rangeQuery = useMemo(() => {
-    const params = new URLSearchParams({
-      from: selectedFrom,
-      to: selectedTo
-    });
-    if (sharedFilters.type) params.set("type", sharedFilters.type);
-    if (sharedFilters.accountId) params.set("accountId", sharedFilters.accountId);
-    if (sharedFilters.categoryId) params.set("categoryId", sharedFilters.categoryId);
-    if (sharedFilters.excluded === "excluded") params.set("excluded", "true");
-    if (sharedFilters.q) params.set("q", sharedFilters.q);
-    return params.toString();
-  }, [selectedFrom, selectedTo, sharedFilters]);
-
-  const overviewRequest = useSWR<DashboardOverviewPayload>(
-    `/api/dashboard/overview?${rangeQuery}`,
-    fetchDashboardResource,
-    { revalidateOnFocus: false }
-  );
-
-  const loading = overviewRequest.isLoading;
-  const error = overviewRequest.error?.message || "";
-  const isOverviewEmpty = useMemo(
-    () => (overviewRequest.data ? isDashboardOverviewEmpty(overviewRequest.data) : false),
-    [overviewRequest.data]
-  );
-
-  useEffect(() => {
-    if (!showFilters) return;
-    setDraftFrom(selectedFrom);
-    setDraftTo(selectedTo);
-
-    const focusTimer = window.setTimeout(() => {
-      filtersFromInputRef.current?.focus();
-    }, 0);
-
-    const handlePointerDown = (event: MouseEvent): void => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (!filtersRootRef.current?.contains(target)) {
-        setShowFilters(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      setShowFilters(false);
-    };
-
-    window.addEventListener("mousedown", handlePointerDown);
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.clearTimeout(focusTimer);
-      window.removeEventListener("mousedown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [selectedFrom, selectedTo, showFilters]);
-
-  const updateRangeInUrl = useCallback(
-    (from: string, to: string) => {
-      if (!isValidSharedDateInput(from) || !isValidSharedDateInput(to)) return;
-      if (new Date(`${from}T00:00:00.000Z`).getTime() > new Date(`${to}T00:00:00.000Z`).getTime()) return;
-
-      const nextParams = new URLSearchParams(searchParams.toString());
-      nextParams.set("from", from);
-      nextParams.set("to", to);
-      router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
-    },
-    [pathname, router, searchParams]
-  );
-
-  const applyDateFilter = useCallback(() => {
-    updateRangeInUrl(draftFrom, draftTo);
-    setShowFilters(false);
-  }, [draftFrom, draftTo, updateRangeInUrl]);
-
-  const clearDateFilter = useCallback(() => {
-    updateRangeInUrl(defaultFrom, defaultTo);
-    setShowFilters(false);
-  }, [defaultFrom, defaultTo, updateRangeInUrl]);
-
-  const isMonthFilterActive = selectedFrom !== defaultFrom || selectedTo !== defaultTo;
-  const appliedMonthLabel = formatRangeLabel(selectedFrom, selectedTo);
-  const filterButtonLabel = isMonthFilterActive ? `Filtro: ${appliedMonthLabel}` : "Filtros";
-
-  const dashboardView = useMemo(() => {
-    if (!overviewRequest.data) {
-      return null;
-    }
-
-    const summary = overviewRequest.data.summary;
-    const categories = overviewRequest.data.categories;
-    const trends = overviewRequest.data.trends;
-    const patrimonySeries = overviewRequest.data.patrimony.series.map((point) => ({
-      date: point.bucket,
-      value: point.value
-    }));
-
-    const paceDelta = Number(
-      (summary.previousPeriodComparison.previousExpense - summary.totalExpense).toFixed(2)
-    );
-    const expenseVariation = safeVariationPercent(
-      summary.totalExpense,
-      summary.previousPeriodComparison.previousExpense
-    );
-    const spendingTrend = buildSpendingPaceSeries(trends.series, trends.previousSeries);
-    const patrimonyCurrent = patrimonySeries[patrimonySeries.length - 1]?.value ?? 0;
-    const patrimonyVariation =
-      patrimonySeries.length >= 2 ? patrimonyCurrent - (patrimonySeries[0]?.value ?? 0) : 0;
-    const resultIncome = summary.cashInflow ?? summary.totalIncome;
-    const resultExpense = summary.cashOutflow ?? summary.totalExpense;
-    const resultCurrent = summary.cashNet ?? summary.net;
-    const resultPrevious =
-      summary.previousPeriodComparison.previousCashNet ?? summary.previousPeriodComparison.previousNet;
-    const resultVariation = safeVariationPercent(resultCurrent, resultPrevious);
-    const resultProgress = clamp((resultExpense / Math.max(resultIncome, 1)) * 100);
-    const periodDescription = isMonthFilterActive
-      ? `${formatRangeLabel(selectedFrom, selectedTo)}`
-      : "mes atual";
-
-    return {
-      periodDescription,
-      spending: {
-        paceDelta,
-        expenseVariation,
-        previousExpense: summary.previousPeriodComparison.previousExpense,
-        chartData: spendingTrend
-      },
-      result: {
-        current: resultCurrent,
-        variation: resultVariation,
-        previous: resultPrevious,
-        progress: resultProgress,
-        income: resultIncome,
-        expense: resultExpense,
-        excluded: summary.excludedTotal
-      },
-      patrimony: {
-        current: patrimonyCurrent,
-        variation: Number(patrimonyVariation.toFixed(2)),
-        hasData: patrimonySeries.length >= 2,
-        series: patrimonySeries
-      },
-      categories: categories.slice(0, 5).map((item) => ({
-        categoryId: item.categoryId ?? "uncategorized",
-        name: item.name,
-        color: item.color,
-        icon: null,
-        current: item.total,
-        previous: item.previousTotal,
-        variation: item.variationPercent
-      }))
-    };
-  }, [isMonthFilterActive, overviewRequest.data, selectedFrom, selectedTo]);
-
-  const actions = useMemo(
-    () => (
-      <>
-        <Button
-          id="tour-dashboard-import"
-          type="button"
-          size="sm"
-          onClick={() => router.push("/transactions?import=1")}
-          className="w-full justify-center border border-primary/35 bg-primary text-primary-foreground shadow-sm transition hover:opacity-90 sm:w-auto sm:justify-start"
-          aria-label="Importar extrato para preencher o dashboard"
-        >
-          <Upload className="h-4 w-4" />
-          <span>Importar extrato</span>
-        </Button>
-
-        <div className="relative order-first w-full sm:w-auto" ref={filtersRootRef}>
-          <Button
-            id="tour-dashboard-filters"
-            type="button"
-            size="sm"
-            aria-haspopup="dialog"
-            aria-expanded={showFilters}
-            aria-controls={showFilters ? filtersPopoverId : undefined}
-            aria-label={filterButtonLabel}
-            onClick={() => setShowFilters((previous) => !previous)}
-            className={cn(
-              "w-full justify-center border border-border/70 bg-card/85 text-muted-foreground shadow-sm transition hover:bg-secondary hover:text-foreground sm:w-auto sm:justify-start",
-              showFilters &&
-                "border-primary/40 bg-primary text-primary-foreground shadow-[0_10px_22px_rgba(14,116,144,0.32)] hover:brightness-105"
-            )}
-          >
-            <SlidersHorizontal className="h-4 w-4" />
-            <span className="sm:hidden">Filtros</span>
-            <span className="hidden sm:inline">{filterButtonLabel}</span>
-          </Button>
-
-          <section
-            id={filtersPopoverId}
-            role="dialog"
-            aria-label="Filtro do dashboard"
-            aria-hidden={!showFilters}
-            className={[
-              "absolute left-0 right-0 top-full z-40 mt-2 rounded-2xl border border-border/80 bg-card/95 p-2.5 shadow-xl backdrop-blur sm:left-auto sm:right-0 sm:w-[19rem] sm:max-w-[calc(100vw-2rem)]",
-              "origin-top transition-all duration-150 ease-out sm:origin-top-right",
-              showFilters
-                ? "visible translate-y-0 scale-100 opacity-100 pointer-events-auto"
-                : "invisible -translate-y-1 scale-95 opacity-0 pointer-events-none"
-            ].join(" ")}
-          >
-            <div className="space-y-0.5">
-              <h3 className="text-[13px] font-semibold text-foreground">Filtro do dashboard</h3>
-              <p className="text-[11px] text-muted-foreground">Selecione o intervalo de datas.</p>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 gap-2">
-              <div className="space-y-1">
-                <label htmlFor="dashboard-filter-from" className="text-[11px] text-muted-foreground">
-                  De
-                </label>
-                <Input
-                  id="dashboard-filter-from"
-                  ref={filtersFromInputRef}
-                  type="date"
-                  value={draftFrom}
-                  onChange={(event) => setDraftFrom(event.target.value)}
-                  className="h-9 rounded-xl border-border bg-background/70"
-                />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="dashboard-filter-to" className="text-[11px] text-muted-foreground">
-                  Ate
-                </label>
-                <Input
-                  id="dashboard-filter-to"
-                  type="date"
-                  value={draftTo}
-                  onChange={(event) => setDraftTo(event.target.value)}
-                  className="h-9 rounded-xl border-border bg-background/70"
-                />
-              </div>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={clearDateFilter}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                Mes atual
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={applyDateFilter}
-                className="border-border bg-card/80 text-foreground hover:bg-secondary"
-              >
-                Aplicar
-              </Button>
-            </div>
-          </section>
-        </div>
-
-        <NotificationsBell
-          insights={[]}
-          isLoading={false}
-          dismissedCount={0}
-          onDismissInsight={() => undefined}
-          onSnoozeInsight={() => undefined}
-          onClearDismissed={() => undefined}
-        />
-      </>
-    ),
-    [applyDateFilter, clearDateFilter, draftFrom, draftTo, filterButtonLabel, filtersPopoverId, router, showFilters]
-  );
-
-  return (
-    <PageShell
-      title="Dashboard"
-      subtitle="Entenda seu momento financeiro e descubra o próximo passo para manter tudo organizado."
-      actions={actions}
-    >
-      <div className="space-y-5 overflow-x-hidden">
-        <section className="grid gap-4 xl:grid-cols-3" aria-label="Guias do dashboard">
-          <GuidanceCard
-            eyebrow="Dashboard"
-            title="Acompanhe o resultado do período"
-            description="Aqui você vê receitas, gastos, patrimônio e ritmo financeiro sem precisar navegar por várias telas."
-            tooltip="Use este painel para entender rapidamente se o mês está sob controle e quais áreas pedem atenção."
-          />
-          <GuidanceCard
-            eyebrow="Primeiro passo"
-            title="Importe seu extrato para preencher os gráficos"
-            description="Seu fluxo principal começa na importação. Em poucos passos você traz as transações e libera os indicadores."
-            tooltip="A importação aceita CSV, OFX e PDFs compatíveis. Depois do preview, a confirmação final envia os dados."
-            ctaLabel="Abrir importação"
-            ctaHref="/transactions?import=1"
-          />
-          <GuidanceCard
-            eyebrow="Categorias"
-            title="Entenda onde o dinheiro está indo"
-            description="Depois da importação, revise categorias para interpretar seus gastos e identificar oportunidades de ajuste."
-            tooltip="Categorias agrupam despesas parecidas para facilitar análise e criação de regras automáticas."
-            ctaLabel="Ver categorias"
-            ctaHref="/categories"
-          />
-        </section>
-
-        {loading ? (
-          <DashboardLoading />
-        ) : error || !dashboardView ? (
-          <FeedbackMessage variant="error" data-testid="dashboard-error">
-            {error || "Nao foi possivel carregar os dados do dashboard."}
-          </FeedbackMessage>
-        ) : isOverviewEmpty ? (
-          <DashboardEmptyState />
-        ) : (
-          <div className="space-y-5">
-            <section className="grid gap-4 xl:grid-cols-12">
-              <div className="min-w-0 xl:col-span-7">
-                <SpendingPaceCard
-                  paceDelta={dashboardView.spending.paceDelta}
-                  variationPercent={dashboardView.spending.expenseVariation}
-                  previousExpense={dashboardView.spending.previousExpense}
-                  chartData={dashboardView.spending.chartData}
-                  currentLabel="Periodo atual"
-                  previousLabel="Periodo anterior"
-                  periodDescription={dashboardView.periodDescription}
-                />
-              </div>
-
-              <div className="min-w-0 xl:col-span-5">
-                <NetWorthCard
-                  valorTotal={dashboardView.patrimony.current}
-                  variacao={dashboardView.patrimony.variation}
-                  isDataAvailable={dashboardView.patrimony.hasData}
-                  periodDescription={dashboardView.periodDescription}
-                  series={dashboardView.patrimony.series}
-                />
-              </div>
-            </section>
-
-            <section className="grid gap-4 xl:grid-cols-12">
-              <div className="min-w-0 xl:col-span-5">
-                <PartialResultCard
-                  resultadoAtual={dashboardView.result.current}
-                  porcentagemVariacao={dashboardView.result.variation}
-                  resultadoMesAnterior={dashboardView.result.previous}
-                  porcentagemProgresso={dashboardView.result.progress}
-                  receita={dashboardView.result.income}
-                  gasto={dashboardView.result.expense}
-                  excluido={dashboardView.result.excluded}
-                  periodDescription={dashboardView.periodDescription}
-                />
-              </div>
-
-              <div id="tour-dashboard-top-categories" className="min-w-0 xl:col-span-7">
-                <TopCategoriesCard
-                  categorias={dashboardView.categories}
-                  periodDescription={dashboardView.periodDescription}
-                />
-              </div>
-            </section>
-          </div>
-        )}
-      </div>
-    </PageShell>
-  );
-}

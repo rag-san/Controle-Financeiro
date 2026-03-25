@@ -47,6 +47,24 @@ type ResolveRefreshMessage = (input: {
   };
 }) => string;
 
+type ResolveRouteState = (
+  searchParams: URLSearchParams,
+  now?: Date
+) => {
+  period: {
+    mode: string;
+    label: string;
+    from?: string;
+    to?: string;
+  };
+  typeLabel: string;
+  categoryId: string;
+  uncategorizedOnly: boolean;
+  accountId: string;
+  excludedOnly: boolean;
+  searchQuery: string;
+};
+
 async function loadClientExport<T>(modulePath: string, exportName: string): Promise<T> {
   const moduleNamespace = await import(modulePath);
   const source = (moduleNamespace.default ?? moduleNamespace) as Record<string, unknown>;
@@ -118,6 +136,31 @@ test("transactions refresh message explains the current refresh reason", async (
     }),
     ""
   );
+});
+
+test("transactions route state respects shared query params from other pages", async () => {
+  const resolveTransactionsRouteState = await loadClientExport<ResolveRouteState>(
+    "../../src/features/transactions/TransactionsPage.tsx",
+    "resolveTransactionsRouteState"
+  );
+
+  const state = resolveTransactionsRouteState(
+    new URLSearchParams(
+      "period=custom&from=2026-02-01&to=2026-02-28&type=expense&categoryId=cat-1&accountId=acc-1&excluded=true&q=mercado&category=uncategorized"
+    ),
+    new Date("2026-02-15T12:00:00.000Z")
+  );
+
+  assert.equal(state.period.mode, "custom");
+  assert.equal(state.period.label, "Este mês");
+  assert.equal(state.period.from, "2026-02-01");
+  assert.equal(state.period.to, "2026-02-28");
+  assert.equal(state.typeLabel, "Apenas Despesas");
+  assert.equal(state.categoryId, "cat-1");
+  assert.equal(state.accountId, "acc-1");
+  assert.equal(state.excludedOnly, true);
+  assert.equal(state.uncategorizedOnly, true);
+  assert.equal(state.searchQuery, "mercado");
 });
 
 test("transactions table renders loading skeleton and empty state", async () => {

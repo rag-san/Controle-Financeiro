@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { createId } from "@/lib/db";
 import { nowIso } from "@/lib/server/sql";
+import { themeColors } from "@/src/lib/theme/colors";
 
 type CategoryRow = {
   id: string;
@@ -88,7 +89,7 @@ export const categoriesRepo = {
     await db.prepare(
       `INSERT INTO categories (id, user_id, name, color, icon, parent_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, input.userId, input.name, input.color ?? "#3b82f6", input.icon ?? null, input.parentId ?? null, now, now);
+    ).run(id, input.userId, input.name, input.color ?? themeColors.info, input.icon ?? null, input.parentId ?? null, now, now);
 
     return this.findByIdForUser(id, input.userId);
   },

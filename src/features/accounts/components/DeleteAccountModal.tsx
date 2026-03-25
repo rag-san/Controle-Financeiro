@@ -40,7 +40,7 @@ export function DeleteAccountModal({
         </>
       }
     >
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/20 dark:text-amber-300">
+      <div className="rounded-xl border border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning dark:border-warning/20 dark:bg-warning/10 dark:text-warning">
         <p className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           <span>
@@ -51,3 +51,4 @@ export function DeleteAccountModal({
     </Modal>
   );
 }
+

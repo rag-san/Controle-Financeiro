@@ -18,7 +18,7 @@ import {
   WalletCards,
   X
 } from "lucide-react";
-import { SidebarItem } from "@/components/layout/SidebarItem";
+import { SidebarItem } from "./SidebarItem";
 import { IconButton } from "@/src/components/ui/IconButton";
 
 type NavItem = {
@@ -122,7 +122,7 @@ export function Sidebar({ open, onClose }: SidebarProps): React.JSX.Element {
 
       {open ? (
         <div className="fixed inset-0 z-40 md:hidden">
-          <button aria-label="Fechar menu" className="absolute inset-0 bg-black/40" onClick={onClose} />
+          <button aria-label="Fechar menu" className="absolute inset-0 bg-overlay/40" onClick={onClose} />
           <aside className="absolute left-0 top-0 h-screen w-[85vw] max-w-72 border-r border-border bg-card shadow-xl">
             <div className="flex h-16 items-center justify-between border-b border-border px-4">
               <span className="font-semibold text-foreground">Menu</span>
@@ -135,5 +135,6 @@ export function Sidebar({ open, onClose }: SidebarProps): React.JSX.Element {
     </>
   );
 }
+
 
 

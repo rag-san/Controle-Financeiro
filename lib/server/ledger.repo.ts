@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { createId } from "@/lib/db";
 import { type LedgerDirection, type LedgerEntryType } from "@/lib/ledger/normalization";
 import { nowIso } from "@/lib/server/sql";
+import { themeColors } from "@/src/lib/theme/colors";
 
 type ImportSourceKind = "BANK_STATEMENT" | "CC_STATEMENT";
 type ReconciliationStatus = "matched" | "unmatched" | "suggested";
@@ -184,7 +185,7 @@ function mapLedgerAnalyticsEntry(row: LedgerAnalyticsRow) {
       ? {
           id: base.categoryId ?? "",
           name: row.category_name,
-          color: row.category_color ?? "#94a3b8",
+          color: row.category_color ?? themeColors.mutedForeground,
           icon: row.category_icon ?? null,
           parentId: row.category_parent_id ?? null
         }

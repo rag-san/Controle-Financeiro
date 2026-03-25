@@ -56,17 +56,17 @@ export function NetWorthComparisonTooltip({
   const dateLabel = typeof label === "string" ? formatDateLong(label) : String(label ?? "");
 
   return (
-    <div className="min-w-[14rem] rounded-xl border border-border bg-card/95 p-3 text-xs shadow-xl backdrop-blur-sm dark:border-border dark:bg-secondary/95">
-      <p className="mb-2 text-sm font-semibold text-foreground">{dateLabel}</p>
+    <div className="min-w-[14rem] rounded-2xl border border-border/90 bg-card/95 p-3 text-xs shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{dateLabel}</p>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Patrimônio</span>
+          <span className="text-[13px] text-foreground/90">Patrimônio</span>
           <span className="tabular-nums font-semibold text-foreground">
             {formatBRL(currentValue)}
           </span>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <span className="text-muted-foreground">Período anterior</span>
+          <span className="text-[13px] text-foreground/90">Período anterior</span>
           <span className="tabular-nums font-medium text-foreground">
             {previousValue === null ? "—" : formatBRL(previousValue)}
           </span>

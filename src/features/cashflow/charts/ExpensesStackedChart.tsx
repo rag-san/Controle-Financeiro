@@ -29,7 +29,7 @@ function CompactLegend({
   categories: string[];
 }): React.JSX.Element {
   return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground/80">
+    <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted-foreground">
       {categories.map((category) => (
         <li key={category} className="flex max-w-[150px] items-center gap-1.5">
           <span
@@ -77,23 +77,23 @@ export function ExpensesStackedChart({
               barCategoryGap="35%"
               barGap={4}
             >
-              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(59,130,246,0.16)" />
+              <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" />
               <XAxis
                 dataKey="month"
                 tickFormatter={formatMonthLabel}
-                tick={{ fontSize: 11, fill: "#5f7aa3" }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
               />
               <YAxis
                 tickFormatter={formatBRLCompact}
-                tick={{ fontSize: 11, fill: "#5f7aa3" }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
                 tickLine={false}
                 axisLine={false}
                 width={78}
               />
-              <Tooltip content={<ExpensesStackedTooltip />} cursor={{ fill: "rgba(59,130,246,0.1)" }} />
+              <Tooltip content={<ExpensesStackedTooltip />} cursor={{ fill: "hsl(var(--muted-foreground) / 0.08)" }} />
               <Legend content={() => null} />
               {data.categories.map((category) => (
                 <Bar

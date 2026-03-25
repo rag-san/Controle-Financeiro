@@ -1,6 +1,6 @@
 "use client";
 
-import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import { ThemeProvider } from "./ThemeProvider";
 import { ToastProvider } from "@/src/components/ui/ToastProvider";
 
 export function AppProviders({

@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import useSWR from "swr";
-import { PageShell } from "@/components/layout/PageShell";
+import { PageShell } from "@/src/components/layout/PageShell";
 import { extractApiError, parseApiResponse } from "@/lib/client/api-response";
 import { Button } from "@/src/components/ui/Button";
 import { FeedbackMessage } from "@/src/components/ui/FeedbackMessage";

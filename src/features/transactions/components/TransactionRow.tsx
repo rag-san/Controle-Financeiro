@@ -271,7 +271,7 @@ export function TransactionRow({
       <TableCell
         className={cn(
           "min-w-[112px] py-3 px-2 text-right text-sm font-extrabold md:min-w-[148px] md:px-4",
-          transaction.amount >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"
+          transaction.amount >= 0 ? "text-success dark:text-success" : "text-error dark:text-error"
         )}
       >
         {`${amountPrefix} ${formattedAmount}`}
@@ -289,6 +289,7 @@ export function TransactionRow({
     </TableRow>
   );
 }
+
 
 
 
