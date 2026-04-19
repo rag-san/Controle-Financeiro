@@ -23,6 +23,27 @@ function parseByPattern(input: string, pattern: string): Date {
   if (Number.isNaN(parsed.getTime())) {
     throw new Error(`Data invalida: ${input}`);
   }
+  return new Date(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0));
+}
+
+function parseIsoDateOnly(input: string): Date | null {
+  const match = input.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error(`Data invalida: ${input}`);
+  }
+
   return parsed;
 }
 
@@ -49,6 +70,11 @@ export function parseFlexibleDate(value: string | Date): Date {
     return parseByPattern(input, "dd.MM.yyyy");
   }
 
+  const isoDateOnly = parseIsoDateOnly(input);
+  if (isoDateOnly) {
+    return isoDateOnly;
+  }
+
   if (/^\d{4}-\d{2}-\d{2}/.test(input)) {
     const isoDate = new Date(input);
     if (!Number.isNaN(isoDate.getTime())) return isoDate;
@@ -58,10 +84,10 @@ export function parseFlexibleDate(value: string | Date): Date {
     const yyyy = Number(input.slice(0, 4));
     const mm = Number(input.slice(4, 6)) - 1;
     const dd = Number(input.slice(6, 8));
-    const hh = input.length >= 14 ? Number(input.slice(8, 10)) : 0;
+    const hh = input.length >= 14 ? Number(input.slice(8, 10)) : 12;
     const min = input.length >= 14 ? Number(input.slice(10, 12)) : 0;
     const ss = input.length >= 14 ? Number(input.slice(12, 14)) : 0;
-    const parsed = new Date(yyyy, mm, dd, hh, min, ss);
+    const parsed = new Date(Date.UTC(yyyy, mm, dd, hh, min, ss));
     if (Number.isNaN(parsed.getTime())) {
       throw new Error(`Data invalida: ${input}`);
     }

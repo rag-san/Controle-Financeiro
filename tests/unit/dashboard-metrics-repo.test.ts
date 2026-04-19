@@ -855,3 +855,93 @@ test("ledger dashboard metrics do not duplicate card purchase and payment", asyn
     [0, 0, -120]
   );
 });
+
+test("ledger dashboard cash and patrimony stay neutral when filtering by a credit card account", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+  const fixture = await createFixtureUser("dashboard-ledger-card-filter");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado card filter-${Date.now()}`,
+    color: "#0ea5e9"
+  });
+  assert.ok(groceries);
+
+  const card = await deps.ledgerRepo.createCreditCardAccount({
+    userId: fixture.userId,
+    name: `Cartao filtro-${Date.now()}`,
+    defaultPaymentAccountId: fixture.primaryAccountId
+  });
+  assert.ok(card);
+
+  const range = deps.resolveDashboardDateRange({
+    from: new Date("2026-02-10T00:00:00.000Z"),
+    to: new Date("2026-02-12T00:00:00.000Z")
+  });
+
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-10T12:00:00.000Z"),
+    amount: 150,
+    direction: "OUT",
+    type: "cc_purchase",
+    descriptionNormalized: "compra cartao filtro",
+    creditCardAccountId: card.id,
+    categoryId: groceries.id,
+    fingerprint: `ledger-card-filter-${Date.now()}-1`
+  });
+  await deps.ledgerRepo.upsertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date("2026-02-11T12:00:00.000Z"),
+    amount: 150,
+    direction: "OUT",
+    type: "cc_payment",
+    descriptionNormalized: "pagamento cartao filtro",
+    accountId: fixture.primaryAccountId,
+    creditCardAccountId: card.id,
+    fingerprint: `ledger-card-filter-${Date.now()}-2`
+  });
+
+  const summary = await deps.dashboardMetricsRepo.getSummary({
+    userId: fixture.userId,
+    range,
+    filters: { accountId: card.id }
+  });
+  assert.equal(summary.totalIncome, 0);
+  assert.equal(summary.totalExpense, 150);
+  assert.equal(summary.net, -150);
+  assert.equal(summary.cashInflow, 0);
+  assert.equal(summary.cashOutflow, 0);
+  assert.equal(summary.cashNet, 0);
+
+  const categories = await deps.dashboardMetricsRepo.getTopCategories({
+    userId: fixture.userId,
+    range,
+    filters: { accountId: card.id }
+  });
+  assert.equal(categories.topCategories[0]?.name, groceries.name);
+  assert.equal(categories.topCategories[0]?.total ?? 0, 150);
+
+  const trends = await deps.dashboardMetricsRepo.getTrends({
+    userId: fixture.userId,
+    range,
+    granularity: "day",
+    filters: { accountId: card.id }
+  });
+  assert.equal(trends.series.reduce((sum, point) => sum + point.expense, 0), 150);
+
+  const patrimony = await deps.dashboardMetricsRepo.getPatrimony({
+    userId: fixture.userId,
+    range,
+    granularity: "day",
+    filters: { accountId: card.id }
+  });
+  assert.deepEqual(
+    patrimony.series.map((item) => item.value),
+    [0, 0, 0]
+  );
+});

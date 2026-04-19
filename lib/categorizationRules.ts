@@ -21,6 +21,36 @@ export type RuleCandidate = {
   accountId?: string | null;
 };
 
+function normalizeRuleText(value: string): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsNormalizedPattern(haystack: string, pattern: string): boolean {
+  const normalizedHaystack = ` ${normalizeRuleText(haystack)} `;
+  const normalizedPattern = normalizeRuleText(pattern);
+  if (!normalizedPattern) return false;
+
+  if (normalizedPattern.includes(" ")) {
+    return normalizedHaystack.includes(` ${normalizedPattern} `);
+  }
+
+  if (normalizedPattern.length <= 3) {
+    return new RegExp(`(^|\\s)${escapeRegex(normalizedPattern)}(?=\\s|$)`).test(normalizedHaystack);
+  }
+
+  return new RegExp(`(^|\\s)${escapeRegex(normalizedPattern)}[A-Z0-9]*(?=\\s|$)`).test(normalizedHaystack);
+}
+
 function safeRegex(pattern: string): RegExp | null {
   try {
     return new RegExp(pattern, "i");
@@ -46,7 +76,7 @@ export function matchesRule(rule: CategorizationRule, candidate: RuleCandidate):
   }
 
   if (rule.matchType === "contains") {
-    return candidate.normalizedDescription.includes(rule.pattern.toUpperCase());
+    return containsNormalizedPattern(candidate.normalizedDescription, rule.pattern);
   }
 
   const regex = safeRegex(rule.pattern);

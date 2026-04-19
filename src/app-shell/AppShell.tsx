@@ -1,45 +1,24 @@
 "use client";
 
-import { Sidebar } from "@/src/app-shell/components/Sidebar";
+import { useState } from "react";
+import { useTheme } from "@/src/components/layout/ThemeProvider";
+import { useAppShell } from "@/src/app-shell/AppShellContext";
 import { BottomNav } from "@/src/app-shell/components/BottomNav";
 import { CommandBar } from "@/src/app-shell/components/CommandBar";
-import { ImportModal } from "@/src/features/transactions/components/ImportTransactionsModal";
+import { MobileMenuModal } from "@/src/app-shell/components/MobileMenuModal";
+import { Sidebar } from "@/src/app-shell/components/Sidebar";
+import { ImportModal } from "@/src/features/transactions/components/ImportModal";
 import { NewTransactionModal } from "@/src/features/transactions/components/NewTransactionModal";
-import { useTheme } from "@/src/components/layout/ThemeProvider";
-import { useNovaShell } from "@/src/app-shell/AppShellContext";
 
-export function NovaAppShell({
-  children
-}: {
-  children: React.ReactNode;
-}): React.JSX.Element {
+export function AppShell({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
   const { theme, toggleTheme } = useTheme();
-  const {
-    currentView,
-    hideValues,
-    isSidebarCollapsed,
-    isTransactionModalOpen,
-    isImportModalOpen,
-    editingTransaction,
-    navigateToView,
-    setHideValues,
-    setIsSidebarCollapsed,
-    openTransactionModal,
-    closeTransactionModal,
-    closeImportModal
-  } = useNovaShell();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { currentView } = useAppShell();
 
   return (
-    <div className="flex min-h-dvh bg-background text-foreground selection:bg-primary/30">
+    <div className="flex min-h-dvh bg-background text-foreground selection:bg-primary/20">
       <div className="hidden md:block">
-        <Sidebar
-          currentView={currentView}
-          onViewChange={navigateToView}
-          isCollapsed={isSidebarCollapsed}
-          setIsCollapsed={setIsSidebarCollapsed}
-          hideValues={hideValues}
-          setHideValues={setHideValues}
-        />
+        <Sidebar />
       </div>
 
       <main className="w-full flex-1 overflow-x-hidden overflow-y-auto">
@@ -49,31 +28,20 @@ export function NovaAppShell({
               onClick={toggleTheme}
               className="inline-flex min-h-10 items-center rounded-full border border-border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-secondary"
             >
-              {theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode"}
+              {theme === "dark" ? "Light mode" : "Dark mode"}
             </button>
           </div>
           {children}
         </div>
       </main>
 
-      <BottomNav
-        currentView={currentView}
-        onViewChange={navigateToView}
-        onNewTransaction={() => openTransactionModal()}
-      />
+      <BottomNav onOpenMenu={() => setIsMobileMenuOpen(true)} />
+      <MobileMenuModal isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <CommandBar />
+      <NewTransactionModal />
+      <ImportModal />
 
-      <CommandBar onViewChange={navigateToView} onNewTransaction={() => openTransactionModal()} />
-
-      <NewTransactionModal
-        isOpen={isTransactionModalOpen}
-        onClose={closeTransactionModal}
-        transaction={editingTransaction}
-      />
-
-      <ImportModal isOpen={isImportModalOpen} onClose={closeImportModal} />
+      <div className="sr-only">{currentView}</div>
     </div>
   );
 }
-
-export { NovaAppShell as AppShell };
-

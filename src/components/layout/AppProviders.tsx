@@ -1,18 +1,32 @@
 "use client";
 
-import { ThemeProvider } from "./ThemeProvider";
-import { ToastProvider } from "@/src/components/ui/ToastProvider";
+import { SessionProvider } from "next-auth/react";
+import { Toaster } from "sonner";
+import { ThemeProvider, useTheme } from "@/src/components/layout/ThemeProvider";
 
-export function AppProviders({
-  children
-}: {
-  children: React.ReactNode;
-}): React.JSX.Element {
+function AppChrome({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
+  const { theme } = useTheme();
+
   return (
-    <ThemeProvider>
-      <ToastProvider>{children}</ToastProvider>
-    </ThemeProvider>
+    <SessionProvider>
+      {children}
+      <Toaster
+        richColors
+        closeButton
+        position="top-right"
+        theme={theme}
+        toastOptions={{
+          className: "glass-card"
+        }}
+      />
+    </SessionProvider>
   );
 }
 
-
+export function AppProviders({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
+  return (
+    <ThemeProvider>
+      <AppChrome>{children}</AppChrome>
+    </ThemeProvider>
+  );
+}

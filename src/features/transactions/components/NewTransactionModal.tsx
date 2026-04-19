@@ -1,506 +1,346 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, ArrowUpRight, ArrowDownRight, Calendar as CalendarIcon, Check, ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence as MotionAnimatePresence } from 'motion/react';
-import { useRouter } from 'next/navigation';
-import type { AccountDTO, CategoryDTO, TransactionDTO } from '@/lib/types';
-import { extractApiError, parseApiResponse } from '@/lib/client/api-response';
-import { useToast } from '@/src/components/ui/ToastProvider';
-import { cn } from '@/src/app-shell/utils';
+"use client";
 
-const AnimatePresence = MotionAnimatePresence as unknown as React.ComponentType<React.PropsWithChildren>;
+import { useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, X } from "lucide-react";
+import { motion } from "motion/react";
+import { toast } from "sonner";
+import type { AccountDTO, CategoryDTO } from "@/lib/types";
+import { useAppShell } from "@/src/app-shell/AppShellContext";
+import { cn } from "@/src/app-shell/utils";
+import { fetchJsonOrThrow, notifyFinanceDataChanged } from "@/src/features/shared/fetch";
 
-interface NewTransactionModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  transaction?: TransactionDTO | null;
-}
-
-const QUICK_CATEGORY_ICONS: Record<string, string> = {
-  alimentacao: '🍔',
-  restaurante: '🍔',
-  restaurantes: '🍔',
-  transporte: '🚗',
-  combustivel: '⛽',
-  mercado: '🛒',
-  supermercado: '🛒',
-  saude: '💊',
-  farmacia: '💊',
-  lazer: '🎉',
-  educacao: '📚',
-  moradia: '🏠',
-  internet: '🌐',
-  salario: '💼',
-  renda: '💼'
+type FormState = {
+  type: "income" | "expense";
+  amount: string;
+  description: string;
+  categoryId: string;
+  accountId: string;
+  date: string;
+  status: "posted" | "pending";
 };
 
-function normalizeLabel(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .trim();
-}
+const EMPTY_FORM: FormState = {
+  type: "expense",
+  amount: "",
+  description: "",
+  categoryId: "",
+  accountId: "",
+  date: new Date().toISOString().slice(0, 10),
+  status: "posted"
+};
 
-function formatMoneyInput(value: string): string {
-  const digits = value.replace(/\D/g, '');
-  if (!digits) return '';
-  const parsed = Number.parseInt(digits, 10) / 100;
-  return parsed.toLocaleString('pt-BR', {
+function formatAmountInput(rawValue: string): string {
+  const digits = rawValue.replace(/\D/g, "");
+  if (!digits) return "";
+  const numeric = Number(digits) / 100;
+  return numeric.toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
 }
 
-function parseMoneyInput(value: string): number {
-  if (!value) return 0;
-  return Number(value.replace(/\./g, '').replace(',', '.'));
-}
-
-function resolveTransactionType(transaction?: TransactionDTO | null): 'income' | 'expense' {
-  if (!transaction) return 'expense';
-  return transaction.amount >= 0 ? 'income' : 'expense';
-}
-
-function resolveCategoryIcon(category?: CategoryDTO | null): string {
-  if (!category?.name) return '✨';
-  const normalized = normalizeLabel(category.name);
-  const direct = QUICK_CATEGORY_ICONS[normalized];
-  if (direct) return direct;
-
-  const partial = Object.entries(QUICK_CATEGORY_ICONS).find(([key]) => normalized.includes(key));
-  return partial?.[1] ?? '✨';
-}
-
-export function NewTransactionModal({ isOpen, onClose, transaction = null }: NewTransactionModalProps) {
-  const router = useRouter();
-  const { toast } = useToast();
-  const [type, setType] = useState<'income' | 'expense'>('expense');
-  const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [selectedAccount, setSelectedAccount] = useState<string>('');
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [categories, setCategories] = useState<CategoryDTO[]>([]);
+export function NewTransactionModal(): React.JSX.Element | null {
+  const {
+    isTransactionModalOpen,
+    editingTransaction,
+    closeTransactionModal
+  } = useAppShell();
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [accounts, setAccounts] = useState<AccountDTO[]>([]);
+  const [categories, setCategories] = useState<CategoryDTO[]>([]);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const amountRef = useRef<HTMLInputElement>(null);
-  const isEditing = Boolean(transaction?.id);
-
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isTransactionModalOpen) return;
 
     let active = true;
-    const loadMeta = async (): Promise<void> => {
-      setLoadingMeta(true);
-      try {
-        const [accountsResponse, categoriesResponse] = await Promise.all([
-          fetch('/api/accounts', { cache: 'no-store' }),
-          fetch('/api/categories', { cache: 'no-store' })
-        ]);
+    setLoadingMeta(true);
 
-        const { data: accountsData, errorMessage: accountsError } = await parseApiResponse<
-          AccountDTO[] | { error?: unknown }
-        >(accountsResponse);
-        const { data: categoriesData, errorMessage: categoriesError } = await parseApiResponse<
-          CategoryDTO[] | { error?: unknown }
-        >(categoriesResponse);
-
-        if (accountsError) throw new Error(accountsError);
-        if (categoriesError) throw new Error(categoriesError);
-        if (!accountsResponse.ok || !accountsData || !Array.isArray(accountsData)) {
-          throw new Error(extractApiError(accountsData, 'Não foi possível carregar as contas.'));
-        }
-        if (!categoriesResponse.ok || !categoriesData || !Array.isArray(categoriesData)) {
-          throw new Error(extractApiError(categoriesData, 'Não foi possível carregar as categorias.'));
-        }
-
+    void Promise.all([
+      fetchJsonOrThrow<AccountDTO[]>("/api/accounts"),
+      fetchJsonOrThrow<CategoryDTO[]>("/api/categories")
+    ])
+      .then(([nextAccounts, nextCategories]) => {
         if (!active) return;
-        setAccounts(accountsData.filter((account) => account.type !== 'credit'));
-        setCategories(categoriesData);
-      } catch (error) {
+        setAccounts(nextAccounts);
+        setCategories(nextCategories);
+      })
+      .catch((error) => {
         if (!active) return;
-        toast({
-          variant: 'error',
-          title: 'Erro ao carregar formulário',
-          description: error instanceof Error ? error.message : 'Falha ao carregar dados do formulário.'
-        });
-      } finally {
+        toast.error(error instanceof Error ? error.message : "Falha ao carregar dados do formulario.");
+      })
+      .finally(() => {
         if (active) {
           setLoadingMeta(false);
         }
-      }
-    };
-
-    void loadMeta();
+      });
 
     return () => {
       active = false;
     };
-  }, [isOpen, toast]);
+  }, [isTransactionModalOpen]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isTransactionModalOpen) return;
 
-    const fallbackAccountId =
-      transaction?.accountId ?? accounts.find((account) => account.type !== 'credit')?.id ?? '';
+    if (editingTransaction) {
+      setForm({
+        type: editingTransaction.amount >= 0 ? "income" : "expense",
+        amount: Math.abs(editingTransaction.amount).toLocaleString("pt-BR", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }),
+        description: editingTransaction.description,
+        categoryId: editingTransaction.categoryId ?? "",
+        accountId: editingTransaction.accountId,
+        date: editingTransaction.date.slice(0, 10),
+        status: editingTransaction.status
+      });
+      return;
+    }
 
-    setType(resolveTransactionType(transaction));
-    setAmount(
-      transaction
-        ? Math.abs(transaction.amount).toLocaleString('pt-BR', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-          })
-        : ''
-    );
-    setDescription(transaction?.description ?? '');
-    setSelectedCategory(transaction?.categoryId ?? '');
-    setSelectedAccount(fallbackAccountId);
-    setDate(transaction?.date?.slice(0, 10) ?? new Date().toISOString().split('T')[0]);
-
-    const timer = window.setTimeout(() => amountRef.current?.focus(), 100);
-    return () => window.clearTimeout(timer);
-  }, [accounts, isOpen, transaction]);
-
-  const categoriesById = useMemo(
-    () => new Map(categories.map((category) => [category.id, category])),
-    [categories]
-  );
-
-  const selectedCategoryIcon = selectedCategory ? resolveCategoryIcon(categoriesById.get(selectedCategory) ?? null) : null;
-  const selectedAccountLabel = accounts.find((account) => account.id === selectedAccount)?.name ?? '';
-  const isExpense = type === 'expense';
-  const themeColor = isExpense ? 'text-error' : 'text-success';
-  const isValid =
-    amount !== '' &&
-    amount !== '0,00' &&
-    description.trim() !== '' &&
-    selectedCategory !== '' &&
-    selectedAccount !== '' &&
-    !loadingMeta &&
-    !saving;
-
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setAmount(formatMoneyInput(e.target.value));
-  };
-
-  const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setDescription(value);
-
-    const normalizedDescription = normalizeLabel(value);
-    const suggestedCategory = categories.find((category) => {
-      const normalizedName = normalizeLabel(category.name);
-      return (
-        normalizedDescription.includes(normalizedName) ||
-        normalizedName.includes(normalizedDescription)
-      );
+    setForm({
+      ...EMPTY_FORM,
+      accountId: accounts[0]?.id ?? "",
+      categoryId: ""
     });
+  }, [accounts, editingTransaction, isTransactionModalOpen]);
 
-    if (suggestedCategory && !selectedCategory) {
-      setSelectedCategory(suggestedCategory.id);
-    }
+  const isValid = useMemo(() => {
+    return Boolean(form.accountId && form.amount && form.description.trim().length >= 2 && form.date);
+  }, [form]);
 
-    if (normalizedDescription.includes('salario')) {
-      setType('income');
-    }
-  };
-
-  const handleSubmit = async (): Promise<void> => {
-    if (!isValid || saving) return;
+  const handleSave = async (): Promise<void> => {
+    if (!isValid) return;
 
     setSaving(true);
     try {
       const payload = {
-        accountId: selectedAccount,
-        categoryId: selectedCategory || null,
-        date,
-        description: description.trim(),
-        amount: parseMoneyInput(amount),
-        type,
-        status: 'posted' as const
+        accountId: form.accountId,
+        categoryId: form.categoryId || null,
+        date: form.date,
+        description: form.description.trim(),
+        amount: form.amount,
+        type: form.type,
+        status: form.status
       };
 
-      const response = await fetch(
-        isEditing ? `/api/transactions/${transaction?.id}` : '/api/transactions',
-        {
-          method: isEditing ? 'PATCH' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
+      if (editingTransaction) {
+        await fetchJsonOrThrow(`/api/transactions/${editingTransaction.id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json"
+          },
           body: JSON.stringify(payload)
-        }
-      );
-
-      const { data, errorMessage } = await parseApiResponse<TransactionDTO | { error?: unknown }>(response);
-
-      if (errorMessage) {
-        throw new Error(errorMessage);
-      }
-      if (!response.ok) {
-        throw new Error(
-          extractApiError(
-            data,
-            isEditing ? 'Não foi possível atualizar a transação.' : 'Não foi possível salvar a transação.'
-          )
-        );
+        });
+        toast.success("Transacao atualizada com sucesso.");
+      } else {
+        await fetchJsonOrThrow("/api/transactions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+        toast.success("Transacao criada com sucesso.");
       }
 
-      toast({
-        variant: 'success',
-        title: isEditing ? 'Transação atualizada' : 'Transação criada',
-        description: isEditing ? 'As alterações foram salvas com sucesso.' : 'O lançamento foi salvo com sucesso.'
-      });
-
-      onClose();
-      router.refresh();
+      notifyFinanceDataChanged();
+      closeTransactionModal();
     } catch (error) {
-      toast({
-        variant: 'error',
-        title: isEditing ? 'Erro ao atualizar transação' : 'Erro ao criar transação',
-        description: error instanceof Error ? error.message : 'Falha ao salvar a transação.'
-      });
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel salvar a transacao.");
     } finally {
       setSaving(false);
     }
   };
 
-  if (!isOpen) return null;
+  if (!isTransactionModalOpen) return null;
+
+  const isExpense = form.type === "expense";
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-start sm:pt-[8vh]">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-overlay/80 backdrop-blur-md"
-          onClick={saving ? undefined : onClose}
-        />
+    <div className="fixed inset-0 z-[100] flex items-end justify-center p-0 sm:items-center sm:p-4">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={closeTransactionModal}
+      />
 
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className={cn(
-            'relative flex w-full max-h-[calc(100dvh-1rem)] flex-col overflow-hidden rounded-t-3xl border bg-card shadow-2xl transition-colors duration-500 sm:max-w-md sm:rounded-3xl sm:max-h-[90vh]',
-            isExpense ? 'border-error/20 shadow-[0_20px_60px_-15px_hsl(var(--error) / 0.15)]' : 'border-success/20 shadow-[0_20px_60px_-15px_hsl(var(--success) / 0.15)]'
-          )}
-        >
-          <div
-            className={cn(
-              'absolute top-0 left-0 w-full h-64 bg-gradient-to-b opacity-20 pointer-events-none transition-colors duration-500',
-              isExpense ? 'from-error/30 to-transparent' : 'from-success/30 to-transparent'
-            )}
-          />
+      <motion.div
+        initial={{ opacity: 0, y: 80, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ type: "spring", damping: 24, stiffness: 280 }}
+        className={cn(
+          "relative flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border bg-card shadow-2xl sm:rounded-3xl",
+          isExpense ? "border-error/20" : "border-success/20"
+        )}
+      >
+          <div className="flex w-full justify-center pb-1 pt-3 sm:hidden">
+            <div className="h-1.5 w-12 rounded-full bg-border" />
+          </div>
 
-          <div className="relative z-10 flex items-center justify-between gap-3 p-4 pb-2 sm:p-5 sm:pb-2">
-            <div className="relative flex w-full bg-muted/40 p-1 rounded-2xl border border-border/60 backdrop-blur-md">
-              <div
-                className={cn(
-                  'absolute inset-y-1 w-[calc(50%-4px)] rounded-xl transition-all duration-500 ease-out shadow-lg',
-                  isExpense ? 'left-1 bg-error/15 border border-error/20' : 'left-[calc(50%+3px)] bg-success/15 border border-success/20'
-                )}
-              />
-              <button
-                onClick={() => setType('expense')}
-                className={cn(
-                  'relative z-10 flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-300 sm:px-6',
-                  isExpense ? 'text-error' : 'text-muted-foreground hover:text-muted-foreground'
-                )}
-              >
-                <ArrowDownRight size={16} className={cn('transition-transform duration-300', isExpense && 'translate-y-0.5')} />
-                Despesa
-              </button>
-              <button
-                onClick={() => setType('income')}
-                className={cn(
-                  'relative z-10 flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-colors duration-300 sm:px-6',
-                  !isExpense ? 'text-success' : 'text-muted-foreground hover:text-muted-foreground'
-                )}
-              >
-                <ArrowUpRight size={16} className={cn('transition-transform duration-300', !isExpense && '-translate-y-0.5')} />
-                Receita
-              </button>
+          <div className="flex items-center justify-between px-5 pb-2 pt-5">
+            <div className="flex rounded-2xl border border-border bg-secondary p-1">
+              {(["expense", "income"] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setForm((previous) => ({ ...previous, type }))}
+                  className={cn(
+                    "rounded-xl px-5 py-2 text-sm font-semibold transition-colors",
+                    form.type === type
+                      ? type === "expense"
+                        ? "bg-error/10 text-error"
+                        : "bg-success/10 text-success"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {type === "expense" ? "Despesa" : "Receita"}
+                </button>
+              ))}
             </div>
+
             <button
-              onClick={onClose}
-              disabled={saving}
-              className="shrink-0 rounded-full bg-secondary/40 p-2.5 text-muted-foreground transition-all duration-200 hover:scale-105 hover:bg-secondary/80 hover:text-foreground active:scale-95 disabled:cursor-not-allowed"
+              type="button"
+              onClick={closeTransactionModal}
+              className="rounded-full p-2.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <X size={18} />
             </button>
           </div>
 
-          <div className="relative z-10 flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-5">
+          <div className="hide-scrollbar flex flex-col gap-5 overflow-y-auto px-5 py-4">
             <div className="flex flex-col items-center justify-center py-2">
-              <div className="flex items-baseline justify-center gap-2 w-full group">
-                <span
-                  className={cn(
-                    'mb-1 text-xl font-medium transition-colors duration-300 sm:mb-2 sm:text-3xl',
-                    amount ? themeColor : 'text-muted-foreground'
-                  )}
-                >
-                  R$
-                </span>
-                <motion.input
-                  ref={amountRef}
+              <div className="flex w-full items-baseline justify-center gap-2">
+                <span className={cn("text-2xl font-medium", isExpense ? "text-error" : "text-success")}>R$</span>
+                <input
+                  autoFocus
                   type="text"
                   inputMode="numeric"
-                  value={amount}
-                  onChange={handleAmountChange}
+                  value={form.amount}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      amount: formatAmountInput(event.target.value)
+                    }))
+                  }
                   placeholder="0,00"
-                  className={cn(
-                    'w-full max-w-full border-none bg-transparent text-center font-mono text-4xl font-semibold leading-none tracking-tighter outline-none transition-all duration-300 placeholder:text-muted-foreground sm:max-w-[320px] sm:text-6xl',
-                    amount ? 'text-foreground' : 'text-muted-foreground',
-                    isExpense ? 'caret-error' : 'caret-success'
-                  )}
-                  autoComplete="off"
-                  aria-busy={saving}
-                  animate={{ scale: amount ? [1, 1.02, 1] : 1 }}
-                  transition={{ duration: 0.2 }}
+                  className="w-full max-w-[280px] border-none bg-transparent text-center font-mono text-5xl font-semibold tracking-tighter text-foreground outline-none placeholder:text-muted-foreground/40"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Descrição</label>
-              <div className="relative group">
-                <input
-                  type="text"
-                  value={description}
-                  onChange={handleDescriptionChange}
-                  placeholder="Ex: Mercado, Uber, Salário..."
-                  className="w-full bg-muted/40 border border-border rounded-2xl px-4 py-3 pr-12 text-sm sm:text-base outline-none focus:border-border focus:bg-muted/60 transition-all duration-300 text-foreground placeholder:text-muted-foreground shadow-inner"
-                  autoComplete="off"
-                />
-                <AnimatePresence>
-                  {selectedCategoryIcon && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.5 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.5 }}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-xl pointer-events-none"
-                    >
-                      {selectedCategoryIcon}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                <div
-                  className={cn(
-                    'absolute inset-0 rounded-2xl pointer-events-none transition-opacity duration-300 opacity-0 group-focus-within:opacity-100',
-                    isExpense ? 'shadow-[0_0_0_1px_hsl(var(--error) / 0.4)]' : 'shadow-[0_0_0_1px_hsl(var(--success) / 0.4)]'
-                  )}
-                />
-              </div>
+              <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Descricao</label>
+              <input
+                type="text"
+                value={form.description}
+                onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))}
+                placeholder="Ex: Mercado, Uber, Salario..."
+                className="w-full rounded-2xl border border-border bg-secondary px-4 py-3 text-sm text-foreground outline-none transition-all placeholder:text-muted-foreground/50 focus:border-primary/50"
+              />
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Categoria</label>
-              <div className="relative group">
+              <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Categoria</label>
+              <div className="relative">
                 <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className={cn(
-                    'w-full appearance-none bg-muted/40 border border-border rounded-2xl px-4 py-3 text-sm outline-none focus:border-border transition-all duration-300 cursor-pointer hover:bg-muted/70',
-                    selectedCategory === '' ? 'text-muted-foreground' : 'text-foreground'
-                  )}
-                  disabled={loadingMeta}
+                  value={form.categoryId}
+                  onChange={(event) => setForm((previous) => ({ ...previous, categoryId: event.target.value }))}
+                  className="w-full appearance-none rounded-2xl border border-border bg-secondary px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-primary/50"
                 >
-                  <option value="" disabled className="bg-popover text-muted-foreground">Selecione uma categoria...</option>
+                  <option value="">Sem categoria</option>
                   {categories.map((category) => (
-                    <option key={category.id} value={category.id} className="bg-popover text-foreground">
+                    <option key={category.id} value={category.id}>
                       {category.name}
                     </option>
                   ))}
                 </select>
-                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
-                  {selectedCategoryIcon && <span className="text-base">{selectedCategoryIcon}</span>}
-                  <ChevronDown size={14} className="text-muted-foreground transition-colors group-hover:text-muted-foreground" />
-                </div>
-                <div
-                  className={cn(
-                    'absolute inset-0 rounded-2xl pointer-events-none transition-opacity duration-300 opacity-0 group-focus-within:opacity-100',
-                    isExpense ? 'shadow-[0_0_0_1px_hsl(var(--error) / 0.4)]' : 'shadow-[0_0_0_1px_hsl(var(--success) / 0.4)]'
-                  )}
-                />
+                <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 pt-1 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Conta Bancária</label>
-                <div className="relative group">
+                <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Conta</label>
+                <div className="relative">
                   <select
-                    value={selectedAccount}
-                    onChange={(e) => setSelectedAccount(e.target.value)}
-                    className="w-full appearance-none bg-muted/40 border border-border rounded-2xl px-4 py-3 text-sm outline-none focus:border-border transition-all duration-300 text-foreground cursor-pointer hover:bg-muted/70"
+                    value={form.accountId}
+                    onChange={(event) => setForm((previous) => ({ ...previous, accountId: event.target.value }))}
+                    className="w-full appearance-none rounded-2xl border border-border bg-secondary px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-primary/50"
                     disabled={loadingMeta}
                   >
+                    <option value="">Selecione...</option>
                     {accounts.map((account) => (
-                      <option key={account.id} value={account.id} className="bg-popover text-foreground">
+                      <option key={account.id} value={account.id}>
                         {account.name}
                       </option>
                     ))}
                   </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 pointer-events-none">
-                    {selectedAccountLabel ? <span className="text-base">🏦</span> : null}
-                    <ChevronDown size={14} className="text-muted-foreground transition-colors group-hover:text-muted-foreground" />
-                  </div>
-                  <div
-                    className={cn(
-                      'absolute inset-0 rounded-2xl pointer-events-none transition-opacity duration-300 opacity-0 group-focus-within:opacity-100',
-                      isExpense ? 'shadow-[0_0_0_1px_hsl(var(--error) / 0.4)]' : 'shadow-[0_0_0_1px_hsl(var(--success) / 0.4)]'
-                    )}
-                  />
+                  <ChevronDown size={14} className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 </div>
               </div>
+
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Data</label>
-                <div className="relative group">
-                  <input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="w-full bg-muted/40 border border-border rounded-2xl px-4 py-3 text-sm outline-none focus:border-border transition-all duration-300 text-foreground cursor-pointer hover:bg-muted/70 [color-scheme:dark]"
-                  />
-                  <CalendarIcon size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none transition-colors group-hover:text-muted-foreground" />
-                  <div
+                <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Data</label>
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(event) => setForm((previous) => ({ ...previous, date: event.target.value }))}
+                  className="w-full rounded-2xl border border-border bg-secondary px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-primary/50"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Status</label>
+              <div className="grid grid-cols-2 gap-3">
+                {(["posted", "pending"] as const).map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => setForm((previous) => ({ ...previous, status }))}
                     className={cn(
-                      'absolute inset-0 rounded-2xl pointer-events-none transition-opacity duration-300 opacity-0 group-focus-within:opacity-100',
-                      isExpense ? 'shadow-[0_0_0_1px_hsl(var(--error) / 0.4)]' : 'shadow-[0_0_0_1px_hsl(var(--success) / 0.4)]'
+                      "rounded-2xl border px-4 py-3 text-sm font-medium transition-colors",
+                      form.status === status
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-secondary text-muted-foreground hover:text-foreground"
                     )}
-                  />
-                </div>
+                  >
+                    {status === "posted" ? "Confirmada" : "Pendente"}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
 
-          <div className="relative z-10 border-t border-border/60 p-4 pt-0 sm:p-5 sm:pt-0">
+          <div className="px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-1">
             <button
-              onClick={() => void handleSubmit()}
-              disabled={!isValid}
-              aria-busy={saving}
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={!isValid || saving}
               className={cn(
-                'w-full py-3.5 rounded-2xl font-bold text-sm sm:text-base flex items-center justify-center gap-2 transition-all duration-300 relative overflow-hidden group',
+                "flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-bold text-white transition-all duration-300",
                 isValid
                   ? isExpense
-                    ? 'bg-error text-foreground shadow-[0_8px_20px_-8px_hsl(var(--error) / 0.6)] hover:shadow-[0_8px_25px_-5px_hsl(var(--error) / 0.8)] hover:-translate-y-0.5 active:translate-y-0'
-                    : 'bg-success text-foreground shadow-[0_8px_20px_-8px_hsl(var(--success) / 0.6)] hover:shadow-[0_8px_25px_-5px_hsl(var(--success) / 0.8)] hover:-translate-y-0.5 active:translate-y-0'
-                  : 'bg-muted/40 text-muted-foreground cursor-not-allowed border border-border/60'
+                    ? "bg-error hover:bg-error/90"
+                    : "bg-success hover:bg-success/90"
+                  : "cursor-not-allowed bg-secondary text-muted-foreground"
               )}
             >
-              {isValid && (
-                <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]" />
+              {saving ? (
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <>
+                  <Check size={18} />
+                  {editingTransaction ? "Salvar alteracoes" : "Salvar transacao"}
+                </>
               )}
-              <Check size={20} className={cn('transition-transform duration-300', isValid && 'group-hover:scale-110')} />
-              Salvar Transação
             </button>
           </div>
-        </motion.div>
-      </div>
-    </AnimatePresence>
+      </motion.div>
+    </div>
   );
 }
-

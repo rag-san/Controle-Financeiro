@@ -14,7 +14,7 @@ const createCategorySchema = z.object({
   color: z.string().min(4).max(32).default(themeColors.info),
   icon: z.string().max(50).optional().nullable(),
   parentId: z.string().min(6).max(128).optional().nullable()
-});
+}).strict();
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   return withRouteProfiling(request, "/api/categories.GET", async () => {

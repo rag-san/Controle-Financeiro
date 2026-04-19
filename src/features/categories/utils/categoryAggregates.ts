@@ -66,8 +66,10 @@ function buildCategoryTotals(
       continue;
     }
 
-    const amount = fromAmountCents(absAmountCents(transaction.amount));
-    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const signedExpenseCents =
+      transaction.amount < 0 ? absAmountCents(transaction.amount) : -absAmountCents(transaction.amount);
+    const amount = fromAmountCents(signedExpenseCents);
+    if (!Number.isFinite(amount) || amount === 0) continue;
 
     const fallbackCategory = transaction.categoryId
       ? categoriesById.get(transaction.categoryId)

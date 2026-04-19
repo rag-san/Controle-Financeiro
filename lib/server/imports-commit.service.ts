@@ -1,15 +1,18 @@
 import { z } from "zod";
-import { type CategorizationRule } from "@/lib/categorizationRules";
 import { createImportedHash, createTransferKeyHash } from "@/lib/hash";
+import { reconcileAccountStatement } from "@/lib/finance/statement-reconciliation";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
 import { extractInstallmentInfo } from "@/lib/installments";
-import { categorizeImportRowDeterministic } from "@/lib/import-categorization-deterministic";
+import { parseStrictMoneyInput } from "@/lib/money";
 import { normalizeDescription, normalizeTransaction } from "@/lib/normalize";
 import { accountsRepo } from "@/lib/server/accounts.repo";
-import { categoriesRepo } from "@/lib/server/categories.repo";
-import { categoryRulesRepo } from "@/lib/server/category-rules.repo";
+import {
+  categorizeCanonicalImportRowWithContext,
+  loadImportAutocategorizationContext
+} from "@/lib/server/import-autocategorization.service";
 import { importsRepo } from "@/lib/server/imports.repo";
-import { syncLedgerFromImportBatch } from "@/lib/server/ledger-sync.service";
+import { getReconciliationInboxForUser } from "@/lib/server/ledger.service";
+import { syncLedgerForLegacyTransactions, syncLedgerFromImportBatch } from "@/lib/server/ledger-sync.service";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 export const MAX_IMPORT_COMMIT_ROWS = 5000;
@@ -35,6 +38,7 @@ const INTERNAL_TRANSFER_MIN_TOTAL_SCORE = 0.75;
 const INTERNAL_TRANSFER_REVIEW_MIN_TOTAL_SCORE = 0.55;
 const MAX_TRANSFER_REVIEW_SUGGESTIONS = 20;
 const MIN_OPENING_BALANCE_ADJUSTMENT = 0.01;
+const INVOICE_RECONCILIATION_TOLERANCE = 0.05;
 const OPENING_BALANCE_EXTERNAL_ID_PREFIX = "OPENING_BALANCE";
 const OPENING_BALANCE_DESCRIPTION_PREFIX = "Saldo inicial importado";
 
@@ -96,6 +100,234 @@ export const importCommitPayloadSchema = z.object({
 type ImportCommitPayload = z.infer<typeof importCommitPayloadSchema>;
 type ImportRowInput = ImportCommitPayload["rows"][number];
 type UserAccount = Awaited<ReturnType<typeof accountsRepo.listByUser>>[number];
+
+export class ImportCommitError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = "ImportCommitError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+const IMPORT_INSTITUTION_RULES: Array<{ institution: string; patterns: string[] }> = [
+  {
+    institution: "Mercado Pago",
+    patterns: ["MERCADO PAGO", "MERCADOPAGO", "MELI", "DINHEIRO RESERVADO", "MUSD"]
+  },
+  {
+    institution: "Inter",
+    patterns: ["BANCO INTER", "INTER", "FATURA CARTAO INTER", "CARTAO INTER"]
+  },
+  {
+    institution: "Nubank",
+    patterns: ["NUBANK", "NU PAGAMENTOS"]
+  },
+  {
+    institution: "PagBank",
+    patterns: ["PAGBANK", "PAGSEGURO"]
+  },
+  {
+    institution: "Santander",
+    patterns: ["SANTANDER"]
+  },
+  {
+    institution: "Itau",
+    patterns: ["ITAU", "ITAUUNIBANCO"]
+  }
+];
+
+function readRawString(raw: Record<string, unknown> | undefined, key: string): string | null {
+  const value = raw?.[key];
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function readRawBoolean(raw: Record<string, unknown> | null | undefined, key: string): boolean {
+  if (!raw || typeof raw !== "object") {
+    return false;
+  }
+
+  const value = raw[key];
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value === 1;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return normalized === "true" || normalized === "1";
+  }
+
+  return false;
+}
+
+function looksLikeBareAccountIdentifier(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const compact = value.replace(/\s+/g, "");
+  return /^[0-9.\-\/]+$/.test(compact);
+}
+
+function sanitizeAccountName(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const sanitized = value.replace(/\s+/g, " ").trim();
+  return sanitized.length > 0 ? sanitized : null;
+}
+
+function detectImportInstitutionHint(values: Array<string | null | undefined>): string | null {
+  const normalized = normalizeDescription(values.filter(Boolean).join(" "));
+  if (!normalized) {
+    return null;
+  }
+
+  for (const rule of IMPORT_INSTITUTION_RULES) {
+    if (rule.patterns.some((pattern) => normalized.includes(pattern))) {
+      return rule.institution;
+    }
+  }
+
+  return null;
+}
+
+function resolveCreditInstitutionHint(input: {
+  row: ImportRowInput;
+  fallbackInstitution?: string | null;
+  fileName?: string | null;
+}): string | null {
+  return detectImportInstitutionHint([
+    readRawString(input.row.raw, "importInstitutionHint"),
+    readRawString(input.row.raw, "issuerProfile"),
+    input.row.accountHint,
+    input.row.description,
+    input.fileName,
+    input.fallbackInstitution
+  ]);
+}
+
+function normalizeInstitutionValue(value: string | null | undefined): string {
+  return normalizeDescription(value ?? "");
+}
+
+function filterCreditAccountsByInstitution(
+  accounts: UserAccount[],
+  institutionHint: string | null
+): UserAccount[] {
+  if (!institutionHint) {
+    return accounts;
+  }
+
+  const normalizedHint = normalizeInstitutionValue(institutionHint);
+  if (!normalizedHint) {
+    return accounts;
+  }
+
+  return accounts.filter((account) => {
+    const normalizedInstitution = normalizeInstitutionValue(account.institution);
+    const normalizedName = normalizeDescription(account.name);
+
+    return (
+      (normalizedInstitution.length > 0 &&
+        (normalizedInstitution === normalizedHint ||
+          normalizedInstitution.includes(normalizedHint) ||
+          normalizedHint.includes(normalizedInstitution))) ||
+      (normalizedName.length > 0 &&
+        (normalizedName.includes(normalizedHint) || normalizedHint.includes(normalizedName)))
+    );
+  });
+}
+
+function buildAutoCreditAccountCacheKey(input: {
+  parentAccountId: string;
+  institutionHint: string | null;
+  fallbackName: string;
+}): string {
+  const normalizedHint = normalizeDescription(input.institutionHint ?? input.fallbackName);
+  return `${input.parentAccountId}|${normalizedHint}`;
+}
+
+function accountLabelFromImportRow(row: ImportRowInput): string {
+  const rawLabel = sanitizeAccountName(readRawString(row.raw, "importAccountLabel"));
+  if (rawLabel) {
+    return rawLabel;
+  }
+
+  if (isCreditCardInvoiceDocumentType(row.documentType)) {
+    return "Cartao";
+  }
+
+  return "Conta";
+}
+
+function inferImportedAccountDraft(input: {
+  row: ImportRowInput;
+  sourceType: ImportCommitPayload["sourceType"];
+  fileName: string;
+}): {
+  name: string | null;
+  type: UserAccount["type"];
+  institution: string | null;
+} {
+  const rawHint = sanitizeAccountName(readRawString(input.row.raw, "importAccountHint"));
+  const accountHint = sanitizeAccountName(input.row.accountHint) ?? rawHint;
+  const accountIdentifier = sanitizeAccountName(readRawString(input.row.raw, "importAccountIdentifier"));
+  const accountLabel = accountLabelFromImportRow(input.row);
+  const institution = detectImportInstitutionHint([
+    readRawString(input.row.raw, "importInstitutionHint"),
+    readRawString(input.row.raw, "issuerProfile"),
+    accountHint,
+    input.fileName
+  ]);
+  const type: UserAccount["type"] = isCreditCardInvoiceDocumentType(input.row.documentType) ? "credit" : "checking";
+
+  if (accountHint && !looksLikeBareAccountIdentifier(accountHint)) {
+    return {
+      name: accountHint,
+      type,
+      institution
+    };
+  }
+
+  const identifier = accountIdentifier ?? (looksLikeBareAccountIdentifier(accountHint) ? accountHint : null);
+  if (identifier && institution) {
+    return {
+      name: `${accountLabel} ${institution} ${identifier}`.trim(),
+      type,
+      institution
+    };
+  }
+
+  if (identifier) {
+    return {
+      name: `${accountLabel} ${identifier}`.trim(),
+      type,
+      institution
+    };
+  }
+
+  if (institution) {
+    return {
+      name: `${accountLabel} ${institution}`.trim(),
+      type,
+      institution
+    };
+  }
+
+  return {
+    name: null,
+    type,
+    institution: null
+  };
+}
 
 function parseBooleanMappingValue(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") {
@@ -197,6 +429,10 @@ function resolveCardPaymentTargetAccountId(input: {
   accountById: Map<string, UserAccount>;
   mappingCardPaymentTargetAccountId: string | null;
 }): string | null {
+  const institutionHint = resolveCreditInstitutionHint({
+    row: input.row,
+    fallbackInstitution: input.fromAccount.institution ?? null
+  });
   const explicitCandidates = [input.row.transferToAccountId, input.mappingCardPaymentTargetAccountId]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value));
@@ -208,27 +444,22 @@ function resolveCardPaymentTargetAccountId(input: {
     }
   }
 
-  const children = input.accounts.filter(
-    (account) => account.type === "credit" && account.parentAccountId === input.fromAccount.id
+  const children = filterCreditAccountsByInstitution(
+    input.accounts.filter((account) => account.type === "credit" && account.parentAccountId === input.fromAccount.id),
+    institutionHint
   );
   if (children.length === 1) {
     return children[0].id;
   }
 
-  const institution = input.fromAccount.institution?.trim();
-  if (!institution) {
+  if (!institutionHint) {
     return null;
   }
 
-  const normalizedInstitution = normalizeDescription(institution);
-  const sameInstitutionCards = input.accounts.filter((account) => {
-    if (account.type !== "credit") return false;
-    if (account.id === input.fromAccount.id) return false;
-
-    const accountInstitution = account.institution?.trim();
-    if (!accountInstitution) return false;
-    return normalizeDescription(accountInstitution) === normalizedInstitution;
-  });
+  const sameInstitutionCards = filterCreditAccountsByInstitution(
+    input.accounts.filter((account) => account.type === "credit" && account.id !== input.fromAccount.id),
+    institutionHint
+  );
 
   if (sameInstitutionCards.length === 1) {
     return sameInstitutionCards[0].id;
@@ -266,6 +497,10 @@ function resolveCreditInvoiceAccountId(input: {
   if (creditAccounts.length === 0) {
     return null;
   }
+  const institutionHint = resolveCreditInstitutionHint({
+    row: input.row,
+    fallbackInstitution: input.currentAccount.institution ?? null
+  });
 
   const accountHint = input.row.accountHint?.trim();
   if (accountHint) {
@@ -287,27 +522,24 @@ function resolveCreditInvoiceAccountId(input: {
   }
 
   if (input.currentAccount.type !== "credit") {
-    const linkedCards = creditAccounts.filter((account) => account.parentAccountId === input.currentAccount.id);
+    const linkedCards = filterCreditAccountsByInstitution(
+      creditAccounts.filter((account) => account.parentAccountId === input.currentAccount.id),
+      institutionHint
+    );
     if (linkedCards.length === 1) {
       return linkedCards[0].id;
     }
   }
 
-  const institution = input.currentAccount.institution?.trim();
-  if (institution) {
-    const normalizedInstitution = normalizeDescription(institution);
-    const sameInstitutionCards = creditAccounts.filter((account) => {
-      const accountInstitution = account.institution?.trim();
-      if (!accountInstitution) return false;
-      return normalizeDescription(accountInstitution) === normalizedInstitution;
-    });
+  if (institutionHint) {
+    const sameInstitutionCards = filterCreditAccountsByInstitution(creditAccounts, institutionHint);
 
     if (sameInstitutionCards.length === 1) {
       return sameInstitutionCards[0].id;
     }
   }
 
-  if (creditAccounts.length === 1) {
+  if (creditAccounts.length === 1 && !institutionHint) {
     return creditAccounts[0].id;
   }
 
@@ -322,14 +554,33 @@ function buildAutoCreditAccountName(parent: UserAccount): string {
   return `Cartao ${parent.name}`.trim();
 }
 
+function buildAutoCreditAccountNameFromHint(input: {
+  parent: UserAccount;
+  row: ImportRowInput;
+  fileName?: string;
+}): string {
+  const institutionHint = resolveCreditInstitutionHint({
+    row: input.row,
+    fallbackInstitution: input.parent.institution ?? null,
+    fileName: input.fileName
+  });
+
+  if (institutionHint) {
+    return `Cartao ${institutionHint}`.trim();
+  }
+
+  return buildAutoCreditAccountName(input.parent);
+}
+
 async function ensureCreditAccountForInvoice(input: {
   userId: string;
   row: ImportRowInput;
   currentAccount: UserAccount;
   accounts: UserAccount[];
   accountById: Map<string, UserAccount>;
+  fileName: string;
   defaultAccountId?: string;
-  createdByParentId: Map<string, string>;
+  createdByParentKey: Map<string, string>;
   registerAccount: (account: UserAccount) => void;
 }): Promise<{ accountId: string | null; autoCreated: boolean }> {
   const resolvedId = resolveCreditInvoiceAccountId({
@@ -347,6 +598,11 @@ async function ensureCreditAccountForInvoice(input: {
     };
   }
 
+  const institutionHint = resolveCreditInstitutionHint({
+    row: input.row,
+    fallbackInstitution: input.currentAccount.institution ?? null,
+    fileName: input.fileName
+  });
   const parentCandidate =
     input.currentAccount.type !== "credit"
       ? input.currentAccount
@@ -361,7 +617,12 @@ async function ensureCreditAccountForInvoice(input: {
     };
   }
 
-  const cachedCreatedId = input.createdByParentId.get(parentCandidate.id);
+  const cacheKey = buildAutoCreditAccountCacheKey({
+    parentAccountId: parentCandidate.id,
+    institutionHint,
+    fallbackName: parentCandidate.name
+  });
+  const cachedCreatedId = input.createdByParentKey.get(cacheKey);
   if (cachedCreatedId && input.accountById.has(cachedCreatedId)) {
     return {
       accountId: cachedCreatedId,
@@ -369,8 +630,9 @@ async function ensureCreditAccountForInvoice(input: {
     };
   }
 
-  const linkedCards = input.accounts.filter(
-    (account) => account.type === "credit" && account.parentAccountId === parentCandidate.id
+  const linkedCards = filterCreditAccountsByInstitution(
+    input.accounts.filter((account) => account.type === "credit" && account.parentAccountId === parentCandidate.id),
+    institutionHint
   );
   if (linkedCards.length === 1) {
     return {
@@ -389,9 +651,13 @@ async function ensureCreditAccountForInvoice(input: {
   try {
     const createdAccount = await accountsRepo.create({
       userId: input.userId,
-      name: buildAutoCreditAccountName(parentCandidate),
+      name: buildAutoCreditAccountNameFromHint({
+        parent: parentCandidate,
+        row: input.row,
+        fileName: input.fileName
+      }),
       type: "credit",
-      institution: parentCandidate.institution ?? null,
+      institution: institutionHint ?? parentCandidate.institution ?? null,
       currency: parentCandidate.currency,
       parentAccountId: parentCandidate.id
     });
@@ -404,7 +670,7 @@ async function ensureCreditAccountForInvoice(input: {
     }
 
     input.registerAccount(createdAccount);
-    input.createdByParentId.set(parentCandidate.id, createdAccount.id);
+    input.createdByParentKey.set(cacheKey, createdAccount.id);
 
     return {
       accountId: createdAccount.id,
@@ -418,10 +684,305 @@ async function ensureCreditAccountForInvoice(input: {
   }
 }
 
+async function ensureCreditAccountForCardPayment(input: {
+  userId: string;
+  row: ImportRowInput;
+  fromAccount: UserAccount;
+  accounts: UserAccount[];
+  accountById: Map<string, UserAccount>;
+  fileName: string;
+  mappingCardPaymentTargetAccountId: string | null;
+  createdByParentKey: Map<string, string>;
+  registerAccount: (account: UserAccount) => void;
+}): Promise<{ accountId: string | null; autoCreated: boolean }> {
+  const resolvedId = resolveCardPaymentTargetAccountId({
+    row: input.row,
+    fromAccount: input.fromAccount,
+    accounts: input.accounts,
+    accountById: input.accountById,
+    mappingCardPaymentTargetAccountId: input.mappingCardPaymentTargetAccountId
+  });
+
+  if (resolvedId) {
+    return {
+      accountId: resolvedId,
+      autoCreated: false
+    };
+  }
+
+  if (!isCheckingLikeAccount(input.fromAccount.type)) {
+    return {
+      accountId: null,
+      autoCreated: false
+    };
+  }
+
+  const institutionHint = resolveCreditInstitutionHint({
+    row: input.row,
+    fallbackInstitution: input.fromAccount.institution ?? null,
+    fileName: input.fileName
+  });
+  const cacheKey = buildAutoCreditAccountCacheKey({
+    parentAccountId: input.fromAccount.id,
+    institutionHint,
+    fallbackName: input.fromAccount.name
+  });
+  const cachedCreatedId = input.createdByParentKey.get(cacheKey);
+  if (cachedCreatedId && input.accountById.has(cachedCreatedId)) {
+    return {
+      accountId: cachedCreatedId,
+      autoCreated: false
+    };
+  }
+
+  const linkedCards = filterCreditAccountsByInstitution(
+    input.accounts.filter((account) => account.type === "credit" && account.parentAccountId === input.fromAccount.id),
+    institutionHint
+  );
+  if (linkedCards.length === 1) {
+    return {
+      accountId: linkedCards[0].id,
+      autoCreated: false
+    };
+  }
+
+  if (linkedCards.length > 1) {
+    return {
+      accountId: null,
+      autoCreated: false
+    };
+  }
+
+  try {
+    const createdAccount = await accountsRepo.create({
+      userId: input.userId,
+      name: buildAutoCreditAccountNameFromHint({
+        parent: input.fromAccount,
+        row: input.row,
+        fileName: input.fileName
+      }),
+      type: "credit",
+      institution: institutionHint ?? input.fromAccount.institution ?? null,
+      currency: input.fromAccount.currency,
+      parentAccountId: input.fromAccount.id
+    });
+
+    if (!createdAccount || createdAccount.type !== "credit") {
+      return {
+        accountId: null,
+        autoCreated: false
+      };
+    }
+
+    input.registerAccount(createdAccount);
+    input.createdByParentKey.set(cacheKey, createdAccount.id);
+
+    console.info(
+      `[IMPORT] ${JSON.stringify({
+        event: "import.card_payment.credit_account.autocreate",
+        accountId: createdAccount.id,
+        accountName: createdAccount.name,
+        parentAccountId: input.fromAccount.id,
+        parentAccountName: input.fromAccount.name,
+        institution: createdAccount.institution ?? null,
+        description: input.row.description
+      })}`
+    );
+
+    return {
+      accountId: createdAccount.id,
+      autoCreated: true
+    };
+  } catch {
+    return {
+      accountId: null,
+      autoCreated: false
+    };
+  }
+}
+
+function matchesCreditAccountDescriptionHint(input: {
+  normalizedDescription: string;
+  creditAccount: UserAccount;
+}): boolean {
+  const normalizedDescription = input.normalizedDescription;
+  const normalizedInstitution = normalizeInstitutionValue(input.creditAccount.institution);
+  const normalizedName = normalizeDescription(input.creditAccount.name);
+
+  if (normalizedInstitution && normalizedDescription.includes(normalizedInstitution)) {
+    return true;
+  }
+
+  if (normalizedName && normalizedDescription.includes(normalizedName)) {
+    return true;
+  }
+
+  return false;
+}
+
+async function relinkUnmatchedCardPaymentsForCreditAccount(input: {
+  userId: string;
+  creditAccount: UserAccount;
+  accounts: UserAccount[];
+}): Promise<{ linkedTransactionIds: string[] }> {
+  const parentAccountId = input.creditAccount.parentAccountId?.trim() || null;
+  let sourceAccounts = parentAccountId
+    ? input.accounts.filter((account) => account.id === parentAccountId && isCheckingLikeAccount(account.type))
+    : [];
+
+  if (sourceAccounts.length === 0) {
+    const institution = input.creditAccount.institution?.trim();
+    if (institution) {
+      sourceAccounts = input.accounts.filter(
+        (account) =>
+          isCheckingLikeAccount(account.type) &&
+          normalizeInstitutionValue(account.institution) === normalizeInstitutionValue(institution)
+      );
+    }
+  }
+
+  if (sourceAccounts.length !== 1) {
+    return {
+      linkedTransactionIds: []
+    };
+  }
+
+  const sourceAccount = sourceAccounts[0];
+  const linkedCardsForSource = input.accounts.filter(
+    (account) => account.type === "credit" && account.parentAccountId === sourceAccount.id
+  );
+  const requireDescriptionMatch = linkedCardsForSource.length > 1;
+  const candidates = await transactionsRepo.listAll({
+    userId: input.userId,
+    accountId: sourceAccount.id,
+    type: "transfer",
+    excluded: false,
+    hideCardPaymentMirrorInflow: false
+  });
+  const linkedTransactionIds: string[] = [];
+
+  for (const candidate of candidates) {
+    const raw = (candidate.raw as Record<string, unknown> | null) ?? null;
+    if (candidate.direction !== "out") continue;
+    if (!candidate.isInternalTransfer) continue;
+    if (candidate.transferToAccountId) continue;
+    if (!readRawBoolean(raw, "transferDetectedFromCardPayment")) continue;
+    if (
+      requireDescriptionMatch &&
+      !matchesCreditAccountDescriptionHint({
+        normalizedDescription: candidate.normalizedDescription,
+        creditAccount: input.creditAccount
+      })
+    ) {
+      continue;
+    }
+
+    const updated = await transactionsRepo.update({
+      id: candidate.id,
+      userId: input.userId,
+      transferToAccountId: input.creditAccount.id
+    });
+
+    if (updated) {
+      linkedTransactionIds.push(candidate.id);
+    }
+  }
+
+  if (linkedTransactionIds.length > 0) {
+    await syncLedgerForLegacyTransactions({
+      userId: input.userId,
+      transactionIds: linkedTransactionIds
+    });
+  }
+
+  return {
+    linkedTransactionIds
+  };
+}
+
+async function ensureImportedAccountForRow(input: {
+  userId: string;
+  row: ImportRowInput;
+  sourceType: ImportCommitPayload["sourceType"];
+  fileName: string;
+  accountById: Map<string, UserAccount>;
+  registerAccount: (account: UserAccount) => void;
+  createdByKey: Map<string, string>;
+}): Promise<{ accountId: string | null; autoCreated: boolean }> {
+  const draft = inferImportedAccountDraft({
+    row: input.row,
+    sourceType: input.sourceType,
+    fileName: input.fileName
+  });
+
+  if (!draft.name) {
+    return {
+      accountId: null,
+      autoCreated: false
+    };
+  }
+
+  const cacheKey = `${draft.type}:${normalizeDescription(draft.name)}`;
+  const cachedId = input.createdByKey.get(cacheKey);
+  if (cachedId && input.accountById.has(cachedId)) {
+    return {
+      accountId: cachedId,
+      autoCreated: false
+    };
+  }
+
+  const createdAccount = await accountsRepo.create({
+    userId: input.userId,
+    name: draft.name,
+    type: draft.type,
+    institution: draft.institution,
+    currency: "BRL",
+    parentAccountId: null
+  });
+
+  if (!createdAccount) {
+    return {
+      accountId: null,
+      autoCreated: false
+    };
+  }
+
+  input.registerAccount(createdAccount);
+  input.createdByKey.set(cacheKey, createdAccount.id);
+
+  console.info(
+    `[IMPORT] ${JSON.stringify({
+      event: "import.account.autocreate",
+      sourceType: input.sourceType,
+      fileName: input.fileName,
+      accountId: createdAccount.id,
+      accountName: createdAccount.name,
+      accountType: createdAccount.type,
+      institution: createdAccount.institution ?? null,
+      accountHint: input.row.accountHint ?? null
+    })}`
+  );
+
+  return {
+    accountId: createdAccount.id,
+    autoCreated: true
+  };
+}
+
 async function buildAccountResolver(userId: string, defaultAccountId?: string) {
   const accounts = await accountsRepo.listByUser(userId);
   const accountById = new Map(accounts.map((account) => [account.id, account]));
   const accountNameMap = new Map(accounts.map((account) => [normalizeDescription(account.name), account.id]));
+  const institutionIndex = new Map<string, UserAccount[]>();
+
+  for (const account of accounts) {
+    const institution = account.institution?.trim();
+    if (!institution) continue;
+    const normalizedInstitution = normalizeDescription(institution);
+    const current = institutionIndex.get(normalizedInstitution) ?? [];
+    current.push(account);
+    institutionIndex.set(normalizedInstitution, current);
+  }
 
   const resolveAccountId = (row: ImportRowInput): string | null => {
     if (row.accountId && accountById.has(row.accountId)) {
@@ -444,6 +1005,22 @@ async function buildAccountResolver(userId: string, defaultAccountId?: string) {
       }
     }
 
+    const institutionHint = detectImportInstitutionHint([
+      readRawString(row.raw, "importInstitutionHint"),
+      readRawString(row.raw, "issuerProfile"),
+      row.accountHint
+    ]);
+
+    if (institutionHint) {
+      const matches = (institutionIndex.get(normalizeDescription(institutionHint)) ?? []).filter((account) =>
+        isCreditCardInvoiceDocumentType(row.documentType) ? account.type === "credit" : account.type !== "credit"
+      );
+
+      if (matches.length === 1) {
+        return matches[0]?.id ?? null;
+      }
+    }
+
     if (defaultAccountId && accountById.has(defaultAccountId)) {
       return defaultAccountId;
     }
@@ -455,6 +1032,13 @@ async function buildAccountResolver(userId: string, defaultAccountId?: string) {
     accounts.push(account);
     accountById.set(account.id, account);
     accountNameMap.set(normalizeDescription(account.name), account.id);
+    const institution = account.institution?.trim();
+    if (institution) {
+      const normalizedInstitution = normalizeDescription(institution);
+      const current = institutionIndex.get(normalizedInstitution) ?? [];
+      current.push(account);
+      institutionIndex.set(normalizedInstitution, current);
+    }
   };
 
   return {
@@ -463,26 +1047,6 @@ async function buildAccountResolver(userId: string, defaultAccountId?: string) {
     accountById,
     registerAccount
   };
-}
-
-async function loadRules(userId: string, applyRules: boolean): Promise<CategorizationRule[]> {
-  if (!applyRules) {
-    return [];
-  }
-
-  return (await categoryRulesRepo.listActiveByUser(userId)).map((rule) => ({
-    id: rule.id,
-    userId: rule.userId,
-    name: rule.name,
-    priority: rule.priority,
-    enabled: rule.enabled,
-    matchType: rule.matchType,
-    pattern: rule.pattern,
-    accountId: rule.accountId,
-    minAmount: rule.minAmount,
-    maxAmount: rule.maxAmount,
-    categoryId: rule.categoryId
-  }));
 }
 
 type ImportDraftRow = {
@@ -531,8 +1095,21 @@ type OpeningBalanceCandidate = {
   sourceType: ImportCommitPayload["sourceType"];
 };
 
+type InvoiceReconciliationAccumulator = {
+  accountId: string;
+  accountName: string;
+  expectedPurchaseTotal: number | null;
+  actualPurchaseTotal: number;
+  purchaseRowCount: number;
+  skippedPaymentRowCount: number;
+};
+
 function directionFromAmount(amount: number): "in" | "out" {
   return amount >= 0 ? "in" : "out";
+}
+
+function roundCurrency(value: number): number {
+  return Number(value.toFixed(2));
 }
 
 function toAbsoluteCents(amount: number): number {
@@ -585,7 +1162,127 @@ function tryTrackOpeningBalanceCandidate(
 }
 
 function inferOpeningBalanceAmount(candidate: OpeningBalanceCandidate): number {
-  return Number((candidate.balanceAfter - candidate.amount).toFixed(2));
+  return roundCurrency(candidate.balanceAfter - candidate.amount);
+}
+
+function readRawFiniteNumber(raw: Record<string, unknown> | null | undefined, keys: string[]): number | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === "string" && value.trim().length > 0) {
+      const parsed = parseStrictMoneyInput(value);
+      if (parsed !== null && Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function resolveExpectedInvoicePurchaseTotal(raw: Record<string, unknown> | null | undefined): number | null {
+  const value = readRawFiniteNumber(raw, [
+    "importInvoicePurchaseTotal",
+    "invoicePurchaseTotal",
+    "invoicePurchasesTotal",
+    "invoiceTotalPurchases"
+  ]);
+
+  return value === null ? null : roundCurrency(Math.abs(value));
+}
+
+function getInvoiceReconciliationAccumulator(
+  target: Map<string, InvoiceReconciliationAccumulator>,
+  account: UserAccount
+): InvoiceReconciliationAccumulator {
+  const current = target.get(account.id);
+  if (current) {
+    return current;
+  }
+
+  const next: InvoiceReconciliationAccumulator = {
+    accountId: account.id,
+    accountName: account.name,
+    expectedPurchaseTotal: null,
+    actualPurchaseTotal: 0,
+    purchaseRowCount: 0,
+    skippedPaymentRowCount: 0
+  };
+  target.set(account.id, next);
+  return next;
+}
+
+function trackInvoiceExpectedTotal(input: {
+  target: Map<string, InvoiceReconciliationAccumulator>;
+  account: UserAccount;
+  raw: Record<string, unknown> | null | undefined;
+}) {
+  const expected = resolveExpectedInvoicePurchaseTotal(input.raw);
+  if (expected === null) {
+    return;
+  }
+
+  const accumulator = getInvoiceReconciliationAccumulator(input.target, input.account);
+  accumulator.expectedPurchaseTotal = expected;
+}
+
+function trackInvoiceImportedPurchase(input: {
+  target: Map<string, InvoiceReconciliationAccumulator>;
+  account: UserAccount;
+  amount: number;
+}) {
+  if (!Number.isFinite(input.amount)) {
+    return;
+  }
+
+  const accumulator = getInvoiceReconciliationAccumulator(input.target, input.account);
+  const signedPurchaseAmount = input.amount < 0 ? Math.abs(input.amount) : -Math.abs(input.amount);
+  accumulator.actualPurchaseTotal = roundCurrency(accumulator.actualPurchaseTotal + signedPurchaseAmount);
+  accumulator.purchaseRowCount += 1;
+}
+
+function trackInvoiceSkippedPayment(input: {
+  target: Map<string, InvoiceReconciliationAccumulator>;
+  account: UserAccount;
+}) {
+  const accumulator = getInvoiceReconciliationAccumulator(input.target, input.account);
+  accumulator.skippedPaymentRowCount += 1;
+}
+
+function reconcileCreditCardInvoices(target: Map<string, InvoiceReconciliationAccumulator>) {
+  const accounts = [...target.values()]
+    .filter((item) => item.expectedPurchaseTotal !== null)
+    .map((item) => {
+      const expectedPurchaseTotal = roundCurrency(Number(item.expectedPurchaseTotal));
+      const actualPurchaseTotal = roundCurrency(item.actualPurchaseTotal);
+      const delta = roundCurrency(actualPurchaseTotal - expectedPurchaseTotal);
+
+      return {
+        accountId: item.accountId,
+        accountName: item.accountName,
+        expectedPurchaseTotal,
+        actualPurchaseTotal,
+        delta,
+        purchaseRowCount: item.purchaseRowCount,
+        skippedPaymentRowCount: item.skippedPaymentRowCount,
+        ok: Math.abs(delta) <= INVOICE_RECONCILIATION_TOLERANCE
+      };
+    });
+  const mismatchCount = accounts.filter((item) => !item.ok).length;
+
+  return {
+    ok: mismatchCount === 0,
+    checkedAccountCount: accounts.length,
+    mismatchCount,
+    tolerance: INVOICE_RECONCILIATION_TOLERANCE,
+    accounts
+  };
 }
 
 function buildOpeningBalanceExternalId(accountId: string, firstDate: Date): string {
@@ -705,9 +1402,9 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     payload.defaultAccountId
   );
   const mappingOptions = resolveMappingOptions(payload.mapping);
-  const rules = await loadRules(userId, payload.applyRules);
-  const categories = await categoriesRepo.listByUser(userId);
-  const categoryRefs = categories.map((item) => ({ id: item.id, name: item.name }));
+  const categorizationContext = await loadImportAutocategorizationContext(userId, {
+    applyRules: payload.applyRules
+  });
   const shouldApplyDeterministic = payload.applyRules;
 
   let missingAccountCount = 0;
@@ -718,16 +1415,39 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   let creditInvoiceRowsNotRouted = 0;
   let creditInvoiceRowsReassigned = 0;
   let creditInvoiceAccountsAutoCreated = 0;
+  let cardPaymentCreditAccountsAutoCreated = 0;
+  let relinkedHistoricalCardPayments = 0;
+  let importedCheckingAccountsAutoCreated = 0;
+  let importedCreditAccountsAutoCreated = 0;
   let deterministicCategorizedCount = 0;
   let totalCardPaymentsDetected = 0;
   let totalCardPaymentsNotConverted = 0;
   let totalTransfersCreated = 0;
   let totalInternalTransfersAutoMatched = 0;
   let openingBalanceAdjustmentsCreated = 0;
+  let confirmedBalanceSnapshotsCreated = 0;
   const warnings: string[] = [];
   let cardPaymentNotConvertedWarnings = 0;
-  const autoCreatedCreditByParentId = new Map<string, string>();
+  const autoCreatedCreditByParentKey = new Map<string, string>();
+  const autoCreatedImportedAccountByKey = new Map<string, string>();
+  const statementReconciliationCandidates: Array<{
+    accountId: string;
+    accountType: UserAccount["type"];
+    date: Date;
+    sequence: number;
+    amount: number;
+    balanceAfter?: number | null;
+    description?: string | null;
+  }> = [];
   const openingBalanceCandidateByAccountId = new Map<string, OpeningBalanceCandidate>();
+  const invoiceReconciliationByAccountId = new Map<string, InvoiceReconciliationAccumulator>();
+  const relinkedCreditAccountIds = new Set<string>();
+  const missingAccountSamples: Array<{
+    rowIndex: number;
+    description: string;
+    accountHint: string | null;
+    documentType: string | null;
+  }> = [];
 
   const importRows: ImportDraftRow[] = [];
   const transferRows: Array<{
@@ -751,27 +1471,71 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   const transferReviewSuggestions: InternalTransferReviewSuggestion[] = [];
   const transferReviewSuggestionKeys = new Set<string>();
 
-  for (const row of payload.rows) {
+  for (const [rowIndex, row] of payload.rows.entries()) {
     let resolvedAccountId = resolveAccountId(row);
     if (!resolvedAccountId) {
-      missingAccountCount += 1;
-      continue;
+      const autoCreatedResolution = await ensureImportedAccountForRow({
+        userId,
+        row,
+        sourceType: payload.sourceType,
+        fileName: payload.fileName,
+        accountById,
+        registerAccount,
+        createdByKey: autoCreatedImportedAccountByKey
+      });
+
+      if (autoCreatedResolution.accountId) {
+        resolvedAccountId = autoCreatedResolution.accountId;
+        if (autoCreatedResolution.autoCreated) {
+          const autoCreatedAccount = accountById.get(autoCreatedResolution.accountId);
+          if (autoCreatedAccount?.type === "credit") {
+            importedCreditAccountsAutoCreated += 1;
+          } else {
+            importedCheckingAccountsAutoCreated += 1;
+          }
+        }
+      }
     }
-    let resolvedAccount = accountById.get(resolvedAccountId);
-    if (!resolvedAccount) {
+
+    if (!resolvedAccountId) {
       missingAccountCount += 1;
+      if (missingAccountSamples.length < 10) {
+        missingAccountSamples.push({
+          rowIndex,
+          description: row.description,
+          accountHint: sanitizeAccountName(row.accountHint) ?? readRawString(row.raw, "importAccountHint"),
+          documentType: row.documentType ?? null
+        });
+      }
       continue;
     }
 
-    if (isCreditCardInvoiceDocumentType(row.documentType) && resolvedAccount.type !== "credit") {
+    let resolvedAccount = accountById.get(resolvedAccountId);
+    if (!resolvedAccount) {
+      missingAccountCount += 1;
+      if (missingAccountSamples.length < 10) {
+        missingAccountSamples.push({
+          rowIndex,
+          description: row.description,
+          accountHint: sanitizeAccountName(row.accountHint) ?? readRawString(row.raw, "importAccountHint"),
+          documentType: row.documentType ?? null
+        });
+      }
+      continue;
+    }
+
+    const isInvoiceRow = isCreditCardInvoiceDocumentType(row.documentType);
+
+    if (isInvoiceRow && resolvedAccount.type !== "credit") {
       const creditResolution = await ensureCreditAccountForInvoice({
         userId,
         row,
         currentAccount: resolvedAccount,
         accounts,
         accountById,
+        fileName: payload.fileName,
         defaultAccountId: payload.defaultAccountId,
-        createdByParentId: autoCreatedCreditByParentId,
+        createdByParentKey: autoCreatedCreditByParentKey,
         registerAccount
       });
 
@@ -793,6 +1557,18 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       creditInvoiceRowsReassigned += 1;
       if (creditResolution.autoCreated) {
         creditInvoiceAccountsAutoCreated += 1;
+      }
+    }
+
+    if (isInvoiceRow && resolvedAccount.type === "credit") {
+      if (!relinkedCreditAccountIds.has(resolvedAccount.id)) {
+        relinkedCreditAccountIds.add(resolvedAccount.id);
+        const relinkResult = await relinkUnmatchedCardPaymentsForCreditAccount({
+          userId,
+          creditAccount: resolvedAccount,
+          accounts
+        });
+        relinkedHistoricalCardPayments += relinkResult.linkedTransactionIds.length;
       }
     }
 
@@ -835,6 +1611,13 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     });
     const canonicalExternalId = normalizeExternalIdentity(canonical.externalId ?? row.externalId);
     const installmentRawMetadata = buildInstallmentRawMetadata(canonical.description);
+    if (isInvoiceRow && resolvedAccount.type === "credit") {
+      trackInvoiceExpectedTotal({
+        target: invoiceReconciliationByAccountId,
+        account: resolvedAccount,
+        raw: canonical.raw ?? row.raw ?? null
+      });
+    }
 
     if (
       shouldSkipCardPaymentOnCreditImport({
@@ -844,6 +1627,12 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         skipCardPaymentLines: mappingOptions.skipCardPaymentLines
       })
     ) {
+      if (isInvoiceRow && resolvedAccount.type === "credit") {
+        trackInvoiceSkippedPayment({
+          target: invoiceReconciliationByAccountId,
+          account: resolvedAccount
+        });
+      }
       skippedCardPaymentLines += 1;
       continue;
     }
@@ -875,13 +1664,21 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       let toAccountId = row.transferToAccountId?.trim() || null;
 
       if (!toAccountId && detectedCardPayment) {
-        toAccountId = resolveCardPaymentTargetAccountId({
+        const cardPaymentResolution = await ensureCreditAccountForCardPayment({
+          userId,
           row,
           fromAccount,
           accounts,
           accountById,
-          mappingCardPaymentTargetAccountId: mappingOptions.cardPaymentTargetAccountId
+          fileName: payload.fileName,
+          mappingCardPaymentTargetAccountId: mappingOptions.cardPaymentTargetAccountId,
+          createdByParentKey: autoCreatedCreditByParentKey,
+          registerAccount
         });
+        toAccountId = cardPaymentResolution.accountId;
+        if (cardPaymentResolution.autoCreated) {
+          cardPaymentCreditAccountsAutoCreated += 1;
+        }
       }
 
       if (detectedCardPayment) {
@@ -890,6 +1687,14 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           totalCardPaymentsNotConverted += 1;
           cardPaymentNotConvertedWarnings += 1;
           toAccountId = null;
+        } else if (!relinkedCreditAccountIds.has(cardTarget.id)) {
+          relinkedCreditAccountIds.add(cardTarget.id);
+          const relinkResult = await relinkUnmatchedCardPaymentsForCreditAccount({
+            userId,
+            creditAccount: cardTarget,
+            accounts
+          });
+          relinkedHistoricalCardPayments += relinkResult.linkedTransactionIds.length;
         }
       }
 
@@ -906,6 +1711,16 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           invalidTransferRowsCount += 1;
           continue;
         }
+
+        statementReconciliationCandidates.push({
+          accountId: fromAccount.id,
+          accountType: fromAccount.type,
+          date: canonical.date,
+          sequence: rowIndex,
+          amount: normalizedCardPaymentAmount,
+          balanceAfter: canonical.balanceAfter ?? null,
+          description: canonical.description
+        });
 
         tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
           account: fromAccount,
@@ -962,6 +1777,16 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       }
 
       if (detectedCardPayment) {
+        statementReconciliationCandidates.push({
+          accountId: fromAccount.id,
+          accountType: fromAccount.type,
+          date: canonical.date,
+          sequence: rowIndex,
+          amount: normalizedCardPaymentAmount,
+          balanceAfter: canonical.balanceAfter ?? null,
+          description: canonical.description
+        });
+
         tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
           account: fromAccount,
           date: canonical.date,
@@ -1025,6 +1850,16 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
           }
         : canonical;
 
+    statementReconciliationCandidates.push({
+      accountId: resolvedAccount.id,
+      accountType: resolvedAccount.type,
+      date: canonicalForClassification.date,
+      sequence: rowIndex,
+      amount: canonicalForClassification.amount,
+      balanceAfter: canonicalForClassification.balanceAfter ?? null,
+      description: canonicalForClassification.description
+    });
+
     tryTrackOpeningBalanceCandidate(openingBalanceCandidateByAccountId, {
       account: resolvedAccount,
       date: canonicalForClassification.date,
@@ -1039,20 +1874,27 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         : canonicalForClassification.type;
 
     const deterministic = shouldApplyDeterministic
-      ? categorizeImportRowDeterministic({
+      ? categorizeCanonicalImportRowWithContext({
           row: canonicalForClassification,
           accountId: resolvedAccountId,
-          userRules: rules,
-          categories: categoryRefs
+          context: categorizationContext
         })
       : {
           categoryId: null,
           categorySource: "none" as const,
+          confidence: "none" as const,
+          shouldReview: true,
+          reason: null,
+          merchantKey: canonicalForClassification.merchantKey,
           matchedRule: null
         };
 
-    const categoryId = row.categoryId ?? deterministic.categoryId;
-    if (!row.categoryId && deterministic.categoryId) {
+    const previewCategorySource =
+      row.raw && typeof row.raw.categorySource === "string" ? row.raw.categorySource : null;
+    const hasAutoSuggestedCategory = Boolean(row.categoryId) && previewCategorySource !== null && previewCategorySource !== "manual";
+    const hasManualCategoryOverride = Boolean(row.categoryId) && !hasAutoSuggestedCategory;
+    const categoryId = hasManualCategoryOverride ? (row.categoryId ?? null) : deterministic.categoryId;
+    if (!hasManualCategoryOverride && deterministic.categoryId) {
       deterministicCategorizedCount += 1;
     }
 
@@ -1090,13 +1932,26 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         counterpartyRaw: canonical.counterpartyRaw,
         transactionKindNorm: canonical.transactionKindNorm,
         counterpartyNorm: canonical.counterpartyNorm,
-        merchantKey: canonical.merchantKey,
+        merchantKey: deterministic.merchantKey || canonical.merchantKey,
         sourceType: canonical.sourceType,
         documentType: canonical.documentType ?? null,
-        categorySource: row.categoryId ? "manual" : deterministic.categorySource,
-        matchedRule: row.categoryId ? null : deterministic.matchedRule
+        categorySource: hasManualCategoryOverride ? "manual" : deterministic.categorySource,
+        categorizationConfidence: hasManualCategoryOverride ? "high" : deterministic.confidence,
+        categorizationReason: hasManualCategoryOverride
+          ? "Categoria informada manualmente no preview."
+          : deterministic.reason,
+        categorizationReviewNeeded: hasManualCategoryOverride ? false : deterministic.shouldReview,
+        matchedRule: hasManualCategoryOverride ? null : deterministic.matchedRule
       }
     };
+
+    if (isInvoiceRow && resolvedAccount.type === "credit") {
+      trackInvoiceImportedPurchase({
+        target: invoiceReconciliationByAccountId,
+        account: resolvedAccount,
+        amount: canonicalForClassification.amount
+      });
+    }
 
     if (
       shouldAttemptAutomaticInternalTransferMatch({
@@ -1253,10 +2108,133 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     importRows.push(draftImportRow);
   }
 
+  if (missingAccountCount > 0) {
+    throw new ImportCommitError(
+      422,
+      "missing_account_binding",
+      "Nao foi possivel vincular uma conta valida para todas as linhas do extrato. Ajuste a conta ou importe com um arquivo que traga identificacao suficiente.",
+      {
+        totalReceived: payload.rows.length,
+        missingAccountCount,
+        sampleRows: missingAccountSamples,
+        autoCreatedAccounts: {
+          checking: importedCheckingAccountsAutoCreated,
+          credit:
+            importedCreditAccountsAutoCreated + creditInvoiceAccountsAutoCreated + cardPaymentCreditAccountsAutoCreated
+        }
+      }
+    );
+  }
+
   if (pendingInternalTransferCandidates.length > 0) {
     for (const candidate of pendingInternalTransferCandidates) {
       importRows.push(candidate.importRow);
     }
+  }
+
+  const invoiceReconciliation = reconcileCreditCardInvoices(invoiceReconciliationByAccountId);
+  if (!invoiceReconciliation.ok) {
+    const mismatchedInvoices = invoiceReconciliation.accounts.filter((account) => !account.ok);
+
+    console.error(
+      `[IMPORT] ${JSON.stringify({
+        event: "import.commit.invoice_reconciliation_failed",
+        fileName: payload.fileName,
+        sourceType: payload.sourceType,
+        checkedAccountCount: invoiceReconciliation.checkedAccountCount,
+        mismatchCount: invoiceReconciliation.mismatchCount,
+        tolerance: invoiceReconciliation.tolerance,
+        accounts: mismatchedInvoices
+      })}`
+    );
+
+    throw new ImportCommitError(
+      422,
+      "invoice_reconciliation_failed",
+      "A fatura foi rejeitada porque a soma das compras importadas não bate com o total da própria fatura.",
+      {
+        totalReceived: payload.rows.length,
+        totalImported: 0,
+        totalSkipped: payload.rows.length,
+        invalidRows: invalidRowCount,
+        checkedAccountCount: invoiceReconciliation.checkedAccountCount,
+        mismatchCount: invoiceReconciliation.mismatchCount,
+        tolerance: invoiceReconciliation.tolerance,
+        accounts: mismatchedInvoices
+      }
+    );
+  }
+
+  if (invoiceReconciliation.checkedAccountCount > 0) {
+    console.info(
+      `[IMPORT] ${JSON.stringify({
+        event: "import.commit.invoice_reconciliation_ok",
+        fileName: payload.fileName,
+        sourceType: payload.sourceType,
+        checkedAccountCount: invoiceReconciliation.checkedAccountCount,
+        tolerance: invoiceReconciliation.tolerance,
+        accounts: invoiceReconciliation.accounts.map((account) => ({
+          accountId: account.accountId,
+          purchaseRowCount: account.purchaseRowCount,
+          skippedPaymentRowCount: account.skippedPaymentRowCount,
+          expectedPurchaseTotal: account.expectedPurchaseTotal,
+          actualPurchaseTotal: account.actualPurchaseTotal,
+          delta: account.delta
+        }))
+      })}`
+    );
+  }
+
+  const statementReconciliation = reconcileAccountStatement(statementReconciliationCandidates);
+  if (!statementReconciliation.ok) {
+    const mismatchedAccounts = statementReconciliation.accounts
+      .filter((account) => account.mismatchCount > 0)
+      .map((account) => ({
+        accountId: account.accountId,
+        rowCount: account.rowCount,
+        openingBalance: account.openingBalance,
+        closingBalance: account.closingBalance,
+        computedClosingBalance: account.computedClosingBalance,
+        mismatchCount: account.mismatchCount,
+        mismatches: account.mismatches
+      }));
+
+    console.error(
+      `[IMPORT] ${JSON.stringify({
+        event: "import.commit.reconciliation_failed",
+        fileName: payload.fileName,
+        sourceType: payload.sourceType,
+        checkedAccountCount: statementReconciliation.checkedAccountCount,
+        anchoredAccountCount: statementReconciliation.anchoredAccountCount,
+        mismatchCount: statementReconciliation.mismatchCount,
+        accounts: mismatchedAccounts
+      })}`
+    );
+
+    throw new ImportCommitError(
+      422,
+      "statement_reconciliation_failed",
+      "O extrato foi rejeitado porque os saldos por linha não reconciliam com as movimentações importadas.",
+      {
+        checkedAccountCount: statementReconciliation.checkedAccountCount,
+        anchoredAccountCount: statementReconciliation.anchoredAccountCount,
+        mismatchCount: statementReconciliation.mismatchCount,
+        accounts: mismatchedAccounts
+      }
+    );
+  }
+
+  if (statementReconciliation.anchoredAccountCount > 0) {
+    console.info(
+      `[IMPORT] ${JSON.stringify({
+        event: "import.commit.reconciliation_ok",
+        fileName: payload.fileName,
+        sourceType: payload.sourceType,
+        checkedAccountCount: statementReconciliation.checkedAccountCount,
+        anchoredAccountCount: statementReconciliation.anchoredAccountCount,
+        totalRows: statementReconciliation.totalRows
+      })}`
+    );
   }
 
   if (openingBalanceCandidateByAccountId.size > 0) {
@@ -1322,17 +2300,6 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       });
       openingBalanceAdjustmentsCreated += 1;
     }
-  }
-
-  const batch = await importsRepo.createBatch({
-    userId,
-    sourceType: payload.sourceType,
-    fileName: payload.fileName,
-    mapping: payload.mapping
-  });
-
-  if (!batch) {
-    throw new Error("Falha ao criar lote de importacao");
   }
 
   const importedHashes = [
@@ -1446,6 +2413,61 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     return true;
   });
 
+  const duplicates = duplicateInDatabaseCount + duplicateInPayloadCount;
+  const invalidRows = missingAccountCount + invalidRowCount;
+  const policySkippedRows = skippedCardPaymentLines;
+  const totalSkipped = duplicates + invalidRows + policySkippedRows;
+  const validSourceRows = Math.max(0, payload.rows.length - invalidRows - policySkippedRows);
+  const plannedImported = rowsToCreate.length + transferRowsToCreate.length * 2;
+  const canPersistConfirmedBalanceOnly =
+    plannedImported === 0 &&
+    duplicates > 0 &&
+    invalidRows === 0 &&
+    policySkippedRows === 0 &&
+    statementReconciliation.anchoredAccountCount > 0;
+
+  if (plannedImported === 0 && !canPersistConfirmedBalanceOnly) {
+    throw new ImportCommitError(
+      duplicates > 0 && invalidRows === 0 && policySkippedRows === 0 ? 409 : 422,
+      duplicates > 0 && invalidRows === 0 && policySkippedRows === 0
+        ? "import_no_new_transactions"
+        : "import_no_valid_transactions",
+      duplicates > 0 && invalidRows === 0 && policySkippedRows === 0
+        ? "Todas as transacoes deste arquivo ja haviam sido importadas."
+        : "Nenhuma transacao valida pode ser persistida com os dados enviados.",
+      {
+        totalReceived: payload.rows.length,
+        totalImported: 0,
+        totalSkipped,
+        duplicates,
+        invalidRows,
+        duplicateDetails: {
+          inDatabase: duplicateInDatabaseCount,
+          inPayload: duplicateInPayloadCount
+        },
+        invalidDetails: {
+          missingAccount: missingAccountCount,
+          invalidRows: invalidRowCount,
+          invalidDate: invalidDateCount,
+          skippedCardPaymentLines,
+          invalidTransferRows: invalidTransferRowsCount,
+          creditInvoiceRowsNotRouted
+        }
+      }
+    );
+  }
+
+  const batch = await importsRepo.createBatch({
+    userId,
+    sourceType: payload.sourceType,
+    fileName: payload.fileName,
+    mapping: payload.mapping
+  });
+
+  if (!batch) {
+    throw new Error("Falha ao criar lote de importacao");
+  }
+
   const createMany =
     rowsToCreate.length > 0
       ? await transactionsRepo.createMany(
@@ -1484,10 +2506,6 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
   }
 
   const totalImported = createMany.count + totalTransfersCreated * 2;
-  const duplicates = duplicateInDatabaseCount + duplicateInPayloadCount;
-  const invalidRows = missingAccountCount + invalidRowCount;
-  const policySkippedRows = skippedCardPaymentLines;
-  const totalSkipped = duplicates + invalidRows + policySkippedRows;
   const transferReviewSuggestionsCount = transferReviewSuggestions.length;
 
   const importedDates = [...rowsToCreate.map((row) => row.date.getTime()), ...importedTransferTimestamps].filter(
@@ -1502,12 +2520,49 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     totalSkipped
   });
 
+  if ((totalImported > 0 || canPersistConfirmedBalanceOnly) && statementReconciliation.anchoredAccountCount > 0) {
+    const snapshots = statementReconciliation.accounts
+      .filter(
+        (account) =>
+          account.mismatchCount === 0 &&
+          Number.isFinite(account.closingBalance) &&
+          account.closingBalanceDate !== null
+      )
+      .map((account) => ({
+        accountId: account.accountId,
+        balanceDate: new Date(account.closingBalanceDate as string),
+        balance: Number(account.closingBalance),
+        openingBalance: account.openingBalance,
+        computedClosingBalance: account.computedClosingBalance,
+        rowCount: account.rowCount,
+        balanceAnchorCount: account.balanceAnchorCount
+      }))
+      .filter((snapshot) => Number.isFinite(snapshot.balanceDate.getTime()));
+
+    const snapshotResult = await importsRepo.upsertAccountBalanceSnapshots({
+      userId,
+      batchId: batch.id,
+      sourceType: payload.sourceType,
+      fileName: payload.fileName,
+      snapshots
+    });
+    confirmedBalanceSnapshotsCreated = snapshotResult.count;
+  }
+
   let ledgerSync:
     | {
         processed: number;
         created: number;
         deduped: number;
         skipped: number;
+      }
+    | null = null;
+  let reconciliationBacklog:
+    | {
+        transferSuggestions: number;
+        unmatchedCardPayments: number;
+        pendingItems: number;
+        reviewUrl: string | null;
       }
     | null = null;
 
@@ -1522,7 +2577,20 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     warnings.push(`Não foi possível sincronizar o ledger para este lote (${message}).`);
   }
 
-  return {
+  try {
+    const inbox = await getReconciliationInboxForUser(userId);
+    reconciliationBacklog = {
+      transferSuggestions: inbox.summary.transferSuggestions,
+      unmatchedCardPayments: inbox.summary.unmatchedCardPayments,
+      pendingItems: inbox.summary.pendingItems,
+      reviewUrl: null
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "falha desconhecida";
+    warnings.push(`Não foi possível carregar o backlog de revisão (${message}).`);
+  }
+
+  const result = {
     batchId: batch.id,
     totalImported,
     totalSkipped,
@@ -1533,9 +2601,25 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
     totalCardPaymentsDetected,
     totalCardPaymentsNotConverted,
     warnings: [
+      ...(importedCheckingAccountsAutoCreated > 0
+        ? [`${importedCheckingAccountsAutoCreated} conta(s) bancária(s) foram criadas automaticamente a partir do arquivo.`]
+        : []),
+      ...(importedCreditAccountsAutoCreated > 0
+        ? [`${importedCreditAccountsAutoCreated} conta(s) de cartão foram criadas automaticamente a partir da fatura importada.`]
+        : []),
       ...(openingBalanceAdjustmentsCreated > 0
         ? [
             `${openingBalanceAdjustmentsCreated} ajuste(s) de saldo inicial foram adicionados automaticamente como lançamento excluído.`
+          ]
+        : []),
+      ...(confirmedBalanceSnapshotsCreated > 0
+        ? [
+            `${confirmedBalanceSnapshotsCreated} saldo(s) confirmado(s) por extrato foram gravados para comparação com o saldo calculado.`
+          ]
+        : []),
+      ...(totalImported === 0 && confirmedBalanceSnapshotsCreated > 0
+        ? [
+            "Nenhuma transação nova foi criada porque o arquivo já havia sido importado; apenas o saldo confirmado foi atualizado."
           ]
         : []),
       ...(cardPaymentNotConvertedWarnings > 0
@@ -1560,6 +2644,16 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       ...(creditInvoiceAccountsAutoCreated > 0
         ? [
             `${creditInvoiceAccountsAutoCreated} conta(s) de cartão foram criadas automaticamente a partir da conta bancária vinculada.`
+          ]
+        : []),
+      ...(cardPaymentCreditAccountsAutoCreated > 0
+        ? [
+            `${cardPaymentCreditAccountsAutoCreated} conta(s) de cartão foram criadas automaticamente a partir de pagamentos de fatura detectados no extrato bancário.`
+          ]
+        : []),
+      ...(relinkedHistoricalCardPayments > 0
+        ? [
+            `${relinkedHistoricalCardPayments} pagamento(s) de fatura importados anteriormente foram vinculados ao cartão correto e resincronizados.`
           ]
         : []),
       ...(transferReviewSuggestionsCount > 0
@@ -1587,10 +2681,32 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       duplicates,
       invalid: invalidRows + policySkippedRows
     },
+    sourceRows: {
+      received: payload.rows.length,
+      valid: validSourceRows,
+      invalid: invalidRows,
+      duplicates,
+      skippedByPolicy: policySkippedRows
+    },
+    createdRecords: {
+      normalTransactions: createMany.count,
+      transferLegs: totalTransfersCreated * 2,
+      total: totalImported
+    },
     transferReviewSuggestionsCount,
     transferReviewSuggestions,
     totalReceived: payload.rows.length,
     deterministicCategorizedCount,
+    autoCreatedAccounts: {
+      checking: importedCheckingAccountsAutoCreated,
+      credit:
+        importedCreditAccountsAutoCreated + creditInvoiceAccountsAutoCreated + cardPaymentCreditAccountsAutoCreated,
+      total:
+        importedCheckingAccountsAutoCreated +
+        importedCreditAccountsAutoCreated +
+        creditInvoiceAccountsAutoCreated +
+        cardPaymentCreditAccountsAutoCreated
+    },
     aiCategorizedCount: 0,
     aiUnavailableReason: payload.applyLocalAi
       ? "Categorizacao por IA local foi desativada para este fluxo. Use regras deterministicas."
@@ -1602,7 +2718,43 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
             to: new Date(maxTimestamp).toISOString()
           }
         : null,
-    ledgerSync
+    statementReconciliation: {
+      ok: statementReconciliation.ok,
+      checkedAccountCount: statementReconciliation.checkedAccountCount,
+      anchoredAccountCount: statementReconciliation.anchoredAccountCount,
+      totalRows: statementReconciliation.totalRows,
+      confirmedBalanceSnapshots: confirmedBalanceSnapshotsCreated
+    },
+    invoiceReconciliation: {
+      ok: invoiceReconciliation.ok,
+      checkedAccountCount: invoiceReconciliation.checkedAccountCount,
+      mismatchCount: invoiceReconciliation.mismatchCount,
+      tolerance: invoiceReconciliation.tolerance,
+      accounts: invoiceReconciliation.accounts
+    },
+    ledgerSync,
+    reconciliationBacklog
   };
+
+  console.info(
+    `[IMPORT] ${JSON.stringify({
+      event: "import.commit.summary",
+      batchId: batch.id,
+      sourceType: payload.sourceType,
+      fileName: payload.fileName,
+      totalReceived: payload.rows.length,
+      validSourceRows,
+      totalImported,
+      createdRecords: result.createdRecords,
+      totalSkipped,
+      duplicates,
+      invalidRows,
+      autoCreatedAccounts: result.autoCreatedAccounts,
+      statementReconciliation: result.statementReconciliation,
+      invoiceReconciliation: result.invoiceReconciliation
+    })}`
+  );
+
+  return result;
 }
 

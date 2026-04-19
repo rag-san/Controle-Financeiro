@@ -15,6 +15,8 @@ test("parseCsvBuffer chooses transactional header when CSV has summary section f
   const parsed = parseCsvBuffer(Buffer.from(sampleCsv, "utf8"));
   const mapping = suggestCsvMapping(parsed.columns);
 
+  assert.equal(parsed.metadata.openingBalance, 9.13);
+  assert.equal(parsed.metadata.closingBalance, 0.34);
   assert.equal(mapping.date, "RELEASE_DATE");
   assert.ok(
     mapping.description === "TRANSACTION_TYPE" || mapping.history === "TRANSACTION_TYPE",

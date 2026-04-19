@@ -2,12 +2,23 @@ import { parseStrictMoneyInput } from "@/lib/money";
 import { normalizeDescription, normalizeTransaction } from "@/lib/normalize";
 import { type ImportTextEncoding, decodeImportText, fixCommonMojibake } from "@/lib/import-text";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
+import { inferSignedAmountsFromBalanceAnchors } from "@/lib/finance/balance-sign-inference";
+
+export type CsvParseMetadata = {
+  accountHint?: string | null;
+  accountIdentifier?: string | null;
+  accountLabel?: string | null;
+  institutionHint?: string | null;
+  openingBalance?: number | null;
+  closingBalance?: number | null;
+};
 
 export type CsvParseResult = {
   columns: string[];
   rows: Record<string, string>[];
   delimiter: string;
   detectedEncoding: ImportTextEncoding;
+  metadata: CsvParseMetadata;
 };
 
 export type CsvMapping = {
@@ -189,6 +200,24 @@ const headerAliasKeywords = [
 
 const ignoredDescriptionRegex =
   /\b(SALDO(?:\s+ANTERIOR|\s+FINAL|\s+DISPON[IÍ]VEL|\s+DO\s+DIA)?|TOTAL(?:\s+DO\s+DIA)?|RESUMO)\b/i;
+const CSV_INSTITUTION_HINTS: Array<{ institution: string; patterns: string[] }> = [
+  {
+    institution: "Mercado Pago",
+    patterns: ["MERCADO PAGO", "MERCADOPAGO", "MELI", "DINHEIRO RESERVADO", "MUSD"]
+  },
+  {
+    institution: "Inter",
+    patterns: ["BANCO INTER", "CARTAO INTER", "FATURA CARTAO INTER", "INTER "]
+  },
+  {
+    institution: "Nubank",
+    patterns: ["NUBANK", "NU PAGAMENTOS"]
+  },
+  {
+    institution: "PagBank",
+    patterns: ["PAGBANK", "PAGSEGURO"]
+  }
+];
 
 function looksLikeHeaderCell(value: string): boolean {
   const normalized = normalizeDescription(value);
@@ -298,6 +327,185 @@ function isRepeatedHeaderRow(row: Record<string, string>, columns: string[]): bo
   return matches >= Math.max(2, Math.ceil(columns.length * 0.6));
 }
 
+function humanizeAccountLabel(value: string | null | undefined): string | null {
+  const normalized = normalizeDescription(value ?? "");
+  if (!normalized) return null;
+  if (normalized.includes("CONTA CORRENTE")) return "Conta Corrente";
+  if (normalized.includes("CONTA POUPANCA") || normalized.includes("CONTA POUPANÇA")) return "Conta Poupanca";
+  if (normalized.includes("CONTA SALARIO") || normalized.includes("CONTA SALÁRIO")) return "Conta Salario";
+  if (normalized.includes("CARTAO") || normalized.includes("CARTÃO") || normalized.includes("FATURA")) {
+    return "Cartao";
+  }
+  if (normalized.includes("CARTEIRA")) return "Carteira";
+  if (normalized.includes("CONTA")) return "Conta";
+  return null;
+}
+
+function detectInstitutionHint(text: string): string | null {
+  const normalized = normalizeDescription(text);
+  if (!normalized) return null;
+
+  for (const rule of CSV_INSTITUTION_HINTS) {
+    if (rule.patterns.some((pattern) => normalized.includes(pattern))) {
+      return rule.institution;
+    }
+  }
+
+  return null;
+}
+
+const openingBalanceAliases = [
+  "INITIAL_BALANCE",
+  "INITIAL BALANCE",
+  "OPENING_BALANCE",
+  "OPENING BALANCE",
+  "SALDO INICIAL",
+  "SALDO ANTERIOR"
+];
+
+const closingBalanceAliases = [
+  "FINAL_BALANCE",
+  "FINAL BALANCE",
+  "CLOSING_BALANCE",
+  "CLOSING BALANCE",
+  "SALDO FINAL",
+  "SALDO ATUAL"
+];
+
+function normalizeBalanceLabel(value: string): string {
+  return normalizeDescription(value).replace(/[_-]+/g, " ");
+}
+
+function matchesBalanceLabel(value: string, aliases: string[]): boolean {
+  const normalized = normalizeBalanceLabel(value);
+  if (!normalized) return false;
+
+  return aliases
+    .map((alias) => normalizeBalanceLabel(alias))
+    .some((alias) => normalized === alias || normalized.includes(alias));
+}
+
+function parseMetadataMoneyValue(value: string | null | undefined): number | null {
+  const input = sanitizeCell(value ?? "");
+  if (!input || !/\d/.test(input)) {
+    return null;
+  }
+
+  if (/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/.test(input) || /\b\d{4}-\d{2}-\d{2}\b/.test(input)) {
+    return null;
+  }
+
+  const parsed = parseStrictMoneyInput(input);
+  return parsed === null ? null : parsed;
+}
+
+function findBalanceValueInCells(cells: string[], startIndex: number): number | null {
+  for (let index = startIndex; index < cells.length; index += 1) {
+    const parsed = parseMetadataMoneyValue(cells[index]);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function extractBalanceMetadataValue(preludeRows: string[][], aliases: string[]): number | null {
+  for (let rowIndex = 0; rowIndex < preludeRows.length; rowIndex += 1) {
+    const row = preludeRows[rowIndex];
+
+    for (let cellIndex = 0; cellIndex < row.length; cellIndex += 1) {
+      if (!matchesBalanceLabel(row[cellIndex] ?? "", aliases)) {
+        continue;
+      }
+
+      const sameRowValue = findBalanceValueInCells(row, cellIndex + 1);
+      if (sameRowValue !== null) {
+        return sameRowValue;
+      }
+
+      const nextRow = preludeRows[rowIndex + 1] ?? [];
+      const alignedValue = parseMetadataMoneyValue(nextRow[cellIndex]);
+      if (alignedValue !== null) {
+        return alignedValue;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractCsvMetadata(matrix: string[][], headerIndex: number): CsvParseMetadata {
+  const preludeRows = matrix
+    .slice(0, Math.max(0, headerIndex))
+    .map((row) => row.map((cell) => sanitizeCell(cell)).filter((cell) => cell.length > 0))
+    .filter((row) => row.length > 0);
+
+  const dataSampleRows = matrix
+    .slice(headerIndex + 1, headerIndex + 16)
+    .map((row) => row.map((cell) => sanitizeCell(cell)).filter((cell) => cell.length > 0))
+    .filter((row) => row.length > 0);
+
+  const combinedPrelude = preludeRows.map((row) => row.join(" ")).join("\n");
+  const combinedSample = dataSampleRows.map((row) => row.join(" ")).join("\n");
+
+  let accountIdentifier: string | null = null;
+  let accountLabel: string | null = null;
+
+  for (const row of preludeRows) {
+    const first = row[0] ?? "";
+    const second = row[1] ?? "";
+    const rowText = row.join(" ").trim();
+    const normalizedFirst = normalizeDescription(first);
+
+    if (!accountIdentifier && normalizedFirst === "CONTA" && second) {
+      accountIdentifier = second.trim();
+    }
+
+    if (!accountIdentifier) {
+      const accountMatch = rowText.match(/\bCONTA\b\s*[:;]?\s*([A-Z0-9.\-\/]+)/i);
+      const candidateIdentifier = sanitizeCell(accountMatch?.[1] ?? "");
+      if (candidateIdentifier && /\d/.test(candidateIdentifier)) {
+        accountIdentifier = candidateIdentifier;
+      }
+    }
+
+    if (!accountLabel) {
+      accountLabel = humanizeAccountLabel(rowText);
+    }
+  }
+
+  const institutionHint = detectInstitutionHint(`${combinedPrelude}\n${combinedSample}`);
+  const fallbackLabel = humanizeAccountLabel(combinedPrelude);
+  const resolvedAccountLabel = accountLabel ?? fallbackLabel ?? null;
+  const openingBalance = extractBalanceMetadataValue(preludeRows, openingBalanceAliases);
+  const closingBalance = extractBalanceMetadataValue(preludeRows, closingBalanceAliases);
+
+  let accountHint: string | null = null;
+  if (resolvedAccountLabel && institutionHint && accountIdentifier) {
+    accountHint = `${resolvedAccountLabel} ${institutionHint} ${accountIdentifier}`.trim();
+  } else if (resolvedAccountLabel && accountIdentifier) {
+    accountHint = `${resolvedAccountLabel} ${accountIdentifier}`.trim();
+  } else if (institutionHint && accountIdentifier) {
+    accountHint = `Conta ${institutionHint} ${accountIdentifier}`.trim();
+  } else if (accountIdentifier) {
+    accountHint = accountIdentifier;
+  } else if (resolvedAccountLabel && institutionHint) {
+    accountHint = `${resolvedAccountLabel} ${institutionHint}`.trim();
+  } else if (institutionHint) {
+    accountHint = `Conta ${institutionHint}`.trim();
+  }
+
+  return {
+    accountHint,
+    accountIdentifier,
+    accountLabel: resolvedAccountLabel,
+    institutionHint,
+    openingBalance,
+    closingBalance
+  };
+}
+
 export function parseCsvBuffer(buffer: Buffer): CsvParseResult {
   const { text: decodedText, encoding } = decodeImportText(buffer);
   const text = fixCommonMojibake(decodedText);
@@ -309,12 +517,14 @@ export function parseCsvBuffer(buffer: Buffer): CsvParseResult {
       columns: [],
       rows: [],
       delimiter,
-      detectedEncoding: encoding
+      detectedEncoding: encoding,
+      metadata: {}
     };
   }
 
   const headerIndex = findHeaderIndex(matrix);
   const columns = buildColumns(matrix[headerIndex] ?? matrix[0] ?? []);
+  const metadata = extractCsvMetadata(matrix, headerIndex);
 
   const rows = matrix
     .slice(headerIndex + 1)
@@ -332,7 +542,8 @@ export function parseCsvBuffer(buffer: Buffer): CsvParseResult {
     columns,
     rows,
     delimiter,
-    detectedEncoding: encoding
+    detectedEncoding: encoding,
+    metadata
   };
 }
 
@@ -494,7 +705,11 @@ function incrementReason(reasons: Record<string, number>, reason: CsvRowReason):
   reasons[reason] = (reasons[reason] ?? 0) + 1;
 }
 
-export function analyzeCsvRows(rows: Record<string, string>[], mapping: CsvMapping): CsvMappingAnalysis {
+export function analyzeCsvRows(
+  rows: Record<string, string>[],
+  mapping: CsvMapping,
+  options: { openingBalance?: number | null } = {}
+): CsvMappingAnalysis {
   const mapped: ParsedImportRow[] = [];
   const diagnostics: CsvRowDiagnostic[] = [];
   const reasons: Record<string, number> = {};
@@ -666,8 +881,19 @@ export function analyzeCsvRows(rows: Record<string, string>[], mapping: CsvMappi
     }
   }
 
+  const inferred = inferSignedAmountsFromBalanceAnchors(mapped, {
+    openingBalance: options.openingBalance
+  });
+  const mappedByOriginal = new Map(mapped.map((row, index) => [row, inferred.rows[index]] as const));
+
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.mapped) {
+      diagnostic.mapped = mappedByOriginal.get(diagnostic.mapped) ?? diagnostic.mapped;
+    }
+  }
+
   return {
-    rows: mapped,
+    rows: inferred.rows,
     diagnostics,
     summary: {
       totalRows: rows.length,

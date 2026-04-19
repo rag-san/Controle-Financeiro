@@ -3,13 +3,10 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { TransactionDTO } from "@/lib/types";
+import { VIEW_TO_PATH, resolveViewFromPathname } from "@/src/app-shell/routes";
 import type { ViewType } from "@/src/app-shell/types";
-import { resolveViewFromPathname, VIEW_TO_PATH } from "@/src/app-shell/routes";
 
-const HIDE_VALUES_STORAGE_KEY = "finance-control:nova:hide-values";
-const SIDEBAR_STORAGE_KEY = "finance-control:nova:sidebar-collapsed";
-
-type NovaShellContextType = {
+type AppShellContextValue = {
   currentView: ViewType;
   hideValues: boolean;
   isSidebarCollapsed: boolean;
@@ -25,7 +22,9 @@ type NovaShellContextType = {
   closeImportModal: () => void;
 };
 
-const NovaShellContext = createContext<NovaShellContextType | null>(null);
+const HIDE_VALUES_KEY = "finance-control:hide-values";
+const SIDEBAR_KEY = "finance-control:sidebar-collapsed";
+const AppShellContext = createContext<AppShellContextValue | null>(null);
 
 function parseStoredBoolean(value: string | null, fallback: boolean): boolean {
   if (value === "true") return true;
@@ -33,11 +32,7 @@ function parseStoredBoolean(value: string | null, fallback: boolean): boolean {
   return fallback;
 }
 
-export function NovaShellProvider({
-  children
-}: {
-  children: React.ReactNode;
-}): React.JSX.Element {
+export function AppShellProvider({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -49,11 +44,11 @@ export function NovaShellProvider({
   const isImportModalOpen = searchParams.get("import") === "1";
 
   useEffect(() => {
-    setHideValuesState(parseStoredBoolean(window.localStorage.getItem(HIDE_VALUES_STORAGE_KEY), false));
-    setSidebarCollapsedState(parseStoredBoolean(window.localStorage.getItem(SIDEBAR_STORAGE_KEY), false));
+    setHideValuesState(parseStoredBoolean(window.localStorage.getItem(HIDE_VALUES_KEY), false));
+    setSidebarCollapsedState(parseStoredBoolean(window.localStorage.getItem(SIDEBAR_KEY), false));
   }, []);
 
-  const updateQueryFlag = useCallback(
+  const updateFlag = useCallback(
     (key: "new" | "import", nextOpen: boolean) => {
       const params = new URLSearchParams(searchParams.toString());
       if (nextOpen) {
@@ -62,8 +57,8 @@ export function NovaShellProvider({
         params.delete(key);
       }
 
-      const query = params.toString();
-      router.push(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      const nextQuery = params.toString();
+      router.push(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
     },
     [pathname, router, searchParams]
   );
@@ -81,36 +76,36 @@ export function NovaShellProvider({
     [router]
   );
 
-  const setHideValues = useCallback((hide: boolean) => {
+  const setHideValues = useCallback((hide: boolean): void => {
     setHideValuesState(hide);
-    window.localStorage.setItem(HIDE_VALUES_STORAGE_KEY, String(hide));
+    window.localStorage.setItem(HIDE_VALUES_KEY, String(hide));
   }, []);
 
-  const setIsSidebarCollapsed = useCallback((collapsed: boolean) => {
+  const setIsSidebarCollapsed = useCallback((collapsed: boolean): void => {
     setSidebarCollapsedState(collapsed);
-    window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(collapsed));
+    window.localStorage.setItem(SIDEBAR_KEY, String(collapsed));
   }, []);
 
   const openTransactionModal = useCallback(
     (transaction?: TransactionDTO | null) => {
       setEditingTransaction(transaction ?? null);
-      updateQueryFlag("new", true);
+      updateFlag("new", true);
     },
-    [updateQueryFlag]
+    [updateFlag]
   );
 
   const closeTransactionModal = useCallback(() => {
     setEditingTransaction(null);
-    updateQueryFlag("new", false);
-  }, [updateQueryFlag]);
+    updateFlag("new", false);
+  }, [updateFlag]);
 
   const openImportModal = useCallback(() => {
-    updateQueryFlag("import", true);
-  }, [updateQueryFlag]);
+    updateFlag("import", true);
+  }, [updateFlag]);
 
   const closeImportModal = useCallback(() => {
-    updateQueryFlag("import", false);
-  }, [updateQueryFlag]);
+    updateFlag("import", false);
+  }, [updateFlag]);
 
   const value = useMemo(
     () => ({
@@ -145,15 +140,13 @@ export function NovaShellProvider({
     ]
   );
 
-  return <NovaShellContext.Provider value={value}>{children}</NovaShellContext.Provider>;
+  return <AppShellContext.Provider value={value}>{children}</AppShellContext.Provider>;
 }
 
-export function useNovaShell(): NovaShellContextType {
-  const context = useContext(NovaShellContext);
+export function useAppShell(): AppShellContextValue {
+  const context = useContext(AppShellContext);
   if (!context) {
-    throw new Error("useNovaShell must be used within NovaShellProvider");
+    throw new Error("useAppShell must be used within AppShellProvider");
   }
   return context;
 }
-
-export { NovaShellProvider as AppShellProvider };

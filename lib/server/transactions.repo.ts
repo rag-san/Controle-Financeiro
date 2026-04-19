@@ -222,6 +222,55 @@ export const transactionsRepo = {
     return this.listPaged(filter, { page: 1, pageSize: total });
   },
 
+  async listAutocategorizationHistory(userId: string): Promise<
+    Array<{
+      merchantKey: string | null;
+      description: string;
+      categoryId: string;
+      categorySource: string | null;
+    }>
+  > {
+    const rows = (await db
+      .prepare(
+        `SELECT raw_json, description, category_id
+         FROM transactions
+         WHERE user_id = ?
+           AND category_id IS NOT NULL
+           AND excluded = FALSE
+           AND type <> 'transfer'::transaction_type
+         ORDER BY posted_at DESC
+         LIMIT 8000`
+      )
+      .all(userId)) as Array<{
+      raw_json: string | null;
+      description: string;
+      category_id: string;
+    }>;
+
+    return rows.map((row) => {
+      let merchantKey: string | null = null;
+      let categorySource: string | null = null;
+
+      if (row.raw_json) {
+        try {
+          const raw = JSON.parse(row.raw_json) as Record<string, unknown>;
+          merchantKey = typeof raw.merchantKey === "string" ? raw.merchantKey : null;
+          categorySource = typeof raw.categorySource === "string" ? raw.categorySource : null;
+        } catch {
+          merchantKey = null;
+          categorySource = null;
+        }
+      }
+
+      return {
+        merchantKey,
+        description: row.description,
+        categoryId: row.category_id,
+        categorySource
+      };
+    });
+  },
+
   async listPaged(
     filter: FilterInput,
     pagination: { page: number; pageSize: number },

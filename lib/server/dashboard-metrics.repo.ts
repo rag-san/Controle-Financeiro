@@ -603,6 +603,40 @@ function buildLedgerFilterSql(
   };
 }
 
+function buildLedgerCashAccountFilterSql(
+  alias: string,
+  filters: ResolvedDashboardFilters
+): { sql: string; params: unknown[] } {
+  const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+
+  if (filters.accountId) {
+    clauses.push(`${scoped}account_id = ?`);
+    params.push(filters.accountId);
+  }
+  if (filters.categoryId) {
+    clauses.push(`${scoped}category_id = ?`);
+    params.push(filters.categoryId);
+  }
+  if (filters.type === "income") {
+    clauses.push(`${scoped}type = 'income'`);
+  } else if (filters.type === "expense") {
+    clauses.push(`${scoped}type IN ('expense', 'fee', 'refund')`);
+  } else if (filters.type === "transfer") {
+    clauses.push(`${scoped}type = 'transfer'`);
+  }
+  if (filters.normalizedQuery) {
+    clauses.push(`${scoped}description_normalized LIKE ? ESCAPE '\\'`);
+    params.push(`%${escapeLike(filters.normalizedQuery)}%`);
+  }
+
+  return {
+    sql: clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "",
+    params
+  };
+}
+
 function buildLedgerExcludedClause(
   alias: string,
   excluded: boolean,
@@ -798,7 +832,7 @@ async function aggregateCashFlowTotalsFromLedger(input: {
   previous: { inflow: number; outflow: number; net: number };
 }> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
-  const filterClause = buildLedgerFilterSql("le", resolvedFilters);
+  const filterClause = buildLedgerCashAccountFilterSql("le", resolvedFilters);
   const visibilityClause = buildLedgerExcludedClause("le", resolvedFilters.excluded, {
     includeBalanceAdjustments: true
   });
@@ -1075,7 +1109,7 @@ async function getPatrimonyBaselineCentsFromLedger(input: {
   filters?: DashboardMetricsFilters;
 }): Promise<number> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
-  const filterClause = buildLedgerFilterSql("le", resolvedFilters);
+  const filterClause = buildLedgerCashAccountFilterSql("le", resolvedFilters);
   const visibilityClause = buildLedgerExcludedClause("le", resolvedFilters.excluded, {
     includeBalanceAdjustments: true
   });
@@ -1108,7 +1142,7 @@ async function getPatrimonyDeltasByBucketFromLedger(input: {
   filters?: DashboardMetricsFilters;
 }): Promise<Map<string, number>> {
   const resolvedFilters = resolveDashboardFilters(input.filters);
-  const filterClause = buildLedgerFilterSql("le", resolvedFilters);
+  const filterClause = buildLedgerCashAccountFilterSql("le", resolvedFilters);
   const visibilityClause = buildLedgerExcludedClause("le", resolvedFilters.excluded, {
     includeBalanceAdjustments: true
   });

@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/api-auth";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { withRouteProfiling } from "@/lib/profiling";
 import {
+  ImportCommitError,
   MAX_IMPORT_COMMIT_ROWS,
   commitImportForUser,
   importCommitPayloadSchema
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         sourceType: parsed.data.sourceType,
         fileName: parsed.data.fileName,
         totalRows: result.totalReceived,
-        validRows: result.totalImported,
+        validRows: result.sourceRows.valid,
         imported: result.totalImported,
         skipped: result.totalSkipped,
         duplicates: result.duplicates,
@@ -113,6 +114,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       return NextResponse.json(result, { status: 201 });
     } catch (error) {
+      if (error instanceof ImportCommitError) {
+        logImportEvent("import.commit", {
+          userId: currentUserId,
+          sourceType: metadata.sourceType,
+          fileName: metadata.fileName,
+          totalRows: metadata.rows,
+          imported:
+            typeof error.details?.totalImported === "number" ? (error.details.totalImported as number) : undefined,
+          skipped:
+            typeof error.details?.totalSkipped === "number" ? (error.details.totalSkipped as number) : undefined,
+          duplicates:
+            typeof error.details?.duplicates === "number" ? (error.details.duplicates as number) : undefined,
+          invalidRows:
+            typeof error.details?.invalidRows === "number" ? (error.details.invalidRows as number) : undefined,
+          phase: "commit",
+          errorCode: error.code
+        });
+
+        return commitError(error.status, error.code, error.message, error.details);
+      }
+
       logImportEvent("import.commit", {
         userId: currentUserId,
         sourceType: "unknown",

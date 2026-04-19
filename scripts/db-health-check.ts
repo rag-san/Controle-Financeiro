@@ -124,6 +124,104 @@ async function buildChecks(): Promise<CheckResult[]> {
     message: "Categorias com nome duplicado (case-insensitive) por usuário."
   });
 
+  const transactionSignMismatch = await count(`
+    SELECT COUNT(*)::int AS count
+    FROM transactions
+    WHERE (type = 'income'::transaction_type AND amount_cents < 0)
+       OR (type = 'expense'::transaction_type AND amount_cents > 0)
+       OR (direction = 'in'::transaction_direction AND amount_cents < 0)
+       OR (direction = 'out'::transaction_direction AND amount_cents > 0)
+  `);
+  results.push({
+    key: "transaction_type_sign_mismatch",
+    value: transactionSignMismatch,
+    severity: "error",
+    message: "Transações com tipo/direção incompatíveis com o sinal do valor."
+  });
+
+  const transferMirrorMismatch = await count(`
+    SELECT COUNT(*)::int AS count
+    FROM (
+      SELECT user_id, transfer_group_id
+      FROM transactions
+      WHERE type = 'transfer'::transaction_type
+        AND is_internal_transfer = TRUE
+        AND transfer_group_id IS NOT NULL
+      GROUP BY user_id, transfer_group_id
+      HAVING COUNT(*) <> 2 OR COALESCE(SUM(amount_cents), 0) <> 0
+    ) invalid_transfer_groups
+  `);
+  results.push({
+    key: "transfer_mirror_mismatch",
+    value: transferMirrorMismatch,
+    severity: "error",
+    message: "Transferências internas sem par espelhado ou com soma diferente de zero."
+  });
+
+  const latestConfirmedBalanceDivergence = await count(`
+    WITH latest_snapshots AS (
+      SELECT DISTINCT ON (user_id, account_id)
+        user_id,
+        account_id,
+        balance_cents
+      FROM account_balance_snapshots
+      ORDER BY user_id, account_id, balance_date DESC, created_at DESC
+    ),
+    calculated AS (
+      SELECT
+        user_id,
+        account_id,
+        COALESCE(SUM(amount_cents), 0)::bigint AS calculated_cents
+      FROM transactions
+      WHERE excluded = FALSE
+      GROUP BY user_id, account_id
+    )
+    SELECT COUNT(*)::int AS count
+    FROM latest_snapshots s
+    LEFT JOIN calculated c
+      ON c.user_id = s.user_id
+     AND c.account_id = s.account_id
+    WHERE ABS(COALESCE(c.calculated_cents, 0) - s.balance_cents) > 1
+  `);
+  results.push({
+    key: "confirmed_balance_divergence",
+    value: latestConfirmedBalanceDivergence,
+    severity: "warn",
+    message: "Saldo calculado diverge do último saldo confirmado por extrato."
+  });
+
+  const cardPaymentAsExpense = await count(`
+    SELECT COUNT(*)::int AS count
+    FROM transactions t
+    JOIN accounts a ON a.id = t.account_id
+    WHERE t.excluded = FALSE
+      AND t.type = 'expense'::transaction_type
+      AND t.is_internal_transfer = FALSE
+      AND a.type IN ('checking', 'cash')
+      AND t.normalized_description LIKE '%FATURA%'
+      AND t.normalized_description LIKE '%CART%'
+  `);
+  results.push({
+    key: "card_payment_as_cash_expense",
+    value: cardPaymentAsExpense,
+    severity: "warn",
+    message: "Pagamentos de fatura no caixa salvos como despesa comum em vez de transferência."
+  });
+
+  const unmatchedLedgerCardPayments = await count(`
+    SELECT COUNT(*)::int AS count
+    FROM ledger_entries
+    WHERE type = 'cc_payment'
+      AND reconciliation_status <> 'matched'
+      AND excluded = FALSE
+  `);
+  results.push({
+    key: "unmatched_ledger_card_payments",
+    value: unmatchedLedgerCardPayments,
+    severity: "warn",
+    message: "Pagamentos de fatura no ledger ainda sem conciliação."
+  });
+
   return results;
 }
 
@@ -167,5 +265,8 @@ async function run(): Promise<void> {
 run().catch((error) => {
   const message = error instanceof Error ? error.message : "Falha inesperada.";
   console.error(`[db:health] FAIL: ${message}`);
+  if (error instanceof Error && error.stack) {
+    console.error(error.stack);
+  }
   process.exitCode = 1;
 });

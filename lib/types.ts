@@ -6,6 +6,26 @@ export type AccountDTO = {
   currency: string;
   parentAccountId?: string | null;
   currentBalance?: number;
+  confirmedBalance?: {
+    amount: number;
+    date: string;
+    sourceType: "csv" | "ofx" | "pdf" | "manual";
+    fileName: string;
+    importBatchId: string | null;
+    openingBalance: number | null;
+    computedClosingBalance: number | null;
+    rowCount: number;
+    balanceAnchorCount: number;
+    importedAt: string;
+    difference: number;
+  } | null;
+  cardMetrics?: {
+    spending: number;
+    payments: number;
+    openDebt: number;
+    futureInstallments: number;
+    totalCommitted: number;
+  };
 };
 
 export type CategoryDTO = {

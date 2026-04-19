@@ -1,20 +1,17 @@
 import { Suspense } from "react";
-import { NovaAppShell } from "@/src/app-shell/AppShell";
-import { NovaShellProvider } from "@/src/app-shell/AppShellContext";
+import { AppShellProvider } from "@/src/app-shell/AppShellContext";
+import { AppShell } from "@/src/app-shell/AppShell";
 
 export default function ProtectedLayout({
   children
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}): React.JSX.Element {
+}>): React.JSX.Element {
   return (
     <Suspense fallback={<div className="min-h-screen bg-background" />}>
-      <NovaShellProvider>
-        <NovaAppShell>{children}</NovaAppShell>
-      </NovaShellProvider>
+      <AppShellProvider>
+        <AppShell>{children}</AppShell>
+      </AppShellProvider>
     </Suspense>
   );
 }
-
-
-

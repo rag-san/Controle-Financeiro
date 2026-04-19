@@ -1,387 +1,286 @@
-import React, { useMemo, useState } from 'react';
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  BarChart,
   Bar,
-  XAxis,
-  YAxis,
+  BarChart,
   CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
   ComposedChart,
-  Line
-} from 'recharts';
-import { TrendingUp, TrendingDown } from 'lucide-react';
-import type { CashflowPeriodKey, CashflowViewData } from '@/src/features/cashflow/types';
-import { useCashflowData } from '@/src/features/cashflow/hooks/useCashflowData';
-import { EmptyState } from '@/src/app-shell/components/EmptyState';
-import { Skeleton } from '@/src/app-shell/components/ShellSkeleton';
-import { cn } from '@/src/app-shell/utils';
-import { getCategoryColor } from '@/src/features/categories/categoryColors';
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
+import { ArrowDownRight, ArrowUpRight, Wallet } from "lucide-react";
+import { useAppShell } from "@/src/app-shell/AppShellContext";
+import { EmptyState } from "@/src/app-shell/components/EmptyState";
+import { PageSkeleton } from "@/src/app-shell/components/ShellSkeleton";
+import { cn, formatCurrency } from "@/src/app-shell/utils";
+import type { CashflowPeriodKey, CashflowViewData } from "@/src/features/cashflow/types";
+import { fetchJsonOrThrow } from "@/src/features/shared/fetch";
 
-interface CashFlowProps {
-  hideValues: boolean;
+type CashflowResponse = {
+  view: "cashflow";
+  data: CashflowViewData;
+};
+
+const PERIOD_OPTIONS: Array<{ value: CashflowPeriodKey; label: string }> = [
+  { value: "1m", label: "1M" },
+  { value: "3m", label: "3M" },
+  { value: "6m", label: "6M" },
+  { value: "ytd", label: "YTD" },
+  { value: "12m", label: "1Y" }
+];
+
+function deltaLabel(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "Sem comparação";
+  if (value === 0) return "Estável";
+  return `${value > 0 ? "↑" : "↓"} ${Math.abs(value).toFixed(1)}% vs período anterior`;
 }
 
-export { CashFlow as CashflowPage };
+export function CashflowPage(): React.JSX.Element {
+  const { hideValues } = useAppShell();
+  const [period, setPeriod] = useState<CashflowPeriodKey>("6m");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [data, setData] = useState<CashflowViewData | null>(null);
 
-type TooltipEntry = {
-  color?: string;
-  dataKey?: string;
-  name?: string;
-  value?: number;
-};
+  const load = useCallback(async (): Promise<void> => {
+    setError("");
+    try {
+      const payload = await fetchJsonOrThrow<CashflowResponse>(`/api/metrics/official?view=cashflow&period=${period}`);
+      setData(payload.data);
+    } catch (loadError) {
+      setData(null);
+      setError(loadError instanceof Error ? loadError.message : "Falha ao carregar fluxo de caixa.");
+    } finally {
+      setLoading(false);
+    }
+  }, [period]);
 
-type CashflowChartRow = {
-  date: string;
-  income: number;
-  expense: number;
-  balance: number;
-  [key: string]: string | number;
-};
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-const PERIOD_MAP: Record<string, CashflowPeriodKey> = {
-  '1M': '1m',
-  '3M': '3m',
-  '6M': '6m',
-  '1Y': '12m'
-};
+  useEffect(() => {
+    const onDataChanged = () => {
+      setLoading(true);
+      void load();
+    };
 
-function formatMonthLabel(monthKey: string): string {
-  const parsed = new Date(`${monthKey}-01T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return monthKey;
-  return parsed.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '').replace(/^\w/, (value) => value.toUpperCase());
-}
+    window.addEventListener("finance-data-changed", onDataChanged);
+    return () => window.removeEventListener("finance-data-changed", onDataChanged);
+  }, [load]);
 
-function hasCashflowData(data: CashflowViewData | null): boolean {
-  if (!data) return false;
-  return (
-    Math.abs(data.netResult.current) > 0 ||
-    Math.abs(data.income.current) > 0 ||
-    Math.abs(data.expense.current) > 0 ||
-    data.netChart.length > 0 ||
-    data.incomeChart.length > 0 ||
-    data.expensesChart.rows.length > 0
+  const mainChartData = useMemo(() => {
+    const incomeByMonth = new Map(data?.incomeChart.map((item) => [item.month, item.income]) ?? []);
+    return (data?.netChart ?? []).map((item) => {
+      const income = incomeByMonth.get(item.month) ?? 0;
+      return {
+        month: item.month,
+        income,
+        expense: Math.max(0, Number((income - item.net).toFixed(2))),
+        net: item.net
+      };
+    });
+  }, [data]);
+  const financeBreakdown = data?.financeBreakdown;
+
+  const hasData = Boolean(
+    data &&
+      (data.income.current !== 0 ||
+        data.expense.current !== 0 ||
+        data.netResult.current !== 0 ||
+        mainChartData.length > 0)
   );
-}
 
-function formatValue(value: number, hideValues: boolean): string {
-  if (hideValues) return '••••••';
-  return `R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+  if (loading) return <PageSkeleton />;
 
-function CustomTooltip({
-  active,
-  payload,
-  label,
-  hideValues,
-  labelMap
-}: {
-  active?: boolean;
-  payload?: TooltipEntry[];
-  label?: string;
-  hideValues: boolean;
-  labelMap: Record<string, string>;
-}) {
-  if (active && payload && payload.length) {
+  if (error && !data) {
     return (
-      <div className="min-w-[180px] rounded-2xl border border-border/90 bg-card/95 p-4 shadow-[0_18px_42px_hsl(var(--overlay)/0.18)] backdrop-blur">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-        <div className="space-y-3">
-          {payload.map((entry, index) => {
-            const key = String(entry.dataKey ?? entry.name ?? '');
-            const labelName = labelMap[key] ?? String(entry.name ?? key);
-            return (
-              <div key={index} className="flex items-center justify-between gap-6">
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className={cn('rounded-full', key === 'balance' ? 'w-3 h-1 rounded-sm' : 'w-2 h-2')}
-                    style={{ backgroundColor: entry.color }}
-                  />
-                  <span className="text-xs font-medium text-foreground/90">{labelName}</span>
-                </div>
-                <span className="font-mono text-xs font-semibold text-foreground">
-                  {formatValue(Number(entry.value ?? 0), hideValues)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+      <div className="glass-card p-8 text-center">
+        <p className="mb-4 text-sm text-error">{error}</p>
+        <button onClick={() => { setLoading(true); void load(); }} className="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground">
+          Tentar novamente
+        </button>
       </div>
     );
   }
-  return null;
-}
 
-export function CashFlow({ hideValues }: CashFlowProps) {
-  const [period, setPeriod] = useState('6M');
-  const periodKey = PERIOD_MAP[period] ?? '6m';
-  const { data, loading, error } = useCashflowData(periodKey);
-
-  const mainChartData = useMemo<CashflowChartRow[]>(() => {
-    if (!data) return [];
-
-    const monthKeys = new Set<string>();
-    data.incomeChart.forEach((item) => monthKeys.add(item.month));
-    data.netChart.forEach((item) => monthKeys.add(item.month));
-    data.expensesChart.rows.forEach((item) => monthKeys.add(item.month));
-
-    let runningBalance = 0;
-    return [...monthKeys]
-      .sort()
-      .map((monthKey) => {
-        const income = data.incomeChart.find((item) => item.month === monthKey)?.income ?? 0;
-        const expense = data.expensesChart.rows.find((item) => item.month === monthKey)?.total ?? 0;
-        const net = data.netChart.find((item) => item.month === monthKey)?.net ?? income - expense;
-        runningBalance += net;
-        return {
-          date: formatMonthLabel(monthKey),
-          income,
-          expense,
-          balance: Number(runningBalance.toFixed(2))
-        };
-      });
-  }, [data]);
-
-  const expenseCategories = useMemo(() => (data?.expensesChart.categories ?? []).slice(0, 4), [data]);
-  const labelMap = useMemo<Record<string, string>>(() => {
-    const map: Record<string, string> = {
-      income: 'Entradas',
-      expense: 'Saídas',
-      balance: 'Saldo acumulado'
-    };
-    for (const category of expenseCategories) {
-      map[category] = category;
-    }
-    return map;
-  }, [expenseCategories]);
-
-  const incomeTrendData = useMemo(() => {
-    if (!data) return [];
-    return data.incomeChart.map((item) => ({
-      date: formatMonthLabel(item.month),
-      income: item.income
-    }));
-  }, [data]);
-
-  const expenseTrendData = useMemo(() => {
-    if (!data) return [];
-    return data.expensesChart.rows.map((row) => {
-      const normalized: CashflowChartRow = {
-        date: formatMonthLabel(row.month),
-        expense: row.total,
-        income: 0,
-        balance: 0
-      };
-
-                      for (const category of expenseCategories) {
-                        normalized[category] = Number(row[category] ?? 0);
-                      }
-
-      return normalized;
-    });
-  }, [data, expenseCategories]);
-
-  const empty = !loading && !error && !hasCashflowData(data);
+  if (!hasData || !data) {
+    return (
+      <div className="glass-card">
+        <EmptyState
+          icon={Wallet}
+          title="Sem dados de fluxo de caixa"
+          description="Importe transações ou registre movimentações para ver entradas, saídas e saldo líquido."
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+    <div className="space-y-6">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground mb-1">Fluxo de Caixa</h1>
-          <p className="text-muted-foreground text-sm">Acompanhe suas entradas, saídas e evolução do saldo</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Fluxo de Caixa</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{data.currentRangeLabel}</p>
         </div>
-        <div className="flex bg-card p-1 rounded-xl border border-border shadow-sm">
-          {['1M', '3M', '6M', '1Y'].map((value) => (
+        <div className="flex flex-wrap gap-2">
+          {PERIOD_OPTIONS.map((option) => (
             <button
-              key={value}
-              onClick={() => setPeriod(value)}
+              key={option.value}
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                setPeriod(option.value);
+              }}
               className={cn(
-                'px-4 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300',
-                period === value
-                  ? 'bg-focus text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                period === option.value
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >
-              {value}
+              {option.label}
             </button>
           ))}
         </div>
       </header>
 
-      {loading ? (
-        <div className="space-y-6">
-          <Skeleton className="glass-card h-[430px]" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Skeleton className="glass-card h-[320px]" />
-            <Skeleton className="glass-card h-[320px]" />
-          </div>
-        </div>
-      ) : error ? (
-        <div className="glass-card p-8 text-center">
-          <p className="text-sm text-error mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="bg-primary hover:bg-primary/90 text-background px-4 py-2 rounded-lg font-medium transition-colors"
-          >
-            Tentar novamente
-          </button>
-        </div>
-      ) : empty ? (
-        <div className="glass-card">
-          <EmptyState
-            icon={TrendingDown}
-            title="Sem dados no período"
-            description="Importe extratos ou adicione transações para visualizar o fluxo de caixa."
-          />
-        </div>
-      ) : (
-        <>
-          <div className="glass-card p-6 sm:p-8 relative overflow-hidden">
-            <div className="relative z-10 mb-10 flex flex-col sm:flex-row sm:items-end justify-between gap-6">
-              <div>
-                <h2 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Resultado Líquido (Período)</h2>
-                <div className="flex flex-wrap items-baseline gap-4">
-                  <span className="text-5xl sm:text-6xl font-semibold tracking-tighter text-foreground font-mono leading-none">
-                    {hideValues ? '••••••' : formatValue(data?.netResult.current ?? 0, false)}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-xs font-bold text-success bg-success/10 px-3 py-1.5 rounded-lg border border-success/20">
-                    <TrendingUp size={14} strokeWidth={2.5} />
-                    {(data?.netResult.changePercent ?? 0) >= 0 ? '+' : ''}{(data?.netResult.changePercent ?? 0).toFixed(1)}% vs anterior
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-6 bg-card px-4 py-2.5 rounded-xl border border-border shadow-sm">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-success" />
-                  <span className="text-xs font-medium text-muted-foreground">Entradas</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm bg-error" />
-                  <span className="text-xs font-medium text-muted-foreground">Saídas</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-1 rounded-full bg-info" />
-                  <span className="text-xs font-medium text-muted-foreground">Saldo</span>
-                </div>
-              </div>
+      <div className="glass-card p-6 sm:p-8">
+        <div className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Resultado líquido</div>
+            <div className={cn("mt-2 geist-mono text-5xl font-semibold tracking-tight", data.netResult.current >= 0 ? "text-foreground" : "text-error")}>
+              {formatCurrency(Math.abs(data.netResult.current), hideValues)}
             </div>
-
-            <div className="h-[260px] w-full relative z-10">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={mainChartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }} barGap={8}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                    dy={15}
-                    fontWeight={500}
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(val) => `R$ ${Number(val) / 1000}k`}
-                    dx={-10}
-                    fontWeight={500}
-                  />
-                  <YAxis yAxisId="right" orientation="right" stroke="hsl(var(--muted-foreground))" opacity={0} hide />
-                  <Tooltip
-                    content={<CustomTooltip hideValues={hideValues} labelMap={labelMap} />}
-                    cursor={{ fill: 'hsl(var(--muted-foreground) / 0.08)' }}
-                  />
-                  <Bar yAxisId="left" dataKey="income" fill="hsl(var(--success))" radius={[6, 6, 6, 6]} maxBarSize={32} />
-                  <Bar yAxisId="left" dataKey="expense" fill="hsl(var(--error))" radius={[6, 6, 6, 6]} maxBarSize={32} />
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="balance"
-                    stroke="hsl(var(--info))"
-                    strokeWidth={3}
-                    dot={{ r: 4, fill: 'hsl(var(--card))', stroke: 'hsl(var(--info))', strokeWidth: 2 }}
-                    activeDot={{ r: 6, fill: 'hsl(var(--info))', stroke: 'hsl(var(--card))', strokeWidth: 2 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+            <div className={cn("mt-3 text-sm font-medium", (data.netResult.changePercent ?? 0) >= 0 ? "text-success" : "text-error")}>
+              {deltaLabel(data.netResult.changePercent)}
             </div>
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Saldo de caixa</div>
+              <div className="mt-2 geist-mono text-xl font-semibold tracking-tight text-foreground">{formatCurrency(data.cashBalance, hideValues)}</div>
+            </div>
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Período anterior</div>
+              <div className="mt-2 text-sm font-medium text-foreground">{data.previousRangeLabel}</div>
+            </div>
+          </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="glass-card p-6 sm:p-8 relative overflow-hidden">
-              <div className="relative z-10 mb-8 flex justify-between items-start">
-                <div>
-                  <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Receitas</h3>
-                  <div className="flex flex-wrap items-baseline gap-3">
-                    <span className="text-3xl sm:text-4xl font-semibold tracking-tighter text-foreground font-mono leading-none">
-                      {hideValues ? '••••••' : formatValue(data?.income.current ?? 0, false)}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs font-bold text-success bg-success/10 px-2 py-1 rounded-md border border-success/20 w-fit">
-                      <TrendingUp size={12} strokeWidth={2.5} />
-                      {(data?.income.changePercent ?? 0) >= 0 ? '+' : ''}{(data?.income.changePercent ?? 0).toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="h-[180px] w-full relative z-10">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={incomeTrendData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" vertical={false} />
-                    <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$ ${Number(val) / 1000}k`} dx={-10} />
-                    <Tooltip content={<CustomTooltip hideValues={hideValues} labelMap={labelMap} />} cursor={{ fill: 'hsl(var(--muted-foreground) / 0.08)' }} />
-                    <Bar dataKey="income" name="Receitas" fill="hsl(var(--success))" radius={[4, 4, 4, 4]} stroke="hsl(var(--card))" strokeWidth={2} maxBarSize={24} />
-                  </BarChart>
-                </ResponsiveContainer>
+        <div className="h-[320px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={mainChartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" vertical={false} />
+              <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => (value === 0 ? "0" : `${Number(value) / 1000}k`)} width={44} />
+              <Tooltip formatter={(value: number | string | undefined, name?: string) => [formatCurrency(Number(value ?? 0), hideValues), name === "income" ? "Entradas" : name === "expense" ? "Saídas" : "Resultado"]} />
+              <Bar dataKey="income" name="income" fill="hsl(var(--success))" radius={[6, 6, 0, 0]} maxBarSize={28} />
+              <Bar dataKey="expense" name="expense" fill="hsl(var(--error))" radius={[6, 6, 0, 0]} maxBarSize={28} />
+              <Line dataKey="net" name="net" type="monotone" stroke="hsl(var(--info))" strokeWidth={3} dot={{ r: 3, fill: "hsl(var(--info))" }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="glass-card p-6">
+          <div className="mb-4 flex items-center gap-2 text-success">
+            <ArrowDownRight size={18} />
+            <h2 className="text-[11px] font-bold uppercase tracking-widest">Receitas</h2>
+          </div>
+          <div className="geist-mono text-3xl font-semibold tracking-tight text-foreground">{formatCurrency(data.income.current, hideValues)}</div>
+          <div className="mt-2 text-sm text-muted-foreground">{deltaLabel(data.income.changePercent)}</div>
+          <div className="mt-6 h-[180px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.incomeChart} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" vertical={false} />
+                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                <YAxis hide />
+                <Tooltip formatter={(value: number | string | undefined) => formatCurrency(Number(value ?? 0), hideValues)} />
+                <Bar dataKey="income" fill="hsl(var(--success))" radius={[6, 6, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="glass-card p-6">
+          <div className="mb-4 flex items-center gap-2 text-error">
+            <ArrowUpRight size={18} />
+            <h2 className="text-[11px] font-bold uppercase tracking-widest">Saídas</h2>
+          </div>
+          <div className="geist-mono text-3xl font-semibold tracking-tight text-foreground">{formatCurrency(data.expense.current, hideValues)}</div>
+          <div className="mt-2 text-sm text-muted-foreground">{deltaLabel(data.expense.changePercent)}</div>
+          <div className="mt-6 h-[180px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.expensesChart.rows} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" vertical={false} />
+                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                <YAxis hide />
+                <Tooltip formatter={(value: number | string | undefined) => formatCurrency(Number(value ?? 0), hideValues)} />
+                <Bar dataKey="total" fill="hsl(var(--error))" radius={[6, 6, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="glass-card p-6">
+          <h2 className="mb-4 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Leitura oficial</h2>
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Receita classificada</div>
+              <div className="mt-2 geist-mono text-xl font-semibold tracking-tight text-foreground">
+                {formatCurrency(data.classifiedIncome?.current ?? data.income.current, hideValues)}
               </div>
             </div>
-
-            <div className="glass-card p-6 sm:p-8 relative overflow-hidden">
-              <div className="relative z-10 mb-8 flex justify-between items-start">
-                <div>
-                  <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Gastos</h3>
-                  <div className="flex flex-wrap items-baseline gap-3">
-                    <span className="text-3xl sm:text-4xl font-semibold tracking-tighter text-foreground font-mono leading-none">
-                      {hideValues ? '••••••' : formatValue(data?.expense.current ?? 0, false)}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs font-bold text-error bg-error/10 px-2 py-1 rounded-md border border-error/20 w-fit">
-                      <TrendingDown size={12} strokeWidth={2.5} />
-                      {(data?.expense.changePercent ?? 0) >= 0 ? '+' : ''}{(data?.expense.changePercent ?? 0).toFixed(1)}%
-                    </span>
-                  </div>
-                </div>
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Despesa classificada</div>
+              <div className="mt-2 geist-mono text-xl font-semibold tracking-tight text-foreground">
+                {formatCurrency(data.classifiedExpense?.current ?? data.expense.current, hideValues)}
               </div>
-              <div className="h-[180px] w-full relative z-10">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={expenseTrendData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.22)" vertical={false} />
-                    <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `R$ ${Number(val) / 1000}k`} dx={-10} />
-                    <Tooltip content={<CustomTooltip hideValues={hideValues} labelMap={labelMap} />} cursor={{ fill: 'hsl(var(--muted-foreground) / 0.08)' }} />
-                    {expenseCategories.map((category) => (
-                      <Bar
-                        key={category}
-                        dataKey={category}
-                        stackId="a"
-                        fill={getCategoryColor(category)}
-                        radius={[4, 4, 4, 4]}
-                        stroke="hsl(var(--card))"
-                        strokeWidth={2}
-                        maxBarSize={24}
-                      />
-                    ))}
-                  </BarChart>
-                </ResponsiveContainer>
+            </div>
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Despesa paga</div>
+              <div className="mt-2 geist-mono text-xl font-semibold tracking-tight text-foreground">
+                {formatCurrency(financeBreakdown?.paidExpense ?? 0, hideValues)}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">No cartão</div>
+              <div className="mt-2 geist-mono text-xl font-semibold tracking-tight text-foreground">
+                {formatCurrency(financeBreakdown?.cardSpending ?? 0, hideValues)}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Pagamento de fatura</div>
+              <div className="mt-2 geist-mono text-xl font-semibold tracking-tight text-foreground">
+                {formatCurrency(financeBreakdown?.cardPayments ?? 0, hideValues)}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Fatura aberta</div>
+              <div className="mt-2 geist-mono text-xl font-semibold tracking-tight text-foreground">
+                {formatCurrency(financeBreakdown?.openCardDebt ?? 0, hideValues)}
+              </div>
+              <div className="mt-2 text-sm text-muted-foreground">
+                Parcelas futuras {formatCurrency(financeBreakdown?.futureInstallments ?? 0, hideValues)}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-border bg-secondary/50 px-4 py-4">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Comparação anterior</div>
+              <div className="mt-2 text-sm text-foreground">
+                Entradas {formatCurrency(data.income.previous, hideValues)} • Saídas {formatCurrency(data.expense.previous, hideValues)}
               </div>
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </div>
+
+      {error ? <div className="rounded-2xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">{error}</div> : null}
     </div>
   );
 }
-

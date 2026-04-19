@@ -71,3 +71,37 @@ test("buildSpendingTrendSeries ignores non-expense types", () => {
   assert.equal(result.totals.current, 70);
   assert.equal(result.totals.previous, 30);
 });
+
+test("buildSpendingTrendSeries keeps previous month visible when current month has no expense yet", () => {
+  const result = buildSpendingTrendSeries({
+    currentTransactions: [],
+    previousTransactions: [
+      tx({ date: "2026-03-06T12:00:00.000Z", amount: -2214.45, type: "expense" })
+    ],
+    referenceDate: new Date("2026-04-15T12:00:00.000Z"),
+    now: new Date("2026-04-01T12:00:00.000Z")
+  });
+
+  assert.equal(result.compareUntilDay, 30);
+  assert.equal(result.daily.length, 30);
+  assert.equal(result.accumulated.length, 30);
+  assert.deepEqual(result.daily[5], { day: 6, current: 0, previous: 2214.45 });
+  assert.deepEqual(result.totals, { current: 0, previous: 2214.45 });
+});
+
+test("buildSpendingTrendSeries nets refunds against daily expense totals", () => {
+  const result = buildSpendingTrendSeries({
+    currentTransactions: [
+      tx({ date: "2026-02-02T12:00:00.000Z", amount: -120, type: "expense" }),
+      tx({ date: "2026-02-02T18:00:00.000Z", amount: 20, type: "expense" }),
+      tx({ date: "2026-02-03T12:00:00.000Z", amount: -30, type: "expense" })
+    ],
+    previousTransactions: [],
+    referenceDate: new Date("2026-02-05T12:00:00.000Z"),
+    now: new Date("2026-02-05T12:00:00.000Z")
+  });
+
+  assert.equal(result.compareUntilDay, 5);
+  assert.deepEqual(result.daily[1], { day: 2, current: 100, previous: 0 });
+  assert.equal(result.totals.current, 130);
+});

@@ -77,6 +77,7 @@ type LedgerAnalyticsRow = LedgerEntryRow & {
   category_color: string | null;
   category_icon: string | null;
   category_parent_id: string | null;
+  entry_meta_json: string | null;
 };
 
 type TransferSuggestionRow = {
@@ -164,6 +165,7 @@ function mapLedgerAnalyticsEntry(row: LedgerAnalyticsRow) {
 
   return {
     ...base,
+    raw: row.entry_meta_json ? (JSON.parse(row.entry_meta_json) as Record<string, unknown>) : null,
     account: row.account_name
       ? {
           id: base.accountId ?? "",
@@ -221,17 +223,21 @@ function normalizeSlug(value: string): string {
     .slice(0, 80);
 }
 
-function buildDateFilters(input?: { from?: Date; to?: Date }): { sql: string; params: unknown[] } {
+function buildDateFilters(
+  input?: { from?: Date; to?: Date },
+  alias?: string
+): { sql: string; params: unknown[] } {
   const clauses: string[] = [];
   const params: unknown[] = [];
+  const scoped = alias?.trim() ? `${alias.trim()}.` : "";
 
   if (input?.from) {
-    clauses.push("posted_at >= ?");
+    clauses.push(`${scoped}posted_at >= ?`);
     params.push(input.from.toISOString());
   }
 
   if (input?.to) {
-    clauses.push("posted_at <= ?");
+    clauses.push(`${scoped}posted_at <= ?`);
     params.push(input.to.toISOString());
   }
 
@@ -649,7 +655,7 @@ export const ledgerRepo = {
   },
 
   async listLedgerEntriesForTransferMatcher(input: { userId: string; from?: Date; to?: Date }) {
-    const dateFilter = buildDateFilters({ from: input.from, to: input.to });
+    const dateFilter = buildDateFilters({ from: input.from, to: input.to }, "le");
     const rows = (await db
       .prepare(
         `SELECT
@@ -1054,7 +1060,7 @@ export const ledgerRepo = {
     accountId?: string;
     categoryId?: string;
   }) {
-    const range = buildDateFilters({ from: input.from, to: input.to });
+    const range = buildDateFilters({ from: input.from, to: input.to }, "le");
     const clauses = [
       "le.user_id = ?",
       buildLedgerVisibilityClause("le", { includeBalanceAdjustments: false }),
@@ -1090,7 +1096,8 @@ export const ledgerRepo = {
            c.name AS category_name,
            c.color AS category_color,
            c.icon AS category_icon,
-           c.parent_id AS category_parent_id
+           c.parent_id AS category_parent_id,
+           COALESCE(tr.meta_json, lt.raw_json) AS entry_meta_json
          FROM ledger_entries le
          LEFT JOIN accounts a
            ON a.id = le.account_id
@@ -1101,6 +1108,11 @@ export const ledgerRepo = {
          LEFT JOIN categories c
            ON c.id = le.category_id
           AND c.user_id = le.user_id
+         LEFT JOIN transaction_raw tr
+           ON tr.id = le.raw_transaction_id
+         LEFT JOIN transactions lt
+           ON lt.user_id = le.user_id
+          AND le.external_ref = ('LEGACY_TX:' || lt.id)
          WHERE ${clauses.join(" AND ")}
            ${range.sql}
          ORDER BY le.posted_at ASC, le.created_at ASC`
@@ -1198,7 +1210,12 @@ export const ledgerRepo = {
         id: card.id,
         name: card.name,
         defaultPaymentAccountId: card.defaultPaymentAccountId
-      }))
+      })),
+      summary: {
+        transferSuggestions: suggestions.length,
+        unmatchedCardPayments: ccPayments.length,
+        pendingItems: suggestions.length + ccPayments.length
+      }
     };
   },
 

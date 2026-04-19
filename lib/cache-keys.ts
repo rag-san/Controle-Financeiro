@@ -1,4 +1,5 @@
 import { invalidateCacheByPrefix } from "@/lib/cache";
+import { officialMetricSnapshotsRepo } from "@/lib/server/official-metric-snapshots.repo";
 
 export function invalidateFinanceCaches(userId: string): void {
   invalidateCacheByPrefix(`dashboard:${userId}:`);
@@ -12,4 +13,5 @@ export function invalidateFinanceCaches(userId: string): void {
   invalidateCacheByPrefix(`net-worth:${userId}:`);
   invalidateCacheByPrefix(`recurring:${userId}:`);
   invalidateCacheByPrefix(`imports:${userId}:`);
+  void officialMetricSnapshotsRepo.deleteByUser(userId).catch(() => {});
 }

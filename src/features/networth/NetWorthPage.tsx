@@ -1,439 +1,572 @@
-import React from 'react';
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { format, startOfYear, subMonths } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
-  PieChart as RePieChart,
-  Pie,
+  Area,
+  AreaChart,
+  CartesianGrid,
   Cell,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
-  AreaChart,
-  Area,
   XAxis,
-  YAxis,
-  CartesianGrid
-} from 'recharts';
-import { TrendingUp, ShieldCheck, Globe } from 'lucide-react';
-import { extractApiError, parseApiResponse } from '@/lib/client/api-response';
-import type { AccountDTO } from '@/lib/types';
-import type { NetWorthEntryDTO } from '@/src/features/networth/types';
-import { normalizeDateKey } from '@/src/features/shared/utils/dateKey';
-import { buildHistorySeries } from '@/src/features/networth/utils/buildHistorySeries';
-import { calculateAllocationItems } from '@/src/features/networth/utils/calculateAllocation';
-import { deriveSnapshotFromAccounts } from '@/src/features/networth/utils/calculateNetWorth';
-import { EmptyState } from '@/src/app-shell/components/EmptyState';
-import { Skeleton } from '@/src/app-shell/components/ShellSkeleton';
-import { formatCurrency, formatPercent } from '@/src/app-shell/utils';
+  YAxis
+} from "recharts";
+import { Landmark, Plus, Wallet } from "lucide-react";
+import { toast } from "sonner";
+import type { AccountDTO } from "@/lib/types";
+import { EmptyState } from "@/src/app-shell/components/EmptyState";
+import { PageSkeleton } from "@/src/app-shell/components/ShellSkeleton";
+import { cn, formatCurrency } from "@/src/app-shell/utils";
+import { fetchJsonOrThrow, notifyFinanceDataChanged } from "@/src/features/shared/fetch";
 
-interface WealthProps {
-  hideValues: boolean;
-}
-
-export { Wealth as NetWorthPage };
-
-type DashboardMetricsResponse = {
-  view: 'dashboard';
-  periodComparison: {
-    current: {
-      expense: number;
-    };
-  };
-};
-
-type PortfolioRow = {
+type AccountRecord = AccountDTO & { currentBalance: number };
+type NetWorthEntry = {
+  id: string;
+  type: "asset" | "debt";
   name: string;
-  allocation: number;
-  averageValue: number;
-  currentValue: number;
-  resultPercent: number;
-  typeLabel: string;
+  value: number;
+  date: string;
+  group: string | null;
 };
 
-const CHART_TOOLTIP_STYLE = {
-  backgroundColor: "hsl(var(--card) / 0.96)",
-  backdropFilter: "blur(16px)",
-  border: "1px solid hsl(var(--border) / 0.9)",
-  borderRadius: "16px",
-  boxShadow: "0 18px 42px hsl(var(--overlay) / 0.18)"
-} as const;
+type FormState = {
+  type: "asset" | "debt";
+  name: string;
+  value: string;
+  date: string;
+  group: string;
+};
 
-const CHART_TOOLTIP_ITEM_STYLE = {
-  color: "hsl(var(--foreground))",
-  fontSize: "12px",
-  fontWeight: 500
-} as const;
+type HistoryPoint = {
+  date: string;
+  label: string;
+  netWorth: number;
+};
 
-function isInternationalName(value: string): boolean {
-  const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  return (
-    normalized.includes('ivvb') ||
-    normalized.includes('usd') ||
-    normalized.includes('nasdaq') ||
-    normalized.includes('sp500') ||
-    normalized.includes('crypto') ||
-    normalized.includes('bitcoin') ||
-    normalized.includes('ethereum') ||
-    normalized.includes('global')
+const RANGE_OPTIONS = ["3M", "YTD", "1Y", "ALL"] as const;
+
+function defaultForm(): FormState {
+  return {
+    type: "asset",
+    name: "",
+    value: "",
+    date: format(new Date(), "yyyy-MM-dd"),
+    group: ""
+  };
+}
+
+function accountAssets(accounts: AccountRecord[]): number {
+  return Number(accounts.filter((item) => item.currentBalance > 0).reduce((sum, item) => sum + item.currentBalance, 0).toFixed(2));
+}
+
+function accountDebts(accounts: AccountRecord[]): number {
+  return Number(
+    accounts
+      .filter((item) => item.currentBalance < 0)
+      .reduce((sum, item) => sum + Math.abs(item.currentBalance), 0)
+      .toFixed(2)
   );
 }
 
-function buildPortfolioRows(entries: NetWorthEntryDTO[], accounts: AccountDTO[]): PortfolioRow[] {
-  const latestDateKey = entries.length > 0 ? normalizeDateKey(entries[entries.length - 1].date) : null;
-  const assetEntries = latestDateKey
-    ? entries.filter((entry) => entry.type === 'asset' && normalizeDateKey(entry.date) === latestDateKey)
-    : [];
-
-  if (assetEntries.length > 0) {
-    const grouped = new Map<string, number>();
-    const firstValueMap = new Map<string, number>();
-
-    for (const entry of entries.filter((item) => item.type === 'asset')) {
-      const current = grouped.get(entry.name) ?? 0;
-      if (normalizeDateKey(entry.date) === latestDateKey) {
-        grouped.set(entry.name, current + Math.max(entry.value, 0));
-      }
-      if (!firstValueMap.has(entry.name)) {
-        firstValueMap.set(entry.name, Math.max(entry.value, 0));
-      }
-    }
-
-    const total = [...grouped.values()].reduce((sum, value) => sum + value, 0);
-    return [...grouped.entries()]
-      .map(([name, currentValue]) => {
-        const averageValue = firstValueMap.get(name) ?? currentValue;
-        const resultPercent = averageValue > 0 ? Number((((currentValue - averageValue) / averageValue) * 100).toFixed(1)) : 0;
-        return {
-          name,
-          allocation: total > 0 ? Number(((currentValue / total) * 100).toFixed(1)) : 0,
-          averageValue,
-          currentValue,
-          resultPercent,
-          typeLabel: isInternationalName(name) ? 'Ativos Internacionais' : 'Patrimônio'
-        };
-      })
-      .sort((left, right) => right.currentValue - left.currentValue);
-  }
-
-  const positiveAccounts = accounts.filter((account) => (account.currentBalance ?? 0) > 0);
-  const total = positiveAccounts.reduce((sum, account) => sum + (account.currentBalance ?? 0), 0);
-
-  return positiveAccounts.map((account) => {
-    const currentValue = account.currentBalance ?? 0;
-    return {
-      name: account.name,
-      allocation: total > 0 ? Number(((currentValue / total) * 100).toFixed(1)) : 0,
-      averageValue: currentValue,
-      currentValue,
-      resultPercent: 0,
-      typeLabel: account.type === 'investment' ? 'Investimentos' : 'Liquidez'
-    };
-  });
+function filterHistory(points: HistoryPoint[], range: (typeof RANGE_OPTIONS)[number]): HistoryPoint[] {
+  if (range === "ALL" || points.length <= 1) return points;
+  const latest = new Date(`${points[points.length - 1].date}T12:00:00`);
+  const threshold =
+    range === "3M" ? subMonths(latest, 2) : range === "YTD" ? startOfYear(latest) : subMonths(latest, 11);
+  return points.filter((point) => new Date(`${point.date}T12:00:00`).getTime() >= threshold.getTime());
 }
 
-function hasWealthData(snapshotNet: number, allocationLength: number, historyLength: number): boolean {
-  return Math.abs(snapshotNet) > 0 || allocationLength > 0 || historyLength > 0;
+function formFromEntry(entry: NetWorthEntry | null): FormState {
+  if (!entry) return defaultForm();
+  return {
+    type: entry.type,
+    name: entry.name,
+    value: String(entry.value),
+    date: entry.date.slice(0, 10),
+    group: entry.group ?? ""
+  };
 }
 
-export function Wealth({ hideValues }: WealthProps) {
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState('');
-  const [accounts, setAccounts] = React.useState<AccountDTO[]>([]);
-  const [entries, setEntries] = React.useState<NetWorthEntryDTO[]>([]);
-  const [monthlyExpense, setMonthlyExpense] = React.useState(0);
+function buildHistory(entries: NetWorthEntry[], currentNetWorth: number): HistoryPoint[] {
+  const byDate = new Map<string, number>();
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
-    setError('');
-
-    try {
-      const [accountsResponse, netWorthResponse, dashboardResponse] = await Promise.all([
-        fetch('/api/accounts', { cache: 'no-store' }),
-        fetch('/api/net-worth', { cache: 'no-store' }),
-        fetch('/api/metrics/official?view=dashboard', { cache: 'no-store' })
-      ]);
-
-      const [
-        { data: accountsData, errorMessage: accountsError },
-        { data: netWorthData, errorMessage: netWorthError },
-        { data: dashboardData, errorMessage: dashboardError }
-      ] = await Promise.all([
-        parseApiResponse<AccountDTO[] | { error?: unknown }>(accountsResponse),
-        parseApiResponse<NetWorthEntryDTO[] | { error?: unknown }>(netWorthResponse),
-        parseApiResponse<DashboardMetricsResponse | { error?: unknown }>(dashboardResponse)
-      ]);
-
-      if (accountsError) throw new Error(accountsError);
-      if (!accountsResponse.ok || !accountsData || !Array.isArray(accountsData)) {
-        throw new Error(extractApiError(accountsData, 'Não foi possível carregar as contas.'));
-      }
-
-      if (netWorthError) throw new Error(netWorthError);
-      if (!netWorthResponse.ok || !netWorthData || !Array.isArray(netWorthData)) {
-        throw new Error(extractApiError(netWorthData, 'Não foi possível carregar o patrimônio.'));
-      }
-
-      if (dashboardError) throw new Error(dashboardError);
-      if (!dashboardResponse.ok || !dashboardData || !('view' in dashboardData) || dashboardData.view !== 'dashboard') {
-        throw new Error(extractApiError(dashboardData, 'Não foi possível carregar os indicadores de patrimônio.'));
-      }
-
-      setAccounts(accountsData);
-      setEntries(netWorthData);
-      setMonthlyExpense(dashboardData.periodComparison.current.expense);
-    } catch (loadError) {
-      setAccounts([]);
-      setEntries([]);
-      setMonthlyExpense(0);
-      setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar patrimônio.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
-
-  const snapshot = React.useMemo(() => deriveSnapshotFromAccounts(accounts), [accounts]);
-  const allocationItems = React.useMemo(
-    () => calculateAllocationItems(entries, entries.length > 0 ? normalizeDateKey(entries[entries.length - 1].date) : null, 'asset', { accounts }),
-    [accounts, entries]
-  );
-  const historySeries = React.useMemo(() => buildHistorySeries(entries), [entries]);
-  const chartSeries = React.useMemo(() => {
-    if (historySeries.length > 0) {
-      return historySeries.map((point) => ({
-        date: point.date,
-        balance: point.net
-      }));
-    }
-
-    return snapshot.net !== 0
-      ? [{ date: new Date().toISOString().slice(0, 10), balance: snapshot.net }]
-      : [];
-  }, [historySeries, snapshot.net]);
-  const portfolioRows = React.useMemo(() => buildPortfolioRows(entries, accounts), [accounts, entries]);
-  const liquidAssets = React.useMemo(
-    () => accounts
-      .filter((account) => account.type === 'checking' || account.type === 'cash')
-      .reduce((sum, account) => sum + Math.max(account.currentBalance ?? 0, 0), 0),
-    [accounts]
-  );
-  const emergencyMonths = monthlyExpense > 0 ? Number((liquidAssets / monthlyExpense).toFixed(1)) : 0;
-  const emergencyProgress = monthlyExpense > 0 ? Math.min((liquidAssets / (monthlyExpense * 6)) * 100, 100) : 0;
-  const internationalValue = React.useMemo(() => {
-    return portfolioRows
-      .filter((row) => isInternationalName(row.name))
-      .reduce((sum, row) => sum + row.currentValue, 0);
-  }, [portfolioRows]);
-  const totalAssets = React.useMemo(() => allocationItems.reduce((sum, item) => sum + item.value, 0), [allocationItems]);
-  const internationalExposure = totalAssets > 0 ? Number(((internationalValue / totalAssets) * 100).toFixed(1)) : 0;
-  const hasData = hasWealthData(snapshot.net, allocationItems.length, historySeries.length);
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="glass-card h-[420px]" />
-        <Skeleton className="glass-card h-[360px]" />
-        <Skeleton className="glass-card h-[320px]" />
-      </div>
-    );
+  for (const entry of entries) {
+    const key = entry.date.slice(0, 10);
+    const current = byDate.get(key) ?? 0;
+    byDate.set(key, current + (entry.type === "asset" ? entry.value : -entry.value));
   }
 
-  if (error) {
-    return (
-      <div className="glass-card p-8 text-center">
-        <p className="text-sm text-error mb-4">{error}</p>
-        <button
-          onClick={() => void load()}
-          className="bg-primary hover:bg-primary/90 text-background px-4 py-2 rounded-lg font-medium transition-colors"
-        >
-          Tentar novamente
-        </button>
-      </div>
-    );
+  const points = [...byDate.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, netWorth]) => ({
+      date,
+      label: format(new Date(`${date}T12:00:00`), "MMM/yy", { locale: ptBR }),
+      netWorth: Number(netWorth.toFixed(2))
+    }));
+
+  const today = format(new Date(), "yyyy-MM-dd");
+  const last = points[points.length - 1];
+  if (!last || last.date !== today || last.netWorth !== currentNetWorth) {
+    points.push({
+      date: today,
+      label: format(new Date(`${today}T12:00:00`), "MMM/yy", { locale: ptBR }),
+      netWorth: currentNetWorth
+    });
   }
 
-  if (!hasData) {
-    return (
-      <div className="glass-card">
-        <EmptyState
-          icon={TrendingUp}
-          title="Patrimônio ainda sem dados"
-          description="Cadastre contas, ativos ou passivos para acompanhar a evolução do patrimônio."
-        />
-      </div>
-    );
-  }
+  return points;
+}
+
+function groupAccountLabel(account: AccountRecord): string {
+  if (account.type === "investment") return "Investimentos";
+  if (account.type === "credit") return "Cartões";
+  if (account.type === "cash") return "Caixa";
+  return "Contas";
+}
+
+function EntryModal({
+  open,
+  editing,
+  form,
+  busy,
+  onClose,
+  onChange,
+  onSubmit
+}: {
+  open: boolean;
+  editing: NetWorthEntry | null;
+  form: FormState;
+  busy: boolean;
+  onClose: () => void;
+  onChange: (patch: Partial<FormState>) => void;
+  onSubmit: () => void;
+}): React.JSX.Element | null {
+  if (!open) return null;
+  const isValid = form.name.trim().length >= 2 && Number(form.value) > 0;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-20">
-      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground mb-1">Patrimônio</h1>
-          <p className="text-muted-foreground text-sm">Visão estratégica de longo prazo e alocação de ativos</p>
-        </div>
-        <div className="flex items-center gap-2 text-success text-xs font-bold tracking-wide bg-success/10 px-3 py-1.5 rounded-lg border border-success/20 shadow-sm">
-          <TrendingUp size={16} />
-          {(snapshot.net >= 0 ? '+' : '')}{formatPercent(totalAssets > 0 ? (snapshot.net / Math.max(totalAssets, 1)) * 100 : 0)} este ano
-        </div>
-      </header>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 glass-card p-6 sm:p-8 flex flex-col items-center justify-center text-center">
-          <h2 className="text-muted-foreground text-[11px] font-bold uppercase tracking-widest mb-6">Patrimônio Líquido Total</h2>
-          <div className="relative w-full aspect-square max-w-[240px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <RePieChart>
-                <Pie
-                  data={allocationItems}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={75}
-                  outerRadius={95}
-                  paddingAngle={6}
-                  dataKey="value"
-                  stroke="none"
-                  cornerRadius={4}
-                >
-                  {allocationItems.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={CHART_TOOLTIP_STYLE}
-                  itemStyle={CHART_TOOLTIP_ITEM_STYLE}
-                  formatter={(value) => `R$ ${Number(value ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
-                />
-              </RePieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <div className="font-mono text-2xl font-semibold tracking-tight text-foreground">
-                {hideValues ? '••••••' : formatCurrency(snapshot.net, false)}
-              </div>
-              <div className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest mt-1">Consolidado</div>
-            </div>
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="w-full max-w-lg rounded-t-[1.75rem] border border-border bg-card shadow-2xl sm:rounded-[1.75rem]">
+        <div className="flex items-center justify-between border-b border-border px-6 py-5">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              {editing ? "Editar patrimônio" : "Novo patrimônio"}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">Itens manuais fora das contas bancárias.</p>
           </div>
-
-          <div className="w-full mt-8 space-y-3">
-            {allocationItems.map((item) => (
-              <div key={item.name} className="flex items-center justify-between text-sm p-2 rounded-lg hover:bg-secondary transition-colors">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }} />
-                  <span className="text-muted-foreground text-xs font-medium">{item.name}</span>
-                </div>
-                <span className="font-mono font-semibold text-foreground">{formatPercent(item.weight)}</span>
-              </div>
+          <button type="button" onClick={onClose} className="rounded-full border border-border bg-secondary px-3 py-1 text-xs font-medium text-foreground">
+            Fechar
+          </button>
+        </div>
+        <div className="space-y-5 px-6 py-6">
+          <div className="grid grid-cols-2 gap-3">
+            {(["asset", "debt"] as const).map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => onChange({ type })}
+                className={cn(
+                  "rounded-2xl border px-4 py-3 text-sm font-medium transition-colors",
+                  form.type === type
+                    ? type === "asset"
+                      ? "border-success bg-success text-success-foreground"
+                      : "border-error bg-error text-error-foreground"
+                    : "border-border bg-secondary text-foreground"
+                )}
+              >
+                {type === "asset" ? "Ativo" : "Dívida"}
+              </button>
             ))}
           </div>
-        </div>
-
-        <div className="lg:col-span-2 space-y-6 flex flex-col">
-          <div className="glass-card p-6 sm:p-8 flex-1 flex flex-col">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-[11px] text-muted-foreground font-bold uppercase tracking-widest">Evolução Histórica</h2>
-              <div className="flex items-center gap-4 text-[10px] font-medium tracking-wide">
-                <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-info shadow-[0_0_8px_hsl(var(--info) / 0.4)]" />
-                  <span className="text-muted-foreground">Crescimento</span>
-                </div>
-              </div>
-            </div>
-            <div className="flex-1 min-h-[200px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartSeries}>
-                  <defs>
-                    <linearGradient id="wealthGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--info))" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="hsl(var(--info))" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} opacity={0.5} />
-                  <XAxis dataKey="date" hide />
-                  <YAxis hide />
-                  <Tooltip
-                    contentStyle={CHART_TOOLTIP_STYLE}
-                    itemStyle={CHART_TOOLTIP_ITEM_STYLE}
-                    formatter={(value) => `R$ ${Number(value ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="balance"
-                    stroke="hsl(var(--info))"
-                    strokeWidth={3}
-                    fillOpacity={1}
-                    fill="url(#wealthGradient)"
-                    activeDot={{ r: 6, fill: 'hsl(var(--info))', stroke: 'hsl(var(--card))', strokeWidth: 2 }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+          <input value={form.name} onChange={(event) => onChange({ name: event.target.value })} placeholder="Nome" className="w-full rounded-2xl border border-border bg-secondary px-4 py-3 text-sm outline-none" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <input type="number" min="0" step="0.01" value={form.value} onChange={(event) => onChange({ value: event.target.value })} placeholder="Valor" className="w-full rounded-2xl border border-border bg-secondary px-4 py-3 text-sm outline-none" />
+            <input type="date" value={form.date} onChange={(event) => onChange({ date: event.target.value })} className="w-full rounded-2xl border border-border bg-secondary px-4 py-3 text-sm outline-none" />
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="glass-card p-6 flex items-start gap-4">
-              <div className="p-3 bg-primary/10 rounded-xl text-primary border border-primary/20 shadow-sm">
-                <ShieldCheck size={20} />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">Reserva de Emergência</h3>
-                <p className="text-xs text-foreground/70 mb-4 leading-relaxed">Você possui {emergencyMonths.toFixed(1)} meses de cobertura para seus custos fixos atuais.</p>
-                <div className="h-1.5 bg-card rounded-full overflow-hidden border border-border">
-                  <div className="h-full bg-info shadow-[0_0_8px_hsl(var(--info) / 0.4)]" style={{ width: `${emergencyProgress}%` }} />
-                </div>
-              </div>
-            </div>
-            <div className="glass-card p-6 flex items-start gap-4">
-              <div className="p-3 bg-success/10 rounded-xl text-success border border-success/20 shadow-sm">
-                <Globe size={20} />
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5">Exposição Cambial</h3>
-                <p className="text-xs text-foreground/70 mb-4 leading-relaxed">{internationalExposure}% do seu patrimônio está alocado em ativos internacionais identificados.</p>
-                <div className="h-1.5 bg-card rounded-full overflow-hidden border border-border">
-                  <div className="h-full bg-success shadow-[0_0_8px_hsl(var(--success) / 0.35)]" style={{ width: `${internationalExposure}%` }} />
-                </div>
-              </div>
-            </div>
-          </div>
+          <input value={form.group} onChange={(event) => onChange({ group: event.target.value })} placeholder="Grupo opcional" className="w-full rounded-2xl border border-border bg-secondary px-4 py-3 text-sm outline-none" />
         </div>
-      </div>
-
-      <div className="glass-card overflow-hidden">
-        <div className="p-6 border-b border-border bg-card/30">
-          <h2 className="text-[11px] text-muted-foreground font-bold uppercase tracking-widest">Ativos em Carteira</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-border bg-card/50">
-                <th className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Ativo</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Alocação</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">Preço Médio</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">Valor Atual</th>
-                <th className="px-6 py-4 text-[10px] font-bold text-muted-foreground uppercase tracking-widest text-right">Resultado</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {portfolioRows.map((row) => (
-                <tr key={row.name} className="hover:bg-secondary transition-colors group cursor-pointer">
-                  <td className="px-6 py-4">
-                    <div className="font-semibold text-sm text-foreground group-hover:text-primary transition-colors">{row.name}</div>
-                    <div className="text-muted-foreground text-[10px] uppercase tracking-widest mt-1">{row.typeLabel}</div>
-                  </td>
-                  <td className="px-6 py-4 text-sm font-medium text-muted-foreground">{row.allocation.toFixed(1)}%</td>
-                  <td className="px-6 py-4 text-sm text-right font-mono text-muted-foreground">{formatCurrency(row.averageValue, hideValues)}</td>
-                  <td className="px-6 py-4 text-sm text-right font-semibold font-mono text-foreground">{formatCurrency(row.currentValue, hideValues)}</td>
-                  <td className="px-6 py-4 text-right">
-                    <span className={`${row.resultPercent >= 0 ? 'text-success bg-success/10 border-success/20' : 'text-error bg-error/10 border-error/20'} text-xs font-bold tracking-wide px-2 py-1 rounded-md border inline-block`}>
-                      {(row.resultPercent >= 0 ? '+' : '')}{row.resultPercent.toFixed(1)}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex gap-3 border-t border-border px-6 py-5">
+          <button type="button" onClick={onClose} className="flex-1 rounded-2xl border border-border bg-secondary px-4 py-3 text-sm font-medium text-foreground">
+            Cancelar
+          </button>
+          <button type="button" disabled={!isValid || busy} onClick={onSubmit} className="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground disabled:opacity-50">
+            {busy ? "Salvando..." : editing ? "Salvar" : "Adicionar"}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
+export function NetWorthPage(): React.JSX.Element {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
+  const [entries, setEntries] = useState<NetWorthEntry[]>([]);
+  const [range, setRange] = useState<(typeof RANGE_OPTIONS)[number]>("1Y");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<NetWorthEntry | null>(null);
+  const [form, setForm] = useState<FormState>(defaultForm());
+  const [submitting, setSubmitting] = useState(false);
+
+  const load = useCallback(async (): Promise<void> => {
+    setError("");
+    try {
+      const [accountsPayload, entriesPayload] = await Promise.all([
+        fetchJsonOrThrow<AccountRecord[]>("/api/accounts"),
+        fetchJsonOrThrow<NetWorthEntry[]>("/api/net-worth")
+      ]);
+      setAccounts(accountsPayload);
+      setEntries(entriesPayload);
+    } catch (loadError) {
+      setAccounts([]);
+      setEntries([]);
+      setError(loadError instanceof Error ? loadError.message : "Falha ao carregar patrimônio.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    const onDataChanged = (): void => {
+      void load();
+    };
+    window.addEventListener("finance-data-changed", onDataChanged);
+    return () => window.removeEventListener("finance-data-changed", onDataChanged);
+  }, [load]);
+
+  const latestEntryDate = useMemo(
+    () => [...entries].map((entry) => entry.date).sort((left, right) => right.localeCompare(left))[0] ?? null,
+    [entries]
+  );
+
+  const latestEntries = useMemo(
+    () => entries.filter((entry) => entry.date === latestEntryDate),
+    [entries, latestEntryDate]
+  );
+
+  const manualAssets = useMemo(
+    () => Number(latestEntries.filter((item) => item.type === "asset").reduce((sum, item) => sum + item.value, 0).toFixed(2)),
+    [latestEntries]
+  );
+  const manualDebts = useMemo(
+    () => Number(latestEntries.filter((item) => item.type === "debt").reduce((sum, item) => sum + item.value, 0).toFixed(2)),
+    [latestEntries]
+  );
+
+  const totalAssets = useMemo(() => Number((accountAssets(accounts) + manualAssets).toFixed(2)), [accounts, manualAssets]);
+  const totalDebts = useMemo(() => Number((accountDebts(accounts) + manualDebts).toFixed(2)), [accounts, manualDebts]);
+  const totalNetWorth = useMemo(() => Number((totalAssets - totalDebts).toFixed(2)), [totalAssets, totalDebts]);
+  const history = useMemo(() => filterHistory(buildHistory(entries, totalNetWorth), range), [entries, totalNetWorth, range]);
+
+  const allocation = useMemo(() => {
+    const source = new Map<string, number>();
+    for (const account of accounts.filter((item) => item.currentBalance > 0)) {
+      const label = groupAccountLabel(account);
+      source.set(label, (source.get(label) ?? 0) + account.currentBalance);
+    }
+    for (const entry of latestEntries.filter((item) => item.type === "asset")) {
+      const label = entry.group?.trim() || entry.name;
+      source.set(label, (source.get(label) ?? 0) + entry.value);
+    }
+
+    const palette = ["hsl(var(--primary))", "hsl(var(--info))", "hsl(var(--success))", "hsl(var(--warning))", "hsl(var(--error))"];
+    return [...source.entries()].map(([name, value], index) => ({
+      name,
+      value: Number(value.toFixed(2)),
+      color: palette[index % palette.length]
+    }));
+  }, [accounts, latestEntries]);
+
+  const openCreate = (): void => {
+    setEditing(null);
+    setForm(defaultForm());
+    setModalOpen(true);
+  };
+
+  const openEdit = (entry: NetWorthEntry): void => {
+    setEditing(entry);
+    setForm(formFromEntry(entry));
+    setModalOpen(true);
+  };
+
+  const saveEntry = async (): Promise<void> => {
+    const numericValue = Number(form.value);
+    if (form.name.trim().length < 2 || !Number.isFinite(numericValue) || numericValue <= 0) return;
+
+    setSubmitting(true);
+    try {
+      const payload = {
+        type: form.type,
+        name: form.name.trim(),
+        value: numericValue,
+        date: form.date,
+        group: form.group.trim() || null
+      };
+
+      if (editing) {
+        await fetchJsonOrThrow(`/api/net-worth/${editing.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        toast.success("Patrimônio atualizado.");
+      } else {
+        await fetchJsonOrThrow("/api/net-worth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        toast.success("Patrimônio registrado.");
+      }
+
+      setModalOpen(false);
+      setEditing(null);
+      setForm(defaultForm());
+      notifyFinanceDataChanged();
+    } catch (saveError) {
+      toast.error(saveError instanceof Error ? saveError.message : "Falha ao salvar patrimônio.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const deleteEntry = async (entry: NetWorthEntry): Promise<void> => {
+    if (!window.confirm(`Excluir "${entry.name}"?`)) return;
+
+    try {
+      await fetchJsonOrThrow(`/api/net-worth/${entry.id}`, { method: "DELETE" });
+      toast.success("Registro removido.");
+      notifyFinanceDataChanged();
+    } catch (deleteError) {
+      toast.error(deleteError instanceof Error ? deleteError.message : "Falha ao excluir registro.");
+    }
+  };
+
+  if (loading) {
+    return <PageSkeleton />;
+  }
+
+  if (error && accounts.length === 0 && entries.length === 0) {
+    return (
+      <div className="glass-card p-8 text-center">
+        <p className="mb-4 text-sm text-error">{error}</p>
+        <button onClick={() => { setLoading(true); void load(); }} className="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground">
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="space-y-6">
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Patrimônio</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Consolidação entre contas e ativos ou dívidas manuais.</p>
+          </div>
+          <button type="button" onClick={openCreate} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+            <Plus size={16} />
+            Novo lançamento
+          </button>
+        </header>
+
+        {accounts.length === 0 && entries.length === 0 ? (
+          <div className="glass-card">
+            <EmptyState
+              icon={Wallet}
+              title="Nenhum patrimônio registrado"
+              description="Adicione contas ou registre bens e dívidas manuais para acompanhar sua evolução."
+              actionLabel="Adicionar lançamento"
+              onAction={openCreate}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[0.95fr_1.2fr]">
+              <div className="glass-card p-6 sm:p-8">
+                <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Alocação dos ativos</h2>
+                <div className={cn("mt-3 geist-mono text-4xl font-semibold tracking-tight", totalNetWorth >= 0 ? "text-foreground" : "text-error")}>
+                  {formatCurrency(Math.abs(totalNetWorth))}
+                </div>
+                {allocation.length === 0 ? (
+                  <div className="flex h-[240px] items-center justify-center text-center text-sm text-muted-foreground">
+                    Os ativos aparecem aqui quando houver saldo positivo ou lançamentos manuais.
+                  </div>
+                ) : (
+                  <>
+                    <div className="h-[220px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={allocation} dataKey="value" nameKey="name" innerRadius={60} outerRadius={86} paddingAngle={4} stroke="none">
+                            {allocation.map((item) => (
+                              <Cell key={item.name} fill={item.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(value: number | string | undefined) => formatCurrency(Number(value ?? 0))} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-3">
+                      {allocation.map((item) => (
+                        <div key={item.name} className="flex items-center justify-between rounded-2xl border border-border bg-secondary/50 px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                            <span className="text-sm font-medium text-foreground">{item.name}</span>
+                          </div>
+                          <span className="geist-mono text-sm font-semibold text-foreground">{formatCurrency(item.value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="glass-card p-6 sm:p-8">
+                <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Ativos</div>
+                      <div className="mt-2 geist-mono text-2xl font-semibold tracking-tight text-foreground">{formatCurrency(totalAssets)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Dívidas</div>
+                      <div className="mt-2 geist-mono text-2xl font-semibold tracking-tight text-foreground">{formatCurrency(totalDebts)}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Último registro</div>
+                      <div className="mt-2 text-sm font-medium text-foreground">
+                        {latestEntryDate ? format(new Date(latestEntryDate), "dd 'de' MMM yyyy", { locale: ptBR }) : "Sem histórico manual"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {RANGE_OPTIONS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setRange(option)}
+                        className={cn("rounded-full px-3 py-1.5 text-xs font-medium", range === option ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground")}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="wealth-gradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.28} />
+                          <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" vertical={false} />
+                      <XAxis dataKey="label" stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                      <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value) => (value === 0 ? "0" : `${Number(value) / 1000}k`)} width={42} />
+                      <Tooltip formatter={(value: number | string | undefined) => formatCurrency(Number(value ?? 0))} />
+                      <Area type="monotone" dataKey="netWorth" stroke="hsl(var(--primary))" strokeWidth={3} fill="url(#wealth-gradient)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <div className="glass-card overflow-hidden">
+                <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-5 py-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">Itens manuais</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">{entries.length} registros históricos</p>
+                  </div>
+                  <Wallet size={16} className="text-muted-foreground" />
+                </div>
+                {entries.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-sm text-muted-foreground">Nenhum item manual cadastrado.</div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {[...entries].sort((left, right) => right.date.localeCompare(left.date)).map((entry) => (
+                      <div key={entry.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest", entry.type === "asset" ? "bg-success/10 text-success" : "bg-error/10 text-error")}>
+                              {entry.type === "asset" ? "Ativo" : "Dívida"}
+                            </span>
+                            <span className="text-sm font-semibold text-foreground">{entry.name}</span>
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {entry.group || "Sem grupo"} • {format(new Date(entry.date), "dd/MM/yyyy")}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="geist-mono text-sm font-semibold text-foreground">{formatCurrency(entry.value)}</span>
+                          <button type="button" onClick={() => openEdit(entry)} className="rounded-xl border border-border bg-secondary px-3 py-2 text-xs font-medium text-foreground">
+                            Editar
+                          </button>
+                          <button type="button" onClick={() => void deleteEntry(entry)} className="rounded-xl border border-error/20 bg-error/10 px-3 py-2 text-xs font-medium text-error">
+                            Excluir
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="glass-card overflow-hidden">
+                <div className="flex items-center justify-between border-b border-border bg-secondary/60 px-5 py-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">Contas incluídas</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">Saldos atuais usados nos indicadores</p>
+                  </div>
+                  <Landmark size={16} className="text-muted-foreground" />
+                </div>
+                {accounts.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-sm text-muted-foreground">Nenhuma conta disponível.</div>
+                ) : (
+                  <div className="divide-y divide-border">
+                    {accounts.map((account) => (
+                      <div key={account.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                        <div>
+                          <div className="text-sm font-semibold text-foreground">{account.name}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{groupAccountLabel(account)} • {account.institution || "manual"}</div>
+                        </div>
+                        <span className="geist-mono text-sm font-semibold text-foreground">{formatCurrency(Math.abs(account.currentBalance))}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {error ? <div className="rounded-2xl border border-error/20 bg-error/10 px-4 py-3 text-sm text-error">{error}</div> : null}
+          </>
+        )}
+      </div>
+
+      <EntryModal
+        open={modalOpen}
+        editing={editing}
+        form={form}
+        busy={submitting}
+        onClose={() => {
+          setModalOpen(false);
+          setEditing(null);
+          setForm(defaultForm());
+        }}
+        onChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
+        onSubmit={() => void saveEntry()}
+      />
+    </>
+  );
+}

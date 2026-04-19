@@ -25,8 +25,7 @@ const primaryRoutes = [
   "/categories",
   "/accounts",
   "/net-worth",
-  "/recurring",
-  "/review"
+  "/recurring"
 ] as const;
 
 async function assertNoHorizontalPageOverflow(page: Page, route: string): Promise<void> {

@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
@@ -95,7 +95,7 @@ function toTransactionDTO(
 function toLedgerTransactionDTO(
   item: Awaited<ReturnType<typeof ledgerRepo.listAnalyticsEntries>>[number]
 ): TransactionDTO | null {
-  if (item.type !== "expense" && item.type !== "cc_purchase" && item.type !== "fee") {
+  if (item.type !== "expense" && item.type !== "cc_purchase" && item.type !== "fee" && item.type !== "refund") {
     return null;
   }
 
@@ -128,9 +128,9 @@ function toLedgerTransactionDTO(
     importBatchId: item.importSourceId ?? null,
     date: item.postedAt.toISOString(),
     description: item.descriptionNormalized,
-    amount: -Math.abs(item.amount),
+    amount: item.type === "refund" ? Math.abs(item.amount) : -Math.abs(item.amount),
     type: "expense",
-    direction: "out",
+    direction: item.type === "refund" ? "in" : "out",
     excluded: item.excluded,
     isInternalTransfer: false,
     status: "posted",
@@ -244,6 +244,23 @@ function isHistoricalMonth(monthKey: string): boolean {
   return monthKey < format(new Date(), "yyyy-MM");
 }
 
+function buildDashboardReferenceMeta(referenceMonth: string) {
+  const referenceDate = parseMonthKey(referenceMonth);
+  const previousReferenceDate = subMonths(referenceDate, 1);
+
+  return {
+    previousReferenceMonth: format(previousReferenceDate, "yyyy-MM"),
+    referencePeriod: {
+      start: startOfMonth(referenceDate).toISOString(),
+      end: endOfMonth(referenceDate).toISOString()
+    },
+    comparisonPeriod: {
+      start: startOfMonth(previousReferenceDate).toISOString(),
+      end: endOfMonth(previousReferenceDate).toISOString()
+    }
+  };
+}
+
 function asDashboardViewPayload(value: unknown): DashboardViewPayload | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<DashboardViewPayload>;
@@ -264,10 +281,24 @@ function normalizeDashboardViewPayload(
 ): DashboardViewPayload {
   const referenceMonth = input.requestedMonth || payload.referenceMonth;
   const isCurrentMonthReference = referenceMonth === format(input.now, "yyyy-MM");
+  const expectedMeta = buildDashboardReferenceMeta(referenceMonth);
+  const hasMatchingReferencePeriod =
+    typeof payload.referencePeriod?.start === "string" &&
+    typeof payload.referencePeriod?.end === "string" &&
+    payload.referencePeriod.start === expectedMeta.referencePeriod.start &&
+    payload.referencePeriod.end === expectedMeta.referencePeriod.end;
+  const hasMatchingComparisonPeriod =
+    typeof payload.comparisonPeriod?.start === "string" &&
+    typeof payload.comparisonPeriod?.end === "string" &&
+    payload.comparisonPeriod.start === expectedMeta.comparisonPeriod.start &&
+    payload.comparisonPeriod.end === expectedMeta.comparisonPeriod.end;
 
   if (
     payload.referenceMonth === referenceMonth &&
-    payload.isCurrentMonthReference === isCurrentMonthReference
+    payload.isCurrentMonthReference === isCurrentMonthReference &&
+    payload.previousReferenceMonth === expectedMeta.previousReferenceMonth &&
+    hasMatchingReferencePeriod &&
+    hasMatchingComparisonPeriod
   ) {
     return payload;
   }
@@ -275,7 +306,8 @@ function normalizeDashboardViewPayload(
   return {
     ...payload,
     referenceMonth,
-    isCurrentMonthReference
+    isCurrentMonthReference,
+    ...expectedMeta
   };
 }
 
@@ -290,7 +322,20 @@ async function buildDashboardViewPayloadWithSnapshots(input: { userId: string; m
     });
 
     const snapshotPayload = asDashboardViewPayload(snapshot?.payload);
-    if (snapshot && snapshotPayload) {
+    const hasFinanceBreakdown =
+      snapshotPayload !== null &&
+      snapshotPayload.financeBreakdown !== undefined &&
+      Array.isArray(snapshotPayload.financeBreakdown.cards);
+
+    const latestSourceMutationAt = snapshot
+      ? await officialMetricSnapshotsRepo.latestSourceMutationAt(input.userId)
+      : null;
+    const snapshotIsFresh =
+      !latestSourceMutationAt ||
+      (snapshot?.updatedAtDate instanceof Date &&
+        snapshot.updatedAtDate.getTime() >= latestSourceMutationAt.getTime());
+
+    if (snapshot && snapshotPayload && hasFinanceBreakdown && snapshotIsFresh) {
       const normalizedSnapshot = normalizeDashboardViewPayload(snapshotPayload, { requestedMonth, now });
       if (normalizedSnapshot !== snapshotPayload) {
         await officialMetricSnapshotsRepo.upsert({

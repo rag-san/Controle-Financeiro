@@ -1,9 +1,9 @@
-import { addDays, endOfMonth, startOfMonth, subMonths } from "date-fns";
+import { addDays } from "date-fns";
 import { z } from "zod";
-import { totalsFromGroupedTypes } from "@/lib/finance/official-metrics";
 import { isValidFlexibleDate, normalizeDescription, normalizeTransaction, parseFlexibleDate } from "@/lib/normalize";
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import { categoriesRepo } from "@/lib/server/categories.repo";
+import { getFinancialMetricsSnapshot } from "@/lib/server/financial-metrics.service";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 const flexibleDateSchema = z
@@ -75,11 +75,48 @@ export const transactionsQuerySchema = z.object({
 type TransactionsQuery = z.infer<typeof transactionsQuerySchema>;
 type CreateTransactionInput = z.infer<typeof createTransactionSchema>;
 
+function isDateOnlyInput(value: string): boolean {
+  const input = value.trim();
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(input) ||
+    /^\d{2}\/\d{2}\/\d{4}$/.test(input) ||
+    /^\d{2}\/\d{2}\/\d{2}$/.test(input) ||
+    /^\d{2}-\d{2}-\d{4}$/.test(input) ||
+    /^\d{2}\.\d{2}\.\d{4}$/.test(input) ||
+    /^\d{8}$/.test(input)
+  );
+}
+
+function startOfFinancialDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+}
+
+function endOfFinancialDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
+function startOfFinancialMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0));
+}
+
+function endOfFinancialMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999));
+}
+
+function parseRangeBoundary(value: string, boundary: "start" | "end"): Date {
+  const parsed = parseFlexibleDate(value);
+  if (!isDateOnlyInput(value)) {
+    return parsed;
+  }
+
+  return boundary === "start" ? startOfFinancialDay(parsed) : endOfFinancialDay(parsed);
+}
+
 function buildDateRange(params: TransactionsQuery): { gte?: Date; lte?: Date } {
   if (params.from || params.to || params.period === "custom") {
     return {
-      gte: params.from ? parseFlexibleDate(params.from) : undefined,
-      lte: params.to ? parseFlexibleDate(params.to) : undefined
+      gte: params.from ? parseRangeBoundary(params.from, "start") : undefined,
+      lte: params.to ? parseRangeBoundary(params.to, "end") : undefined
     };
   }
 
@@ -90,17 +127,17 @@ function buildDateRange(params: TransactionsQuery): { gte?: Date; lte?: Date } {
   if (params.period === "current-month" || params.period === "this-month") {
     const now = new Date();
     return {
-      gte: startOfMonth(now),
-      lte: endOfMonth(now)
+      gte: startOfFinancialMonth(now),
+      lte: endOfFinancialMonth(now)
     };
   }
 
   if (params.period === "last-month") {
     const now = new Date();
-    const reference = subMonths(now, 1);
+    const reference = new Date(now.getFullYear(), now.getMonth() - 1, 15, 12, 0, 0, 0);
     return {
-      gte: startOfMonth(reference),
-      lte: endOfMonth(reference)
+      gte: startOfFinancialMonth(reference),
+      lte: endOfFinancialMonth(reference)
     };
   }
 
@@ -132,32 +169,32 @@ export async function listTransactionsForUser(userId: string, params: Transactio
 
   const items = await transactionsRepo.listPaged(filter, { page, pageSize }, { sort: params.sort });
   const totalCount = await transactionsRepo.count(filter);
-  const totalsByType = await transactionsRepo.sumByType(filter);
-  const totals = totalsFromGroupedTypes(totalsByType);
-  const periodCashFlow = await transactionsRepo.sumCashFlow(filter);
   const accountsWithBalance = await accountsRepo.listByUserWithBalance(userId);
-  const filteredAccounts = params.accountId
-    ? accountsWithBalance.filter((account) => account.id === params.accountId)
-    : accountsWithBalance;
-  const cashBalance = Number(
-    filteredAccounts
-      .filter((account) => account.type === "checking" || account.type === "cash")
-      .reduce((sum, account) => sum + (account.currentBalance ?? 0), 0)
-      .toFixed(2)
-  );
+  const metrics = await getFinancialMetricsSnapshot({
+    userId,
+    from: dateRange.gte,
+    to: dateRange.lte,
+    accountId: params.accountId || undefined,
+    categoryId: params.categoryId || undefined,
+    transactionType: params.type || undefined,
+    excluded: params.excluded === "true" ? true : false,
+    normalizedQuery: params.q ? normalizeDescription(params.q) : undefined,
+    hideCardPaymentMirrorInflow: params.hideCardPaymentMirrorInflow ?? true
+  });
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return {
     items,
     summary: {
-      income: totals.income,
-      expense: totals.expense,
-      balance: totals.net,
-      periodCashInflow: periodCashFlow.inflow,
-      periodCashOutflow: periodCashFlow.outflow,
-      periodCashFlow: periodCashFlow.net,
-      cashBalance
+      income: metrics.budget.income,
+      expense: metrics.budget.expense,
+      balance: metrics.budget.net,
+      netBudget: metrics.budget.net,
+      periodCashInflow: metrics.cashFlow.inflow,
+      periodCashOutflow: metrics.cashFlow.outflow,
+      periodCashFlow: metrics.cashFlow.net,
+      cashBalance: metrics.currentBalance
     },
     pagination: {
       page,

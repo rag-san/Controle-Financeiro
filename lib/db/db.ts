@@ -38,6 +38,13 @@ type TxContext = {
 
 const txStorage = new AsyncLocalStorage<TxContext>();
 
+type PgLikeError = Error & {
+  code?: string;
+  errno?: number;
+  address?: string;
+  port?: number;
+};
+
 function resolvePostgresUrl(): string {
   const configuredUrl =
     (
@@ -58,6 +65,60 @@ const IS_VERCEL =
   Boolean(process.env.VERCEL_ENV) ||
   Boolean(process.env.VERCEL_URL) ||
   Boolean(process.env.VERCEL_REGION);
+
+function describePostgresTarget(connectionString: string): string {
+  try {
+    const parsed = new URL(connectionString);
+    const host = parsed.hostname || "unknown-host";
+    const port = parsed.port || "5432";
+    const database = parsed.pathname.replace(/^\//, "") || "unknown-db";
+    return `${host}:${port}/${database}`;
+  } catch {
+    return "target-unknown";
+  }
+}
+
+function formatPgError(error: unknown): Error {
+  if (!(error instanceof Error)) {
+    return new Error("Falha inesperada ao conectar no PostgreSQL.");
+  }
+
+  const pgError = error as PgLikeError;
+  const target = describePostgresTarget(POSTGRES_URL);
+  const code = pgError.code ? ` codigo=${pgError.code}` : "";
+  const address = pgError.address ? ` endereco=${pgError.address}` : "";
+  const port = pgError.port ? ` porta=${pgError.port}` : "";
+
+  if (pgError.code === "ECONNREFUSED") {
+    return new Error(
+      `Conexao com PostgreSQL recusada em ${target}.${address}${port}${code} Verifique se o servidor esta ativo e se DATABASE_URL/POSTGRES_URL apontam para a porta correta.`
+    );
+  }
+
+  if (pgError.code === "ENOTFOUND") {
+    return new Error(
+      `Host do PostgreSQL nao encontrado para ${target}.${code} Revise DATABASE_URL/POSTGRES_URL.`
+    );
+  }
+
+  if (pgError.code === "28P01") {
+    return new Error(
+      `Autenticacao no PostgreSQL falhou para ${target}.${code} Revise usuario e senha em DATABASE_URL/POSTGRES_URL.`
+    );
+  }
+
+  if (pgError.code === "3D000") {
+    return new Error(
+      `Banco PostgreSQL nao encontrado em ${target}.${code} Revise o nome do database na URL de conexao.`
+    );
+  }
+
+  if (pgError.message) {
+    return new Error(`Falha no PostgreSQL (${target}): ${pgError.message}`);
+  }
+
+  return new Error(`Falha inesperada ao conectar no PostgreSQL (${target}).${code}`);
+}
 
 function mapQuestionPlaceholders(sql: string): string {
   let index = 0;
@@ -119,11 +180,15 @@ async function queryInternal<T extends QueryResultRow = QueryResultRow>(
   const statement = normalizeSqlForPostgres(sql);
   const context = txStorage.getStore();
   const queryable = context?.pgClient ?? getPgPool();
-  const result = await queryable.query<T>(statement, params as unknown[]);
-  return {
-    rows: result.rows,
-    rowCount: result.rowCount ?? 0
-  };
+  try {
+    const result = await queryable.query<T>(statement, params as unknown[]);
+    return {
+      rows: result.rows,
+      rowCount: result.rowCount ?? 0
+    };
+  } catch (error) {
+    throw formatPgError(error);
+  }
 }
 
 let savepointCounter = 0;
@@ -147,21 +212,25 @@ async function withPgTransaction<T>(run: () => Promise<T>): Promise<T> {
     }
   }
 
-  const client = await getPgPool().connect();
+  let client: PoolClient | null = null;
   try {
-    await client.query("BEGIN");
-    return await txStorage.run({ pgClient: client }, async () => {
+    client = await getPgPool().connect();
+    const connectedClient = client;
+    await connectedClient.query("BEGIN");
+    return await txStorage.run({ pgClient: connectedClient }, async () => {
       try {
         const result = await run();
-        await client.query("COMMIT");
+        await connectedClient.query("COMMIT");
         return result;
       } catch (error) {
-        await client.query("ROLLBACK");
+        await connectedClient.query("ROLLBACK");
         throw error;
       }
     });
+  } catch (error) {
+    throw formatPgError(error);
   } finally {
-    client.release();
+    client?.release();
   }
 }
 

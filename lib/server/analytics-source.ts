@@ -3,6 +3,17 @@ import { escapeLike } from "@/lib/server/sql";
 
 type TransactionType = "income" | "expense" | "transfer";
 type AccountType = "checking" | "credit" | "cash" | "investment";
+type LedgerComparableType = "income" | "expense" | "transfer" | "cc_purchase" | "cc_payment" | "fee" | "refund";
+
+export type AnalyticsSourceResolution = {
+  source: "legacy" | "ledger";
+  reason:
+    | "unmirrored_legacy_transactions"
+    | "ledger_entries_available"
+    | "no_ledger_entries_in_scope";
+  hasUnmirroredLegacyTransactions: boolean;
+  hasLedgerEntriesInScope: boolean;
+};
 
 export type AnalyticsSourceScope = {
   userId: string;
@@ -17,6 +28,54 @@ export type AnalyticsSourceScope = {
   hideCardPaymentMirrorInflow?: boolean;
   includeBalanceAdjustments?: boolean;
 };
+
+function normalizeTransactionTypes(value?: TransactionType[]): TransactionType[] {
+  return [
+    ...new Set(
+      (value ?? []).filter(
+        (item): item is TransactionType =>
+          item === "income" || item === "expense" || item === "transfer"
+      )
+    )
+  ];
+}
+
+function normalizeAccountTypes(value?: AccountType[]): AccountType[] {
+  return [
+    ...new Set(
+      (value ?? []).filter(
+        (item): item is AccountType =>
+          item === "checking" || item === "credit" || item === "cash" || item === "investment"
+      )
+    )
+  ];
+}
+
+function mapTransactionTypesToLedgerTypes(types: TransactionType[]): LedgerComparableType[] {
+  const ledgerTypes = new Set<LedgerComparableType>();
+
+  for (const type of types) {
+    if (type === "income") {
+      ledgerTypes.add("income");
+      continue;
+    }
+
+    if (type === "expense") {
+      ledgerTypes.add("expense");
+      ledgerTypes.add("cc_purchase");
+      ledgerTypes.add("fee");
+      ledgerTypes.add("refund");
+      continue;
+    }
+
+    if (type === "transfer") {
+      ledgerTypes.add("transfer");
+      ledgerTypes.add("cc_payment");
+    }
+  }
+
+  return [...ledgerTypes];
+}
 
 function buildLegacyVisibilityClause(
   alias: string,
@@ -86,27 +145,13 @@ function buildLegacyScopeWhere(input: AnalyticsSourceScope): { sql: string; para
     params.push(`%${escapeLike(input.normalizedQuery)}%`);
   }
 
-  const transactionTypes = [
-    ...new Set(
-      (input.transactionTypes ?? []).filter(
-        (value): value is TransactionType =>
-          value === "income" || value === "expense" || value === "transfer"
-      )
-    )
-  ];
+  const transactionTypes = normalizeTransactionTypes(input.transactionTypes);
   if (transactionTypes.length > 0) {
     clauses.push(`t.type IN (${transactionTypes.map(() => "?::transaction_type").join(", ")})`);
     params.push(...transactionTypes);
   }
 
-  const accountTypes = [
-    ...new Set(
-      (input.accountTypes ?? []).filter(
-        (value): value is AccountType =>
-          value === "checking" || value === "credit" || value === "cash" || value === "investment"
-      )
-    )
-  ];
+  const accountTypes = normalizeAccountTypes(input.accountTypes);
   if (accountTypes.length > 0) {
     clauses.push(`a.type IN (${accountTypes.map(() => "?").join(", ")})`);
     params.push(...accountTypes);
@@ -138,9 +183,14 @@ function buildLegacyScopeWhere(input: AnalyticsSourceScope): { sql: string; para
   };
 }
 
-function buildLedgerScopeWhere(input: AnalyticsSourceScope): { sql: string; params: unknown[] } {
+function buildLedgerScopeWhere(input: AnalyticsSourceScope): {
+  sql: string;
+  params: unknown[];
+  requiresAccountJoin: boolean;
+} {
   const clauses = ["le.user_id = ?"];
   const params: unknown[] = [input.userId];
+  let requiresAccountJoin = false;
 
   if (input.from) {
     clauses.push("le.posted_at >= ?");
@@ -163,6 +213,30 @@ function buildLedgerScopeWhere(input: AnalyticsSourceScope): { sql: string; para
     params.push(`%${escapeLike(input.normalizedQuery)}%`);
   }
 
+  const ledgerTypes = mapTransactionTypesToLedgerTypes(normalizeTransactionTypes(input.transactionTypes));
+  if (ledgerTypes.length > 0) {
+    clauses.push(`le.type IN (${ledgerTypes.map(() => "?").join(", ")})`);
+    params.push(...ledgerTypes);
+  }
+
+  const accountTypes = normalizeAccountTypes(input.accountTypes);
+  if (accountTypes.length > 0) {
+    const nonCreditAccountTypes = accountTypes.filter((type) => type !== "credit");
+    const accountTypeClauses: string[] = [];
+
+    if (nonCreditAccountTypes.length > 0) {
+      requiresAccountJoin = true;
+      accountTypeClauses.push(`a.type IN (${nonCreditAccountTypes.map(() => "?").join(", ")})`);
+      params.push(...nonCreditAccountTypes);
+    }
+
+    if (accountTypes.includes("credit")) {
+      accountTypeClauses.push("le.credit_card_account_id IS NOT NULL");
+    }
+
+    clauses.push(`(${accountTypeClauses.join(" OR ")})`);
+  }
+
   clauses.push(
     buildLedgerVisibilityClause(
       "le",
@@ -173,7 +247,8 @@ function buildLedgerScopeWhere(input: AnalyticsSourceScope): { sql: string; para
 
   return {
     sql: clauses.join(" AND "),
-    params
+    params,
+    requiresAccountJoin
   };
 }
 
@@ -203,6 +278,9 @@ export async function hasLedgerEntriesInScope(input: AnalyticsSourceScope): Prom
     .prepare(
       `SELECT COUNT(*) AS count
        FROM ledger_entries le
+       ${where.requiresAccountJoin ? `LEFT JOIN accounts a
+         ON a.id = le.account_id
+        AND a.user_id = le.user_id` : ""}
        WHERE ${where.sql}`
     )
     .get(...where.params)) as { count: number | string | null } | undefined;
@@ -210,11 +288,38 @@ export async function hasLedgerEntriesInScope(input: AnalyticsSourceScope): Prom
   return Number(row?.count ?? 0) > 0;
 }
 
-export async function shouldUseLedgerForAnalytics(input: AnalyticsSourceScope): Promise<boolean> {
+export async function resolveAnalyticsSource(
+  input: AnalyticsSourceScope
+): Promise<AnalyticsSourceResolution> {
   const missingLegacy = await hasUnmirroredLegacyTransactions(input);
   if (missingLegacy) {
-    return false;
+    return {
+      source: "legacy",
+      reason: "unmirrored_legacy_transactions",
+      hasUnmirroredLegacyTransactions: true,
+      hasLedgerEntriesInScope: false
+    };
   }
 
-  return hasLedgerEntriesInScope(input);
+  const ledgerAvailable = await hasLedgerEntriesInScope(input);
+  if (ledgerAvailable) {
+    return {
+      source: "ledger",
+      reason: "ledger_entries_available",
+      hasUnmirroredLegacyTransactions: false,
+      hasLedgerEntriesInScope: true
+    };
+  }
+
+  return {
+    source: "legacy",
+    reason: "no_ledger_entries_in_scope",
+    hasUnmirroredLegacyTransactions: false,
+    hasLedgerEntriesInScope: false
+  };
+}
+
+export async function shouldUseLedgerForAnalytics(input: AnalyticsSourceScope): Promise<boolean> {
+  const resolution = await resolveAnalyticsSource(input);
+  return resolution.source === "ledger";
 }

@@ -12,6 +12,14 @@ type SnapshotRow = {
   updated_at: string;
 };
 
+function parseSnapshotTimestamp(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const normalized = value.includes("T") ? value : value.replace(" ", "T");
+  const withZone = /[zZ]|[+-]\d{2}:\d{2}$/.test(normalized) ? normalized : `${normalized}Z`;
+  const parsed = new Date(withZone);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
 export const officialMetricSnapshotsRepo = {
   async find(input: { userId: string; metricKey: string; periodKey: string }) {
     const row = (await db
@@ -32,7 +40,9 @@ export const officialMetricSnapshotsRepo = {
         periodKey: row.period_key,
         payload: JSON.parse(row.payload_json) as unknown,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
+        createdAtDate: parseSnapshotTimestamp(row.created_at),
+        updatedAtDate: parseSnapshotTimestamp(row.updated_at)
       };
     } catch {
       return null;
@@ -70,5 +80,35 @@ export const officialMetricSnapshotsRepo = {
          id, user_id, metric_key, period_key, payload_json, created_at, updated_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).run(createId(), input.userId, input.metricKey, input.periodKey, payloadJson, now, now);
+  },
+
+  async deleteByUser(userId: string): Promise<void> {
+    await db.prepare(
+      `DELETE FROM official_metric_snapshots
+       WHERE user_id = ?`
+    ).run(userId);
+  },
+
+  async latestSourceMutationAt(userId: string): Promise<Date | null> {
+    const row = (await db
+      .prepare(
+        `SELECT MAX(updated_at) AS updated_at
+         FROM (
+           SELECT MAX(updated_at) AS updated_at FROM accounts WHERE user_id = ?
+           UNION ALL
+           SELECT MAX(updated_at) AS updated_at FROM categories WHERE user_id = ?
+           UNION ALL
+           SELECT MAX(updated_at) AS updated_at FROM credit_card_accounts WHERE user_id = ?
+           UNION ALL
+           SELECT MAX(updated_at) AS updated_at FROM transactions WHERE user_id = ?
+           UNION ALL
+           SELECT MAX(updated_at) AS updated_at FROM ledger_entries WHERE user_id = ?
+           UNION ALL
+           SELECT MAX(updated_at) AS updated_at FROM net_worth_entries WHERE user_id = ?
+         ) source_updates`
+      )
+      .get(userId, userId, userId, userId, userId, userId)) as { updated_at?: string | null } | undefined;
+
+    return parseSnapshotTimestamp(row?.updated_at);
   }
 };

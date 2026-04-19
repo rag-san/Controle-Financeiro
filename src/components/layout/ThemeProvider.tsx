@@ -6,40 +6,41 @@ type Theme = "light" | "dark";
 
 type ThemeContextType = {
   theme: Theme;
-  toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
+  toggleTheme: () => void;
 };
 
+const STORAGE_KEY = "finance-control:theme";
 const ThemeContext = createContext<ThemeContextType | null>(null);
 
-export function ThemeProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
+export function ThemeProvider({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
   const [theme, setThemeState] = useState<Theme>("light");
 
   useEffect(() => {
-    const saved = localStorage.getItem("theme");
-    const preferred = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    const initialTheme: Theme = saved === "dark" || saved === "light" ? saved : preferred;
-    setThemeState(initialTheme);
-    document.documentElement.classList.toggle("dark", initialTheme === "dark");
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    const preferredDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const nextTheme: Theme = saved === "dark" || saved === "light" ? saved : preferredDark ? "dark" : "light";
+    setThemeState(nextTheme);
+    document.documentElement.classList.toggle("dark", nextTheme === "dark");
   }, []);
 
   const setTheme = useCallback((nextTheme: Theme): void => {
     setThemeState(nextTheme);
-    localStorage.setItem("theme", nextTheme);
+    window.localStorage.setItem(STORAGE_KEY, nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
   }, []);
 
   const toggleTheme = useCallback((): void => {
     setTheme(theme === "dark" ? "light" : "dark");
-  }, [theme, setTheme]);
+  }, [setTheme, theme]);
 
   const value = useMemo(
     () => ({
       theme,
-      toggleTheme,
-      setTheme
+      setTheme,
+      toggleTheme
     }),
-    [theme, toggleTheme, setTheme]
+    [setTheme, theme, toggleTheme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
@@ -50,7 +51,6 @@ export function useTheme(): ThemeContextType {
   if (!context) {
     throw new Error("useTheme must be used within ThemeProvider");
   }
+
   return context;
 }
-
-

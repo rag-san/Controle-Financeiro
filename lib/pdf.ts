@@ -3,6 +3,7 @@ import { parseFlexibleDate } from "@/lib/normalize";
 import { parseMoneyInput } from "@/lib/money";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
 import { fixCommonMojibake, normalizeImportText, normalizeImportTextForMatch } from "@/lib/import-text";
+import { inferSignedAmountsFromBalanceAnchors } from "@/lib/finance/balance-sign-inference";
 
 export type ParsedPdfRow = {
   date: Date;
@@ -272,6 +273,7 @@ function parseInterStatementTransactions(text: string): ParsedPdfCandidate[] {
     }
 
     const amountText = amountMatches[0];
+    const balanceText = amountMatches.length >= 2 ? amountMatches[amountMatches.length - 1] : null;
     const amountIndex = line.indexOf(amountText);
     if (amountIndex <= 0) {
       continue;
@@ -291,16 +293,19 @@ function parseInterStatementTransactions(text: string): ParsedPdfCandidate[] {
     if (!Number.isFinite(amount) || Math.abs(amount) < 0.01) {
       continue;
     }
+    const balanceAfter = balanceText ? parseMoneyInput(balanceText) : null;
 
     rows.push({
       date: new Date(currentDate.getTime()),
       description,
       amount,
+      balanceAfter: Number.isFinite(balanceAfter) ? balanceAfter : null,
       type: amount >= 0 ? "income" : "expense",
       raw: {
         line,
         dateText: currentDateText || currentDate.toISOString(),
-        amountText
+        amountText,
+        balanceText
       }
     });
   }
@@ -710,6 +715,80 @@ function extractDueDateMetadata(text: string): Date | null {
   }
 }
 
+function extractLastMoneyFromLine(line: string): number | null {
+  const matches = [...line.matchAll(/[−-]?\s*R\$\s*[\d.,]+/gi)];
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const amount = parseMoneyInput(normalizeMoneyTokenForParse(matches[matches.length - 1][0]));
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function extractInvoiceAmountMetadata(
+  text: string,
+  classification: { documentType: PdfDocumentType; issuerProfile: PdfIssuerProfile }
+): {
+  invoicePurchaseTotal: number | null;
+  invoicePaymentTotal: number | null;
+  invoiceTotalDue: number | null;
+} {
+  if (classification.documentType !== "credit_card_invoice") {
+    return {
+      invoicePurchaseTotal: null,
+      invoicePaymentTotal: null,
+      invoiceTotalDue: null
+    };
+  }
+
+  let invoicePurchaseTotal: number | null = null;
+  let invoicePaymentTotal: number | null = null;
+  let invoiceTotalDue: number | null = null;
+  const lines = text.split(/\r?\n/).map(normalizeLine).filter(Boolean);
+
+  for (const line of lines) {
+    const normalized = normalizeText(line);
+    const amount = extractLastMoneyFromLine(line);
+    if (amount === null) {
+      continue;
+    }
+
+    if (
+      invoicePurchaseTotal === null &&
+      (
+        /^TOTAL DE COMPRAS\b/.test(normalized) ||
+        /^TOTAL CARTAO\b/.test(normalized) ||
+        (classification.issuerProfile === "mercado_pago_invoice" && /^TOTAL\s+R\$/.test(normalized))
+      )
+    ) {
+      invoicePurchaseTotal = Math.abs(amount);
+      continue;
+    }
+
+    if (
+      invoicePaymentTotal === null &&
+      /\bPAGAMENTO(?:S)?\b/.test(normalized) &&
+      /\b(?:RECEBIDO|RECEBIDOS|FATURA|FINANCIAMENTOS)\b/.test(normalized)
+    ) {
+      invoicePaymentTotal = Math.abs(amount);
+      continue;
+    }
+
+    if (
+      invoiceTotalDue === null &&
+      /^TOTAL A PAGAR\b(?!:)/.test(normalized)
+    ) {
+      invoiceTotalDue = amount;
+    }
+  }
+
+  return {
+    invoicePurchaseTotal,
+    invoicePaymentTotal,
+    invoiceTotalDue
+  };
+}
+
 function buildPdfMetadata(
   text: string,
   classification: { documentType: PdfDocumentType; issuerProfile: PdfIssuerProfile }
@@ -717,6 +796,7 @@ function buildPdfMetadata(
   const metadata: Record<string, string | number | boolean | null> = {};
   const period = extractPeriodMetadata(text);
   const dueDate = extractDueDateMetadata(text);
+  const invoiceAmounts = extractInvoiceAmountMetadata(text, classification);
   const accountMatch = text.match(/Conta:\s*([0-9\-]+)/i);
 
   metadata.documentType = classification.documentType;
@@ -725,6 +805,9 @@ function buildPdfMetadata(
   metadata.statementTo = period?.to ?? null;
   metadata.dueDate = dueDate ? dueDate.toISOString() : null;
   metadata.accountHint = accountMatch?.[1] ?? null;
+  metadata.invoicePurchaseTotal = invoiceAmounts.invoicePurchaseTotal;
+  metadata.invoicePaymentTotal = invoiceAmounts.invoicePaymentTotal;
+  metadata.invoiceTotalDue = invoiceAmounts.invoiceTotalDue;
 
   return metadata;
 }
@@ -1074,6 +1157,10 @@ export async function parsePdfImport(
       "no_transactions_found",
       "Não foi possível extrair transações desse PDF automaticamente. Tente CSV/OFX ou outro modelo de PDF."
     );
+  }
+
+  if (classification.documentType === "bank_statement") {
+    parsedTransactions = inferSignedAmountsFromBalanceAnchors(parsedTransactions).rows;
   }
 
   const transactions = parsedTransactions.map((row) => {

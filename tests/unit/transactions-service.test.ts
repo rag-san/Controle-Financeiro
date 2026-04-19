@@ -202,8 +202,8 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(all.summary.income, 3000);
   assert.equal(all.summary.expense, 1400);
   assert.equal(all.summary.balance, 1600);
-  assert.equal(all.summary.periodCashInflow, 3500);
-  assert.equal(all.summary.periodCashOutflow, 1900);
+  assert.equal(all.summary.periodCashInflow, 3000);
+  assert.equal(all.summary.periodCashOutflow, 1400);
   assert.equal(all.summary.periodCashFlow, 1600);
   assert.equal(all.summary.cashBalance, 1550);
   assert.ok((all.meta?.accounts?.length ?? 0) >= 2);
@@ -221,8 +221,8 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(includedOnly.summary.income, 3000);
   assert.equal(includedOnly.summary.expense, 1400);
   assert.equal(includedOnly.summary.balance, 1600);
-  assert.equal(includedOnly.summary.periodCashInflow, 3500);
-  assert.equal(includedOnly.summary.periodCashOutflow, 1900);
+  assert.equal(includedOnly.summary.periodCashInflow, 3000);
+  assert.equal(includedOnly.summary.periodCashOutflow, 1400);
   assert.equal(includedOnly.summary.periodCashFlow, 1600);
   assert.equal(includedOnly.summary.cashBalance, 1550);
 
@@ -267,8 +267,8 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(transfersOnly.summary.income, 0);
   assert.equal(transfersOnly.summary.expense, 0);
   assert.equal(transfersOnly.summary.balance, 0);
-  assert.equal(transfersOnly.summary.periodCashInflow, 500);
-  assert.equal(transfersOnly.summary.periodCashOutflow, 500);
+  assert.equal(transfersOnly.summary.periodCashInflow, 0);
+  assert.equal(transfersOnly.summary.periodCashOutflow, 0);
   assert.equal(transfersOnly.summary.periodCashFlow, 0);
 
   const amountSorted = await deps.listTransactionsForUser(fixture.userId, {
@@ -408,4 +408,164 @@ test("createTransactionForUser rejects manual transactions on credit accounts", 
     }),
     /CREDIT_ACCOUNT_MANUAL_NOT_ALLOWED/
   );
+});
+
+test("listTransactionsForUser last-month uses posted transaction dates for the monthly range", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("tx-last-month");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const now = new Date();
+  const previousMonthLastDay = new Date(now.getFullYear(), now.getMonth(), 0, 12, 0, 0, 0);
+  const currentMonthFirstDay = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0, 0);
+
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: previousMonthLastDay,
+    description: "Despesa do mes passado",
+    normalizedDescription: deps.normalizeDescription("Despesa do mes passado"),
+    amount: -125,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: currentMonthFirstDay,
+    description: "Receita do mes atual",
+    normalizedDescription: deps.normalizeDescription("Receita do mes atual"),
+    amount: 300,
+    type: "income",
+    excluded: false,
+    status: "posted"
+  });
+
+  const response = await deps.listTransactionsForUser(fixture.userId, {
+    period: "last-month",
+    sort: "date_desc",
+    page: 1,
+    pageSize: 50,
+    includeMeta: false
+  });
+
+  assert.equal(response.pagination.totalCount, 1);
+  assert.equal(response.items[0]?.description, "Despesa do mes passado");
+  assert.equal(response.summary.income, 0);
+  assert.equal(response.summary.expense, 125);
+  assert.equal(response.summary.balance, -125);
+  assert.equal(response.summary.periodCashInflow, 0);
+  assert.equal(response.summary.periodCashOutflow, 125);
+  assert.equal(response.summary.periodCashFlow, -125);
+});
+
+test("listTransactionsForUser custom date-only range includes the whole financial day", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("tx-custom-day");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: new Date("2026-04-01T00:30:00.000Z"),
+    description: "Inicio do dia",
+    normalizedDescription: deps.normalizeDescription("Inicio do dia"),
+    amount: -10,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: new Date("2026-04-01T23:30:00.000Z"),
+    description: "Fim do dia",
+    normalizedDescription: deps.normalizeDescription("Fim do dia"),
+    amount: -20,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: new Date("2026-04-02T00:00:00.000Z"),
+    description: "Outro dia",
+    normalizedDescription: deps.normalizeDescription("Outro dia"),
+    amount: -30,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+
+  const response = await deps.listTransactionsForUser(fixture.userId, {
+    period: "custom",
+    from: "2026-04-01",
+    to: "2026-04-01",
+    sort: "date_asc",
+    page: 1,
+    pageSize: 50,
+    includeMeta: false
+  });
+
+  assert.equal(response.pagination.totalCount, 2);
+  assert.deepEqual(response.items.map((item) => item.description), ["Inicio do dia", "Fim do dia"]);
+  assert.equal(response.summary.expense, 30);
+});
+
+test("listTransactionsForUser this-month includes transactions at the start of the first UTC day", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("tx-this-month-boundary");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const now = new Date();
+  const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 30, 0, 0));
+  const previousDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0, 23, 30, 0, 0));
+
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: firstDay,
+    description: "Primeiro dia do mes",
+    normalizedDescription: deps.normalizeDescription("Primeiro dia do mes"),
+    amount: -15,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+  await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    date: previousDay,
+    description: "Ultimo dia anterior",
+    normalizedDescription: deps.normalizeDescription("Ultimo dia anterior"),
+    amount: -25,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+
+  const response = await deps.listTransactionsForUser(fixture.userId, {
+    period: "this-month",
+    sort: "date_asc",
+    page: 1,
+    pageSize: 50,
+    includeMeta: false
+  });
+
+  assert.equal(response.pagination.totalCount, 1);
+  assert.equal(response.items[0]?.description, "Primeiro dia do mes");
 });

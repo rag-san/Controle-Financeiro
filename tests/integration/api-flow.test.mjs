@@ -741,9 +741,9 @@ test("critical backend flow via API", async () => {
     cookies: authCookies,
     json: statementWithCardPaymentCommitPayload
   });
-  assert.equal(statementReimport.status, 201);
-  assert.equal(statementReimport.payload?.totalTransfersCreated, 0);
-  assert.ok(statementReimport.payload?.duplicates >= 2);
+  assert.equal(statementReimport.status, 409);
+  assert.equal(statementReimport.payload?.code, "import_no_new_transactions");
+  assert.ok(statementReimport.payload?.details?.duplicates >= 2);
 
   const transactionsAfterStatementReimport = await apiRequest("/api/transactions?period=all&page=1&pageSize=200", {
     cookies: authCookies
@@ -1550,10 +1550,11 @@ test("critical backend flow via API", async () => {
     cookies: authCookies,
     json: importCommitPayload
   });
-  assert.equal(secondImportCommit.status, 201);
-  assert.equal(secondImportCommit.payload?.totalImported, 0);
-  assert.ok(secondImportCommit.payload?.totalSkipped >= firstImportCommit.payload?.totalReceived);
-  assert.ok(secondImportCommit.payload?.duplicates >= firstImportCommit.payload?.totalReceived);
+  assert.equal(secondImportCommit.status, 409);
+  assert.equal(secondImportCommit.payload?.code, "import_no_new_transactions");
+  assert.equal(secondImportCommit.payload?.details?.totalImported, 0);
+  assert.ok(secondImportCommit.payload?.details?.totalSkipped >= firstImportCommit.payload?.totalReceived);
+  assert.ok(secondImportCommit.payload?.details?.duplicates >= firstImportCommit.payload?.totalReceived);
 
   const samePayloadDuplicateRows = [
     {

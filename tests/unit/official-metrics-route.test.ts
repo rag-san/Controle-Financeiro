@@ -16,6 +16,7 @@ type LoadedDeps = {
   db: typeof import("@/lib/db").db;
   AUTH_SECRET: typeof import("@/lib/auth").AUTH_SECRET;
   GET: typeof import("@/app/api/metrics/official/route").GET;
+  invalidateFinanceCaches: typeof import("@/lib/cache-keys").invalidateFinanceCaches;
   buildFingerprint: typeof import("@/lib/ledger/normalization").buildFingerprint;
   normalizeDescription: typeof import("@/lib/normalize").normalizeDescription;
   usersRepo: typeof import("@/lib/server/users.repo").usersRepo;
@@ -23,6 +24,7 @@ type LoadedDeps = {
   categoriesRepo: typeof import("@/lib/server/categories.repo").categoriesRepo;
   ledgerRepo: typeof import("@/lib/server/ledger.repo").ledgerRepo;
   transactionsRepo: typeof import("@/lib/server/transactions.repo").transactionsRepo;
+  listTransactionsForUser: typeof import("@/lib/server/transactions.service").listTransactionsForUser;
   formatRange: typeof import("@/src/features/cashflow/utils/cashflow").formatRange;
   resolveCurrentRange: typeof import("@/src/features/cashflow/utils/cashflow").resolveCurrentRange;
 };
@@ -32,11 +34,12 @@ let depsPromise: Promise<LoadedDeps> | null = null;
 function loadDeps(): Promise<LoadedDeps> {
   if (!depsPromise) {
     depsPromise = (async () => {
-      const [{ db, initDbOnce }, authModule, routeModule, ledgerNormalizationModule, normalizeModule, usersModule, accountsModule, categoriesModule, ledgerModule, transactionsModule, cashflowModule] =
+      const [{ db, initDbOnce }, authModule, routeModule, cacheKeysModule, ledgerNormalizationModule, normalizeModule, usersModule, accountsModule, categoriesModule, ledgerModule, transactionsModule, transactionsServiceModule, cashflowModule] =
         await Promise.all([
           import("@/lib/db"),
           import("@/lib/auth"),
           import("@/app/api/metrics/official/route"),
+          import("@/lib/cache-keys"),
           import("@/lib/ledger/normalization"),
           import("@/lib/normalize"),
           import("@/lib/server/users.repo"),
@@ -44,6 +47,7 @@ function loadDeps(): Promise<LoadedDeps> {
           import("@/lib/server/categories.repo"),
           import("@/lib/server/ledger.repo"),
           import("@/lib/server/transactions.repo"),
+          import("@/lib/server/transactions.service"),
           import("@/src/features/cashflow/utils/cashflow")
         ]);
 
@@ -52,6 +56,7 @@ function loadDeps(): Promise<LoadedDeps> {
         db,
         AUTH_SECRET: authModule.AUTH_SECRET,
         GET: routeModule.GET,
+        invalidateFinanceCaches: cacheKeysModule.invalidateFinanceCaches,
         buildFingerprint: ledgerNormalizationModule.buildFingerprint,
         normalizeDescription: normalizeModule.normalizeDescription,
         usersRepo: usersModule.usersRepo,
@@ -59,6 +64,7 @@ function loadDeps(): Promise<LoadedDeps> {
         categoriesRepo: categoriesModule.categoriesRepo,
         ledgerRepo: ledgerModule.ledgerRepo,
         transactionsRepo: transactionsModule.transactionsRepo,
+        listTransactionsForUser: transactionsServiceModule.listTransactionsForUser,
         formatRange: cashflowModule.formatRange,
         resolveCurrentRange: cashflowModule.resolveCurrentRange
       };
@@ -343,6 +349,63 @@ test("official categories route uses ledger data when the month is fully mirrore
   assert.equal(payload.aggregates.list[0]?.name, groceries.name);
 });
 
+test("official categories route nets ledger refunds inside category totals", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-categories-refund");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado categories refund-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const currentMonth = monthKey(now);
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 2),
+    amount: 200,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado categories refund compra",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 3),
+    amount: 50,
+    type: "refund",
+    direction: "IN",
+    description: "Mercado categories refund estorno",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+
+  const response = await deps.GET(
+    await buildAuthenticatedRequest(
+      `/api/metrics/official?view=categories&month=${currentMonth}`,
+      fixture,
+      deps.AUTH_SECRET
+    )
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.view, "categories");
+  assert.equal(payload.aggregates.totalSpent, 150);
+  assert.equal(payload.aggregates.list[0]?.name, groceries.name);
+  assert.equal(payload.aggregates.list[0]?.value ?? 0, 150);
+});
+
 test("official categories route stays on legacy data while the month has transactions without ledger mirror", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -602,6 +665,92 @@ test("official reports and cashflow use ledger cash reality without duplicating 
   assert.equal(cashflowPayload.data.expense.current, 1000);
 });
 
+test("official reports and cashflow keep card account filters out of cash totals while exposing card breakdown", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-card-filter");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado card filter-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const card = await deps.ledgerRepo.createCreditCardAccount({
+    userId: fixture.userId,
+    name: `Cartao filtro-${Date.now()}`,
+    defaultPaymentAccountId: fixture.checkingAccountId
+  });
+  assert.ok(card);
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 2),
+    amount: 400,
+    type: "cc_purchase",
+    direction: "OUT",
+    description: "Mercado cartao filtrado",
+    creditCardAccountId: card.id,
+    categoryId: groceries.id
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 4),
+    amount: 150,
+    type: "cc_payment",
+    direction: "OUT",
+    description: "Pagamento cartao filtrado",
+    accountId: fixture.checkingAccountId,
+    creditCardAccountId: card.id
+  });
+
+  const reportsResponse = await deps.GET(
+    await buildAuthenticatedRequest(
+      `/api/metrics/official?view=reports&preset=1M&accountId=${card.id}`,
+      fixture,
+      deps.AUTH_SECRET
+    )
+  );
+  assert.equal(reportsResponse.status, 200);
+  const reportsPayload = await reportsResponse.json();
+  assert.equal(reportsPayload.view, "reports");
+  assert.equal(reportsPayload.model.currentTotals.expense, 400);
+  assert.equal(reportsPayload.model.cashSummary.outflow, 0);
+  assert.equal(reportsPayload.model.cashSummary.net, 0);
+  assert.equal(reportsPayload.model.cashSummary.cashBalance, 0);
+  assert.equal(reportsPayload.model.financeBreakdown.cardSpending, 400);
+  assert.equal(reportsPayload.model.financeBreakdown.cardPayments, 150);
+  assert.equal(reportsPayload.model.financeBreakdown.paidExpense, 150);
+  assert.equal(reportsPayload.model.financeBreakdown.openCardDebt, 250);
+
+  const cashflowResponse = await deps.GET(
+    await buildAuthenticatedRequest(
+      `/api/metrics/official?view=cashflow&period=1m&accountId=${card.id}`,
+      fixture,
+      deps.AUTH_SECRET
+    )
+  );
+  assert.equal(cashflowResponse.status, 200);
+  const cashflowPayload = await cashflowResponse.json();
+  assert.equal(cashflowPayload.view, "cashflow");
+  assert.equal(cashflowPayload.data.income.current, 0);
+  assert.equal(cashflowPayload.data.expense.current, 0);
+  assert.equal(cashflowPayload.data.netResult.current, 0);
+  assert.equal(cashflowPayload.data.classifiedExpense.current, 400);
+  assert.equal(cashflowPayload.data.financeBreakdown.cardSpending, 400);
+  assert.equal(cashflowPayload.data.financeBreakdown.cardPayments, 150);
+  assert.equal(cashflowPayload.data.financeBreakdown.openCardDebt, 250);
+});
+
 test("official dashboard uses ledger data when no legacy transactions exist", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -663,12 +812,216 @@ test("official dashboard uses ledger data when no legacy transactions exist", as
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.view, "dashboard");
+  assert.equal(payload.referenceMonth, currentMonth);
+  assert.equal(payload.previousReferenceMonth, monthKey(previousMonthDate));
+  assert.equal(payload.referencePeriod.start.slice(0, 7), currentMonth);
+  assert.equal(payload.comparisonPeriod.start.slice(0, 7), monthKey(previousMonthDate));
   assert.equal(payload.cards.income, 900);
   assert.equal(payload.cards.expense, 220);
   assert.equal(payload.cards.result, 680);
   assert.equal(payload.periodComparison.previous.expense, 80);
   assert.equal(payload.topCategories[0]?.current ?? 0, 220);
   assert.equal(payload.topCategories[0]?.previous ?? 0, 80);
+});
+
+test("official dashboard nets ledger refunds against category spend", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-dashboard-refund");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado dashboard refund-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+  const currentMonth = monthKey(now);
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 1),
+    amount: 1000,
+    type: "income",
+    direction: "IN",
+    description: "Salario dashboard refund",
+    accountId: fixture.checkingAccountId
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 3),
+    amount: 200,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado dashboard refund compra",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 4),
+    amount: 60,
+    type: "refund",
+    direction: "IN",
+    description: "Mercado dashboard refund estorno",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+
+  const response = await deps.GET(
+    await buildAuthenticatedRequest(`/api/metrics/official?view=dashboard&month=${currentMonth}`, fixture, deps.AUTH_SECRET)
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.view, "dashboard");
+  assert.equal(payload.cards.income, 1000);
+  assert.equal(payload.cards.expense, 140);
+  assert.equal(payload.cards.result, 860);
+  assert.equal(payload.topCategories[0]?.name, groceries.name);
+  assert.equal(payload.topCategories[0]?.current ?? 0, 140);
+});
+
+test("official dashboard includes uncategorized spend among top categories", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-dashboard-uncategorized");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado dashboard uncategorized-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+  const currentMonth = monthKey(now);
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 2),
+    amount: 90,
+    type: "expense",
+    direction: "OUT",
+    description: "Despesa sem categoria dashboard",
+    accountId: fixture.checkingAccountId
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 3),
+    amount: 40,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado dashboard categoria menor",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+
+  const response = await deps.GET(
+    await buildAuthenticatedRequest(`/api/metrics/official?view=dashboard&month=${currentMonth}`, fixture, deps.AUTH_SECRET)
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.view, "dashboard");
+  assert.equal(payload.cards.expense, 130);
+  assert.equal(payload.topCategories[0]?.name, "Sem categoria");
+  assert.equal(payload.topCategories[0]?.current ?? 0, 90);
+});
+
+test("official dashboard refreshes historical month after finance mutations", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-dashboard-history-refresh");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const groceries = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Mercado dashboard history-${Date.now()}`,
+    color: "#22c55e"
+  });
+  assert.ok(groceries);
+
+  const now = new Date();
+  const previousMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0, 12, 0, 0, 0));
+  const previousMonth = monthKey(previousMonthDate);
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date(Date.UTC(previousMonthDate.getUTCFullYear(), previousMonthDate.getUTCMonth(), 5, 12, 0, 0, 0)),
+    amount: 80,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado historico inicial",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+
+  const firstResponse = await deps.GET(
+    await buildAuthenticatedRequest(
+      `/api/metrics/official?view=dashboard&month=${previousMonth}`,
+      fixture,
+      deps.AUTH_SECRET
+    )
+  );
+  assert.equal(firstResponse.status, 200);
+  const firstPayload = await firstResponse.json();
+  assert.equal(firstPayload.view, "dashboard");
+  assert.equal(firstPayload.referenceMonth, previousMonth);
+  assert.equal(firstPayload.cards.expense, 80);
+  assert.equal(firstPayload.topCategories[0]?.current ?? 0, 80);
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: new Date(Date.UTC(previousMonthDate.getUTCFullYear(), previousMonthDate.getUTCMonth(), 18, 12, 0, 0, 0)),
+    amount: 45,
+    type: "expense",
+    direction: "OUT",
+    description: "Mercado historico adicional",
+    accountId: fixture.checkingAccountId,
+    categoryId: groceries.id
+  });
+
+  deps.invalidateFinanceCaches(fixture.userId);
+
+  const refreshedResponse = await deps.GET(
+    await buildAuthenticatedRequest(
+      `/api/metrics/official?view=dashboard&month=${previousMonth}`,
+      fixture,
+      deps.AUTH_SECRET
+    )
+  );
+  assert.equal(refreshedResponse.status, 200);
+  const refreshedPayload = await refreshedResponse.json();
+  assert.equal(refreshedPayload.view, "dashboard");
+  assert.equal(refreshedPayload.referenceMonth, previousMonth);
+  assert.equal(refreshedPayload.cards.expense, 125);
+  assert.equal(refreshedPayload.topCategories[0]?.current ?? 0, 125);
+
+  const transactionsSnapshot = await deps.listTransactionsForUser(fixture.userId, {
+    period: "last-month",
+    sort: "date_desc",
+    page: 1,
+    pageSize: 50,
+    includeMeta: false
+  });
+  assert.equal(transactionsSnapshot.summary.income, refreshedPayload.cards.income);
+  assert.equal(transactionsSnapshot.summary.expense, refreshedPayload.cards.expense);
+  assert.equal(transactionsSnapshot.summary.balance, refreshedPayload.cards.result);
 });
 
 test("accounts repo exposes ledger-backed current balance when the user is fully mirrored", async (t) => {

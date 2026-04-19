@@ -1,34 +1,32 @@
 import { eachMonthOfInterval, format } from "date-fns";
-import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { themeColors } from "@/src/lib/theme/colors";
 import {
-  dashboardMetricsRepo,
-  type DashboardDateRange,
-  type DashboardMetricsFilters
-} from "@/lib/server/dashboard-metrics.repo";
+  sumBudgetMetrics,
+  sumCashFlowMetrics,
+  type FinancialAccountType,
+  type NormalizedTransaction
+} from "@/lib/finance/normalized-transactions";
+import { getFinancialBreakdownSnapshot } from "@/lib/server/financial-breakdown.service";
+import { loadNormalizedTransactionsForScope } from "@/lib/server/financial-metrics.service";
 import { ledgerRepo } from "@/lib/server/ledger.repo";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 import { accountsRepo } from "@/lib/server/accounts.repo";
-import type { CategoryDTO, TransactionDTO } from "@/lib/types";
-import { buildReportsModel, buildReportsModelFromPrepared } from "@/src/features/reports/buildReportsModel";
+import type { CategoryDTO } from "@/lib/types";
+import { buildReportsModelFromPrepared } from "@/src/features/reports/buildReportsModel";
 import type {
   ReportPreparedTransaction,
   ReportsCashSummary,
+  ReportsPeriodComparison,
   ReportsPeriodPreset
 } from "@/src/features/reports/types";
 import { buildPeriodComparison } from "@/src/features/reports/utils/period";
 import {
-  calculateTotals,
   formatRange,
   resolveCurrentRange,
   resolvePreviousRange,
-  splitByRange,
   toComparisonMetric
 } from "@/src/features/cashflow/utils/cashflow";
-import { buildMonthlyExpensesStack } from "@/src/features/cashflow/utils/expensesStack";
-import { buildMonthlyIncome } from "@/src/features/cashflow/utils/income";
-import { buildMonthlyNetResult } from "@/src/features/cashflow/utils/netResult";
 import type {
   CashflowPeriodKey,
   DateRange,
@@ -38,79 +36,13 @@ import type {
 } from "@/src/features/cashflow/types";
 import { extractMerchantKey } from "@/src/features/insights/utils/merchant";
 
-type LedgerAnalyticsEntry = Awaited<ReturnType<typeof ledgerRepo.listAnalyticsEntries>>[number];
-type LegacyTransactionRow = Awaited<ReturnType<typeof transactionsRepo.listPaged>>[number];
-
 function round2(value: number): number {
   return Number(value.toFixed(2));
-}
-
-function toDashboardRange(current: DateRange, previous: DateRange): DashboardDateRange {
-  return {
-    fromDate: current.from,
-    toDate: current.to,
-    previousFromDate: previous.from,
-    previousToDate: previous.to,
-    from: current.from.toISOString(),
-    to: current.to.toISOString(),
-    previousFrom: previous.from.toISOString(),
-    previousTo: previous.to.toISOString()
-  };
 }
 
 function inRange(date: Date, range: DateRange): boolean {
   const time = date.getTime();
   return time >= range.from.getTime() && time <= range.to.getTime();
-}
-
-function resolveCashBalance(
-  rows: Array<{
-    accountId: string;
-    amount: number;
-  }>,
-  accountId?: string
-): number {
-  const scopedRows = accountId ? rows.filter((row) => row.accountId === accountId) : rows;
-  return round2(scopedRows.reduce((sum, row) => sum + row.amount, 0));
-}
-
-function toTransactionDTO(item: LegacyTransactionRow): TransactionDTO {
-  return {
-    id: item.id,
-    accountId: item.accountId,
-    categoryId: item.categoryId ?? null,
-    importBatchId: item.importBatchId ?? null,
-    date: item.date.toISOString(),
-    description: item.description,
-    amount: item.amount,
-    type: item.type,
-    direction: item.direction,
-    excluded: item.excluded,
-    isInternalTransfer: item.isInternalTransfer,
-    status: item.status,
-    transferGroupId: item.transferGroupId ?? null,
-    transferPeerTxId: item.transferPeerTxId ?? null,
-    transferFromAccountId: item.transferFromAccountId ?? null,
-    transferToAccountId: item.transferToAccountId ?? null,
-    raw: item.raw ?? null,
-    account: {
-      id: item.account.id,
-      name: item.account.name,
-      type: item.account.type,
-      institution: item.account.institution ?? null,
-      currency: item.account.currency,
-      parentAccountId: item.account.parentAccountId ?? null
-    },
-    category: item.category
-      ? {
-          id: item.category.id,
-          name: item.category.name,
-          color: item.category.color,
-          icon: item.category.icon ?? null,
-          parentId: item.category.parentId ?? null
-        }
-      : null
-  };
 }
 
 function buildReportsCashSummary(input: {
@@ -133,35 +65,58 @@ function buildReportsCashSummary(input: {
   };
 }
 
-function hasCashAccount(entry: LedgerAnalyticsEntry): boolean {
-  return entry.account?.type === "checking" || entry.account?.type === "cash";
+async function getLegacyScopedPostedBounds(input: {
+  userId: string;
+  accountId?: string;
+  categoryId?: string;
+}): Promise<{ latest: Date | null; earliest: Date | null }> {
+  const filter = {
+    userId: input.userId,
+    accountId: input.accountId,
+    categoryId: input.categoryId,
+    excluded: false,
+    hideCardPaymentMirrorInflow: true
+  } as const;
+
+  const [latestRows, earliestRows] = await Promise.all([
+    transactionsRepo.listPaged(filter, { page: 1, pageSize: 1 }, { sort: "date_desc" }),
+    transactionsRepo.listPaged(filter, { page: 1, pageSize: 1 }, { sort: "date_asc" })
+  ]);
+
+  return {
+    latest: latestRows[0]?.date ?? null,
+    earliest: earliestRows[0]?.date ?? null
+  };
 }
 
-function resolveCashDeltaCents(entry: LedgerAnalyticsEntry): number {
-  if (!hasCashAccount(entry)) return 0;
+async function resolveReportsPeriod(input: {
+  userId: string;
+  preset: ReportsPeriodPreset;
+  accountId?: string;
+  categoryId?: string;
+}): Promise<ReportsPeriodComparison> {
+  const [ledgerLatest, ledgerEarliest, legacyBounds] = await Promise.all([
+    ledgerRepo.latestVisiblePostedAt({
+      userId: input.userId,
+      accountId: input.accountId,
+      categoryId: input.categoryId
+    }),
+    ledgerRepo.oldestVisiblePostedAt({
+      userId: input.userId,
+      accountId: input.accountId,
+      categoryId: input.categoryId
+    }),
+    getLegacyScopedPostedBounds({
+      userId: input.userId,
+      accountId: input.accountId,
+      categoryId: input.categoryId
+    })
+  ]);
 
-  if (entry.type === "income") return entry.amountCents;
-  if (entry.type === "expense" || entry.type === "fee") return -entry.amountCents;
-  if (entry.type === "transfer") {
-    return entry.direction === "IN" ? entry.amountCents : entry.direction === "OUT" ? -entry.amountCents : 0;
-  }
-  if (entry.type === "cc_payment") {
-    return entry.direction === "IN" ? entry.amountCents : entry.direction === "OUT" ? -entry.amountCents : 0;
-  }
-  if (entry.type === "refund") {
-    return entry.direction === "IN" ? entry.amountCents : entry.direction === "OUT" ? -entry.amountCents : 0;
-  }
-
-  return 0;
-}
-
-function resolveCashCategoryName(entry: LedgerAnalyticsEntry): string {
-  if (entry.category?.name?.trim()) return entry.category.name.trim();
-  if (entry.type === "cc_payment") return "Pagamento de fatura";
-  if (entry.type === "transfer") return "Transferências";
-  if (entry.type === "fee") return "Tarifas";
-  if (entry.type === "refund") return "Estornos";
-  return "Sem categoria";
+  return buildPeriodComparison(input.preset, {
+    now: ledgerLatest ?? legacyBounds.latest ?? new Date(),
+    earliestDate: ledgerEarliest ?? legacyBounds.earliest ?? undefined
+  });
 }
 
 type PreparedCashEntry = {
@@ -172,20 +127,6 @@ type PreparedCashEntry = {
   netCents: number;
   categoryName: string;
 };
-
-function toPreparedCashEntry(entry: LedgerAnalyticsEntry): PreparedCashEntry | null {
-  const netCents = resolveCashDeltaCents(entry);
-  if (netCents === 0) return null;
-
-  return {
-    id: entry.id,
-    postedAt: entry.postedAt,
-    inflowCents: Math.max(netCents, 0),
-    outflowCents: Math.max(-netCents, 0),
-    netCents,
-    categoryName: resolveCashCategoryName(entry)
-  };
-}
 
 function buildMonthKeys(start: Date, end: Date): string[] {
   return eachMonthOfInterval({ start, end }).map((value) => format(value, "yyyy-MM"));
@@ -300,8 +241,32 @@ function buildMonthlyCashOutflowStack(
   };
 }
 
-function resolveReportCategory(entry: LedgerAnalyticsEntry, categoriesById: Map<string, CategoryDTO>) {
-  const category = (entry.categoryId ? categoriesById.get(entry.categoryId) : null) ?? entry.category ?? null;
+
+function isCashAccount(type: FinancialAccountType | null | undefined): boolean {
+  return type === "checking" || type === "cash";
+}
+
+function toNormalizedEntryDate(entry: NormalizedTransaction): Date {
+  return new Date(entry.date);
+}
+
+function isNormalizedEntryInRange(entry: NormalizedTransaction, range: DateRange): boolean {
+  const timestamp = toNormalizedEntryDate(entry).getTime();
+  return timestamp >= range.from.getTime() && timestamp <= range.to.getTime();
+}
+
+function resolveNormalizedCategory(
+  entry: NormalizedTransaction,
+  categoriesById: Map<string, CategoryDTO>
+): {
+  id: string | null;
+  name: string;
+  color: string;
+  icon: string | null;
+  parentId: string | null;
+  parentName: string | null;
+} {
+  const category = entry.categoryId ? categoriesById.get(entry.categoryId) : null;
   const name = category?.name?.trim() || "Sem categoria";
   const parentId = category?.parentId ?? null;
   const parentName = parentId ? categoriesById.get(parentId)?.name?.trim() ?? null : null;
@@ -316,251 +281,268 @@ function resolveReportCategory(entry: LedgerAnalyticsEntry, categoriesById: Map<
   };
 }
 
-function buildLedgerMerchantKey(entry: LedgerAnalyticsEntry, accountName: string): string {
-  const normalized = entry.merchantNormalized?.trim().toLowerCase();
-  if (normalized) return normalized;
-
+function buildMerchantKeyFromNormalized(entry: NormalizedTransaction): string {
   return extractMerchantKey({
     id: entry.id,
-    accountId: entry.accountId ?? entry.creditCardAccountId ?? "",
-    date: entry.postedAt.toISOString(),
-    description: entry.descriptionNormalized,
-    amount: entry.amount,
-    type: entry.type === "income" ? "income" : entry.type === "transfer" ? "transfer" : "expense",
+    accountId: entry.accountId ?? "",
+    categoryId: entry.categoryId ?? null,
+    importBatchId: entry.importBatchId ?? null,
+    date: entry.date,
+    description: entry.descriptionOriginal,
+    amount: entry.signedAmount,
+    type:
+      entry.budgetImpact === "counts_as_income"
+        ? "income"
+        : entry.budgetImpact === "counts_as_expense"
+          ? "expense"
+          : "transfer",
+    direction: entry.direction === "inflow" ? "in" : "out",
+    excluded: entry.excluded,
+    isInternalTransfer: entry.isInternalTransfer,
     status: "posted",
+    transferGroupId: null,
+    transferPeerTxId: null,
+    transferFromAccountId: null,
+    transferToAccountId: null,
+    raw: null,
     account: {
-      id: entry.accountId ?? entry.creditCardAccountId ?? "",
-      name: accountName,
-      type: entry.account?.type ?? "credit",
-      institution: entry.account?.institution ?? null,
-      currency: entry.account?.currency ?? entry.creditCardAccount?.currency ?? "BRL",
-      parentAccountId: entry.account?.parentAccountId ?? null
+      id: entry.accountId ?? "",
+      name: entry.accountName ?? "Conta",
+      type: entry.accountType ?? "checking",
+      institution: null,
+      currency: "BRL",
+      parentAccountId: null
     },
     category: null
   });
 }
 
-function toPreparedReportTransaction(
-  entry: LedgerAnalyticsEntry,
+function toPreparedNormalizedReportTransaction(
+  entry: NormalizedTransaction,
   categoriesById: Map<string, CategoryDTO>
 ): ReportPreparedTransaction {
-  const category = resolveReportCategory(entry, categoriesById);
-  const accountName =
-    entry.account?.name?.trim() ||
-    entry.creditCardAccount?.name?.trim() ||
-    "Conta";
-
-  let incomeCents = 0;
-  let expenseCents = 0;
-  let type: ReportPreparedTransaction["type"] = "transfer";
-
-  if (entry.type === "income") {
-    incomeCents = entry.amountCents;
-    type = "income";
-  } else if (entry.type === "expense" || entry.type === "cc_purchase" || entry.type === "fee") {
-    expenseCents = entry.amountCents;
-    type = "expense";
-  } else if (entry.type === "refund") {
-    expenseCents = -entry.amountCents;
-    type = "expense";
-  }
+  const category = resolveNormalizedCategory(entry, categoriesById);
+  const incomeCents =
+    entry.budgetImpact === "counts_as_income" ? Math.round(entry.budgetSignedAmount * 100) : 0;
+  const expenseCents =
+    entry.budgetImpact === "counts_as_expense" ? Math.round(-entry.budgetSignedAmount * 100) : 0;
+  const type: ReportPreparedTransaction["type"] =
+    entry.budgetImpact === "counts_as_income"
+      ? "income"
+      : entry.budgetImpact === "counts_as_expense"
+        ? "expense"
+        : "transfer";
+  const date = toNormalizedEntryDate(entry);
 
   return {
     id: entry.id,
-    date: entry.postedAt,
-    timestamp: entry.postedAt.getTime(),
-    amount: round2(entry.amount),
+    date,
+    timestamp: date.getTime(),
+    amount: round2(entry.signedAmount),
     absAmount: round2(entry.amount),
     type,
     incomeCents,
     expenseCents,
-    description: entry.descriptionNormalized,
-    accountId: entry.accountId ?? entry.creditCardAccountId ?? "",
-    accountName,
+    description: entry.descriptionOriginal,
+    accountId: entry.accountId ?? "",
+    accountName: entry.accountName?.trim() || "Conta",
     categoryId: category.id,
     parentCategoryId: category.parentId,
     parentCategoryName: category.parentName,
     categoryName: category.name,
     categoryColor: category.color,
     categoryIcon: category.icon,
-    merchantKey: buildLedgerMerchantKey(entry, accountName)
+    merchantKey: buildMerchantKeyFromNormalized(entry)
   };
 }
 
-async function buildLegacyReportsPayload(input: {
-  userId: string;
-  preset: ReportsPeriodPreset;
-  accountId?: string;
-  categoryId?: string;
-}) {
-  const earliestDate = (await transactionsRepo.oldestPostedAt(input.userId, { excluded: false })) ?? undefined;
-  const period = buildPeriodComparison(input.preset, { now: new Date(), earliestDate });
-  const start =
-    period.current.start.getTime() <= period.previous.start.getTime() ? period.current.start : period.previous.start;
-  const end = period.current.end.getTime() >= period.previous.end.getTime() ? period.current.end : period.previous.end;
+function resolveScopedCashEntryAmount(input: {
+  entry: NormalizedTransaction;
+  scopedAccountId?: string;
+  scopedAccountType?: FinancialAccountType | null;
+}): number {
+  if (!input.scopedAccountId) {
+    return input.entry.overallCashFlowSignedAmount;
+  }
 
-  const rows = await transactionsRepo.listAll({
-    userId: input.userId,
-    dateFrom: start,
-    dateTo: end,
-    accountId: input.accountId,
-    categoryId: input.categoryId,
-    excluded: false,
-    hideCardPaymentMirrorInflow: true
+  if (!isCashAccount(input.scopedAccountType)) {
+    return 0;
+  }
+
+  if (input.entry.accountId !== input.scopedAccountId) {
+    return 0;
+  }
+
+  return input.entry.accountBalanceSignedAmount;
+}
+
+function resolveNormalizedCashCategoryName(
+  entry: NormalizedTransaction,
+  categoriesById: Map<string, CategoryDTO>
+): string {
+  if (entry.nature === "credit_card_payment") {
+    return "Pagamento de fatura";
+  }
+  if (entry.nature === "fee") {
+    return "Tarifas";
+  }
+  if (entry.nature === "refund") {
+    return "Estornos";
+  }
+  if (entry.categoryId) {
+    const category = categoriesById.get(entry.categoryId);
+    if (category?.name?.trim()) {
+      return category.name.trim();
+    }
+  }
+  return "Sem categoria";
+}
+
+function toPreparedNormalizedCashEntry(
+  entry: NormalizedTransaction,
+  categoriesById: Map<string, CategoryDTO>,
+  scope: {
+    scopedAccountId?: string;
+    scopedAccountType?: FinancialAccountType | null;
+  }
+): PreparedCashEntry | null {
+  const signedAmount = resolveScopedCashEntryAmount({
+    entry,
+    scopedAccountId: scope.scopedAccountId,
+    scopedAccountType: scope.scopedAccountType
   });
-  const transactions = rows.map(toTransactionDTO);
-  const categories = await categoriesRepo.listByUser(input.userId);
-  const model = buildReportsModel({
-    transactions,
-    categories,
-    period,
-    accountId: input.accountId,
-    categoryId: input.categoryId
-  });
-  const currentCash = await transactionsRepo.sumCashFlow({
-    userId: input.userId,
-    dateFrom: period.current.start,
-    dateTo: period.current.end,
-    accountId: input.accountId,
-    categoryId: input.categoryId,
-    excluded: false,
-    hideCardPaymentMirrorInflow: true
-  });
-  const previousCash = await transactionsRepo.sumCashFlow({
-    userId: input.userId,
-    dateFrom: period.previous.start,
-    dateTo: period.previous.end,
-    accountId: input.accountId,
-    categoryId: input.categoryId,
-    excluded: false,
-    hideCardPaymentMirrorInflow: true
-  });
-  const accountsWithBalance = await accountsRepo.listByUserWithBalance(input.userId);
-  const filteredAccounts = input.accountId
-    ? accountsWithBalance.filter((account) => account.id === input.accountId)
-    : accountsWithBalance;
-  const cashBalance = round2(
-    filteredAccounts
-      .filter((account) => account.type === "checking" || account.type === "cash")
+
+  if (!Number.isFinite(signedAmount) || signedAmount === 0) {
+    return null;
+  }
+
+  const netCents = Math.round(signedAmount * 100);
+  const postedAt = toNormalizedEntryDate(entry);
+
+  return {
+    id: entry.id,
+    postedAt,
+    inflowCents: Math.max(netCents, 0),
+    outflowCents: Math.max(-netCents, 0),
+    netCents,
+    categoryName: resolveNormalizedCashCategoryName(entry, categoriesById)
+  };
+}
+
+function resolveCashBalanceFromAccounts(
+  accounts: Awaited<ReturnType<typeof accountsRepo.listByUserWithBalance>>,
+  accountId?: string
+): number {
+  return round2(
+    accounts
+      .filter((account) => {
+        if (!isCashAccount(account.type)) {
+          return false;
+        }
+        return accountId ? account.id === accountId : true;
+      })
       .reduce((sum, account) => sum + (account.currentBalance ?? 0), 0)
   );
-
-  return {
-    period,
-    categories,
-    accounts: await accountsRepo.listByUser(input.userId),
-    model: {
-      ...model,
-      cashSummary: buildReportsCashSummary({
-        inflow: currentCash.inflow,
-        outflow: currentCash.outflow,
-        net: currentCash.net,
-        previousInflow: previousCash.inflow,
-        previousOutflow: previousCash.outflow,
-        previousNet: previousCash.net,
-        cashBalance
-      })
-    }
-  };
 }
 
-async function buildLedgerReportsPayload(input: {
+async function buildNormalizedReportsPayload(input: {
   userId: string;
-  preset: ReportsPeriodPreset;
+  period: ReportsPeriodComparison;
   accountId?: string;
   categoryId?: string;
 }) {
-  const earliestDate =
-    (await ledgerRepo.oldestVisiblePostedAt({
-      userId: input.userId,
-      accountId: input.accountId,
-      categoryId: input.categoryId
-    })) ??
-    (await transactionsRepo.oldestPostedAt(input.userId, { excluded: false })) ??
-    undefined;
-  const period = buildPeriodComparison(input.preset, { now: new Date(), earliestDate });
   const mergedRange = {
     from:
-      period.current.start.getTime() <= period.previous.start.getTime()
-        ? period.current.start
-        : period.previous.start,
+      input.period.current.start.getTime() <= input.period.previous.start.getTime()
+        ? input.period.current.start
+        : input.period.previous.start,
     to:
-      period.current.end.getTime() >= period.previous.end.getTime()
-        ? period.current.end
-        : period.previous.end
+      input.period.current.end.getTime() >= input.period.previous.end.getTime()
+        ? input.period.current.end
+        : input.period.previous.end
   };
-  const categories = await categoriesRepo.listByUser(input.userId);
-  const categoriesById = new Map(categories.map((category) => [category.id, category]));
-  const entries = await ledgerRepo.listAnalyticsEntries({
-    userId: input.userId,
-    from: mergedRange.from,
-    to: mergedRange.to,
-    accountId: input.accountId,
-    categoryId: input.categoryId
-  });
-  const preparedTransactions = entries.map((entry) => toPreparedReportTransaction(entry, categoriesById));
-  const summary = await dashboardMetricsRepo.getSummary({
-    userId: input.userId,
-    range: toDashboardRange(
-      { from: period.current.start, to: period.current.end },
-      { from: period.previous.start, to: period.previous.end }
-    ),
-    filters: {
+
+  const [categories, accounts, accountsWithBalance, normalizedScope, financeBreakdownSnapshot] = await Promise.all([
+    categoriesRepo.listByUser(input.userId),
+    accountsRepo.listByUser(input.userId),
+    accountsRepo.listByUserWithBalance(input.userId),
+    loadNormalizedTransactionsForScope({
+      userId: input.userId,
+      from: mergedRange.from,
+      to: mergedRange.to,
       accountId: input.accountId,
       categoryId: input.categoryId,
-      excluded: false
-    }
+      excluded: false,
+      hideCardPaymentMirrorInflow: true
+    }),
+    getFinancialBreakdownSnapshot({
+      userId: input.userId,
+      currentFrom: input.period.current.start,
+      currentTo: input.period.current.end,
+      accountId: input.accountId,
+      categoryId: input.categoryId
+    })
+  ]);
+  const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const preparedTransactions = normalizedScope.entries.map((entry) =>
+    toPreparedNormalizedReportTransaction(entry, categoriesById)
+  );
+  const currentEntries = normalizedScope.entries.filter((entry) =>
+    isNormalizedEntryInRange(entry, { from: input.period.current.start, to: input.period.current.end })
+  );
+  const previousEntries = normalizedScope.entries.filter((entry) =>
+    isNormalizedEntryInRange(entry, { from: input.period.previous.start, to: input.period.previous.end })
+  );
+  const currentCash = sumCashFlowMetrics(currentEntries, {
+    scopedAccountId: input.accountId ?? null,
+    scopedAccountType: normalizedScope.scopedAccountType
   });
-  const balanceSnapshot = await ledgerRepo.getDashboardSummary({
-    userId: input.userId,
-    to: period.current.end
+  const previousCash = sumCashFlowMetrics(previousEntries, {
+    scopedAccountId: input.accountId ?? null,
+    scopedAccountType: normalizedScope.scopedAccountType
   });
-  const cashBalance = resolveCashBalance(balanceSnapshot.cashBalance, input.accountId);
 
   return {
-    period,
+    period: input.period,
     categories,
-    accounts: await accountsRepo.listByUser(input.userId),
-    model: buildReportsModelFromPrepared({
-      transactions: preparedTransactions,
-      period,
-      cashSummary: buildReportsCashSummary({
-        inflow: summary.cashInflow,
-        outflow: summary.cashOutflow,
-        net: summary.cashNet,
-        previousInflow: summary.previousPeriodComparison.previousCashInflow,
-        previousOutflow: summary.previousPeriodComparison.previousCashOutflow,
-        previousNet: summary.previousPeriodComparison.previousCashNet,
-        cashBalance
-      })
-    })
+    accounts,
+    model: {
+      ...buildReportsModelFromPrepared({
+        transactions: preparedTransactions,
+        period: input.period,
+        cashSummary: buildReportsCashSummary({
+          inflow: currentCash.inflow,
+          outflow: currentCash.outflow,
+          net: currentCash.net,
+          previousInflow: previousCash.inflow,
+          previousOutflow: previousCash.outflow,
+          previousNet: previousCash.net,
+          cashBalance: resolveCashBalanceFromAccounts(accountsWithBalance, input.accountId)
+        })
+      }),
+      financeBreakdown: financeBreakdownSnapshot.breakdown
+    }
   };
 }
 
-async function shouldUseLedgerAnalytics(input: {
-  userId: string;
-  from: Date;
-  to: Date;
-  accountId?: string;
-  categoryId?: string;
-}): Promise<boolean> {
-  return shouldUseLedgerForAnalytics({
-    userId: input.userId,
-    from: input.from,
-    to: input.to,
-    accountId: input.accountId,
-    categoryId: input.categoryId,
-    transactionTypes: ["income", "expense", "transfer"],
-    hideCardPaymentMirrorInflow: true
-  });
-}
-
-async function buildLegacyCashflowPayload(input: {
+async function buildNormalizedCashflowPayload(input: {
   userId: string;
   period: CashflowPeriodKey;
   accountId?: string;
 }) {
-  const referenceDate = (await transactionsRepo.latestPostedAt(input.userId, { excluded: false })) ?? new Date();
+  const latestLedgerDate = await ledgerRepo.latestVisiblePostedAt({
+    userId: input.userId,
+    accountId: input.accountId
+  });
+  const latestLegacyDate = await transactionsRepo.latestPostedAt(input.userId, {
+    excluded: false
+  });
+  const referenceDate =
+    latestLedgerDate && latestLegacyDate
+      ? latestLedgerDate.getTime() >= latestLegacyDate.getTime()
+        ? latestLedgerDate
+        : latestLegacyDate
+      : latestLedgerDate ?? latestLegacyDate ?? new Date();
   const currentRange = resolveCurrentRange(input.period, referenceDate);
   const previousRange = resolvePreviousRange(currentRange);
   const mergedRange = {
@@ -568,125 +550,70 @@ async function buildLegacyCashflowPayload(input: {
     to: currentRange.to
   };
 
-  const rangeTransactions = (await transactionsRepo.listAll({
-    userId: input.userId,
-    dateFrom: mergedRange.from,
-    dateTo: mergedRange.to,
-    accountId: input.accountId,
-    excluded: false,
-    hideCardPaymentMirrorInflow: true
-  })).map(toTransactionDTO);
-  const currentTransactions = splitByRange(rangeTransactions, currentRange);
-  const previousTransactions = splitByRange(rangeTransactions, previousRange);
-  const currentCash = await transactionsRepo.sumCashFlow({
-    userId: input.userId,
-    dateFrom: currentRange.from,
-    dateTo: currentRange.to,
-    accountId: input.accountId,
-    excluded: false,
-    hideCardPaymentMirrorInflow: true
-  });
-  const previousCash = await transactionsRepo.sumCashFlow({
-    userId: input.userId,
-    dateFrom: previousRange.from,
-    dateTo: previousRange.to,
-    accountId: input.accountId,
-    excluded: false,
-    hideCardPaymentMirrorInflow: true
-  });
-  const accountsWithBalance = await accountsRepo.listByUserWithBalance(input.userId);
-  const filteredAccounts = input.accountId
-    ? accountsWithBalance.filter((account) => account.id === input.accountId)
-    : accountsWithBalance;
-  const cashBalance = round2(
-    filteredAccounts
-      .filter((account) => account.type === "checking" || account.type === "cash")
-      .reduce((sum, account) => sum + (account.currentBalance ?? 0), 0)
+  const [categories, accountsWithBalance, normalizedScope, financeBreakdownSnapshot] = await Promise.all([
+    categoriesRepo.listByUser(input.userId),
+    accountsRepo.listByUserWithBalance(input.userId),
+    loadNormalizedTransactionsForScope({
+      userId: input.userId,
+      from: mergedRange.from,
+      to: mergedRange.to,
+      accountId: input.accountId,
+      excluded: false,
+      hideCardPaymentMirrorInflow: true
+    }),
+    getFinancialBreakdownSnapshot({
+      userId: input.userId,
+      currentFrom: currentRange.from,
+      currentTo: currentRange.to,
+      accountId: input.accountId
+    })
+  ]);
+  const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const currentEntries = normalizedScope.entries.filter((entry) =>
+    isNormalizedEntryInRange(entry, currentRange)
   );
-  const currentTotals = calculateTotals(currentTransactions);
-  const previousTotals = calculateTotals(previousTransactions);
+  const previousEntries = normalizedScope.entries.filter((entry) =>
+    isNormalizedEntryInRange(entry, previousRange)
+  );
+  const currentCash = sumCashFlowMetrics(currentEntries, {
+    scopedAccountId: input.accountId ?? null,
+    scopedAccountType: normalizedScope.scopedAccountType
+  });
+  const previousCash = sumCashFlowMetrics(previousEntries, {
+    scopedAccountId: input.accountId ?? null,
+    scopedAccountType: normalizedScope.scopedAccountType
+  });
+  const currentBudget = sumBudgetMetrics(currentEntries);
+  const previousBudget = sumBudgetMetrics(previousEntries);
+  const preparedCashEntries = normalizedScope.entries
+    .map((entry) =>
+      toPreparedNormalizedCashEntry(entry, categoriesById, {
+        scopedAccountId: input.accountId,
+        scopedAccountType: normalizedScope.scopedAccountType
+      })
+    )
+    .filter((entry): entry is PreparedCashEntry => entry !== null);
+  const currentPreparedCashEntries = preparedCashEntries.filter((entry) => inRange(entry.postedAt, currentRange));
+  const previousPreparedCashEntries = preparedCashEntries.filter((entry) => inRange(entry.postedAt, previousRange));
 
   return {
     currentRangeLabel: formatRange(currentRange),
     previousRangeLabel: formatRange(previousRange),
-    cashBalance,
+    cashBalance: resolveCashBalanceFromAccounts(accountsWithBalance, input.accountId),
     netResult: toComparisonMetric(currentCash.net, previousCash.net),
     income: toComparisonMetric(currentCash.inflow, previousCash.inflow),
     expense: toComparisonMetric(currentCash.outflow, previousCash.outflow),
-    netChart: buildMonthlyNetResult(currentTransactions, {
-      start: currentRange.from,
-      end: currentRange.to,
-      previousTransactions,
-      previousStart: previousRange.from,
-      previousEnd: previousRange.to
-    }),
-    incomeChart: buildMonthlyIncome(currentTransactions, {
-      start: currentRange.from,
-      end: currentRange.to
-    }),
-    expensesChart: buildMonthlyExpensesStack(currentTransactions, { topN: 8 }),
-    classifiedIncome: toComparisonMetric(currentTotals.income, previousTotals.income),
-    classifiedExpense: toComparisonMetric(currentTotals.expense, previousTotals.expense)
-  };
-}
-
-async function buildLedgerCashflowPayload(input: {
-  userId: string;
-  period: CashflowPeriodKey;
-  accountId?: string;
-}) {
-  const referenceDate =
-    (await ledgerRepo.latestVisiblePostedAt({
-      userId: input.userId,
-      accountId: input.accountId
-    })) ??
-    (await transactionsRepo.latestPostedAt(input.userId, { excluded: false })) ??
-    new Date();
-  const currentRange = resolveCurrentRange(input.period, referenceDate);
-  const previousRange = resolvePreviousRange(currentRange);
-  const mergedRange = {
-    from: previousRange.from,
-    to: currentRange.to
-  };
-  const summary = await dashboardMetricsRepo.getSummary({
-    userId: input.userId,
-    range: toDashboardRange(currentRange, previousRange),
-    filters: input.accountId ? ({ accountId: input.accountId, excluded: false } satisfies DashboardMetricsFilters) : undefined
-  });
-  const balanceSnapshot = await ledgerRepo.getDashboardSummary({
-    userId: input.userId,
-    to: currentRange.to
-  });
-  const cashBalance = resolveCashBalance(balanceSnapshot.cashBalance, input.accountId);
-  const entries = await ledgerRepo.listAnalyticsEntries({
-    userId: input.userId,
-    from: mergedRange.from,
-    to: mergedRange.to,
-    accountId: input.accountId
-  });
-  const preparedEntries = entries
-    .map((entry) => toPreparedCashEntry(entry))
-    .filter((entry): entry is PreparedCashEntry => entry !== null);
-  const currentEntries = preparedEntries.filter((entry) => inRange(entry.postedAt, currentRange));
-  const previousEntries = preparedEntries.filter((entry) => inRange(entry.postedAt, previousRange));
-
-  return {
-    currentRangeLabel: formatRange(currentRange),
-    previousRangeLabel: formatRange(previousRange),
-    cashBalance,
-    netResult: toComparisonMetric(summary.cashNet, summary.previousPeriodComparison.previousCashNet),
-    income: toComparisonMetric(summary.cashInflow, summary.previousPeriodComparison.previousCashInflow),
-    expense: toComparisonMetric(summary.cashOutflow, summary.previousPeriodComparison.previousCashOutflow),
     netChart: buildMonthlyCashNetChart({
-      currentEntries,
+      currentEntries: currentPreparedCashEntries,
       currentRange,
-      previousEntries,
+      previousEntries: previousPreparedCashEntries,
       previousRange
     }),
-    incomeChart: buildMonthlyCashInflowChart(currentEntries, currentRange),
-    expensesChart: buildMonthlyCashOutflowStack(currentEntries, currentRange, 8),
-    classifiedIncome: toComparisonMetric(summary.totalIncome, summary.previousPeriodComparison.previousIncome),
-    classifiedExpense: toComparisonMetric(summary.totalExpense, summary.previousPeriodComparison.previousExpense)
+    incomeChart: buildMonthlyCashInflowChart(currentPreparedCashEntries, currentRange),
+    expensesChart: buildMonthlyCashOutflowStack(currentPreparedCashEntries, currentRange, 8),
+    classifiedIncome: toComparisonMetric(currentBudget.income, previousBudget.income),
+    classifiedExpense: toComparisonMetric(currentBudget.expense, previousBudget.expense),
+    financeBreakdown: financeBreakdownSnapshot.breakdown
   };
 }
 
@@ -696,38 +623,11 @@ export async function getOfficialReportsData(input: {
   accountId?: string;
   categoryId?: string;
 }) {
-  const earliestLedgerDate = await ledgerRepo.oldestVisiblePostedAt({
-    userId: input.userId,
-    accountId: input.accountId,
-    categoryId: input.categoryId
+  const period = await resolveReportsPeriod(input);
+  return buildNormalizedReportsPayload({
+    ...input,
+    period
   });
-  const period = buildPeriodComparison(input.preset, {
-    now: new Date(),
-    earliestDate:
-      earliestLedgerDate ??
-      (await transactionsRepo.oldestPostedAt(input.userId, { excluded: false })) ??
-      undefined
-  });
-  const mergedRange = {
-    from:
-      period.current.start.getTime() <= period.previous.start.getTime()
-        ? period.current.start
-        : period.previous.start,
-    to:
-      period.current.end.getTime() >= period.previous.end.getTime()
-        ? period.current.end
-        : period.previous.end
-  };
-
-  const useLedger = await shouldUseLedgerAnalytics({
-    userId: input.userId,
-    from: mergedRange.from,
-    to: mergedRange.to,
-    accountId: input.accountId,
-    categoryId: input.categoryId
-  });
-
-  return useLedger ? buildLedgerReportsPayload(input) : buildLegacyReportsPayload(input);
 }
 
 export async function getOfficialCashflowData(input: {
@@ -735,20 +635,5 @@ export async function getOfficialCashflowData(input: {
   period: CashflowPeriodKey;
   accountId?: string;
 }) {
-  const latestLedgerDate = await ledgerRepo.latestVisiblePostedAt({
-    userId: input.userId,
-    accountId: input.accountId
-  });
-  const referenceDate = latestLedgerDate ?? (await transactionsRepo.latestPostedAt(input.userId, { excluded: false })) ?? new Date();
-  const currentRange = resolveCurrentRange(input.period, referenceDate);
-  const previousRange = resolvePreviousRange(currentRange);
-
-  const useLedger = await shouldUseLedgerAnalytics({
-    userId: input.userId,
-    from: previousRange.from,
-    to: currentRange.to,
-    accountId: input.accountId
-  });
-
-  return useLedger ? buildLedgerCashflowPayload(input) : buildLegacyCashflowPayload(input);
+  return buildNormalizedCashflowPayload(input);
 }

@@ -20,13 +20,39 @@ type AccountBalanceRow = {
   total_cents: number | null;
 };
 
+type AccountConfirmedBalanceSnapshotRow = {
+  account_id: string;
+  import_batch_id: string | null;
+  source_type: "csv" | "ofx" | "pdf" | "manual";
+  file_name: string;
+  balance_date: string;
+  balance_cents: number;
+  opening_balance_cents: number | null;
+  computed_closing_balance_cents: number | null;
+  row_count: number | string;
+  balance_anchor_count: number | string;
+  created_at: string;
+};
+
+function round2(value: number): number {
+  return Number(value.toFixed(2));
+}
+
 async function listLegacyBalancesByUser(userId: string): Promise<Map<string, number>> {
   const balanceRows = (await db
     .prepare(
-      `SELECT account_id, SUM(amount_cents) AS total_cents
-       FROM transactions
-       WHERE user_id = ?
-       GROUP BY account_id`
+      `SELECT
+         t.account_id,
+         CASE
+           WHEN a.type = 'credit' THEN LEAST(COALESCE(SUM(t.amount_cents), 0), 0)
+           ELSE COALESCE(SUM(t.amount_cents), 0)
+         END AS total_cents
+       FROM transactions t
+       JOIN accounts a
+         ON a.id = t.account_id
+        AND a.user_id = t.user_id
+       WHERE t.user_id = ?
+       GROUP BY t.account_id, a.type`
     )
     .all(userId)) as AccountBalanceRow[];
 
@@ -38,32 +64,38 @@ async function listLedgerBalancesByUser(userId: string): Promise<Map<string, num
     .prepare(
       `SELECT
          a.id AS account_id,
-         COALESCE(
-           SUM(
-             CASE
-               WHEN a.type = 'credit' THEN
+         CASE
+           WHEN a.type = 'credit' THEN LEAST(
+             COALESCE(
+               SUM(
                  CASE
                    WHEN le.type = 'cc_purchase' THEN -le.amount_cents
                    WHEN le.type = 'refund' THEN le.amount_cents
                    WHEN le.type = 'cc_payment' THEN le.amount_cents
                    ELSE 0
                  END
-               ELSE
-                 CASE
-                   WHEN le.type = 'income' THEN le.amount_cents
-                   WHEN le.type IN ('expense', 'fee') THEN -le.amount_cents
-                   WHEN le.type = 'transfer' AND le.direction = 'IN' THEN le.amount_cents
-                   WHEN le.type = 'transfer' AND le.direction = 'OUT' THEN -le.amount_cents
-                   WHEN le.type = 'cc_payment' AND le.direction = 'IN' THEN le.amount_cents
-                   WHEN le.type = 'cc_payment' AND le.direction = 'OUT' THEN -le.amount_cents
-                   WHEN le.type = 'refund' AND le.direction = 'IN' THEN le.amount_cents
-                   WHEN le.type = 'refund' AND le.direction = 'OUT' THEN -le.amount_cents
-                   ELSE 0
-                 END
-             END
-           ),
-           0
-         ) AS total_cents
+               ),
+               0
+             ),
+             0
+           )
+           ELSE COALESCE(
+             SUM(
+               CASE
+                 WHEN le.type = 'income' THEN le.amount_cents
+                 WHEN le.type IN ('expense', 'fee') THEN -le.amount_cents
+                 WHEN le.type = 'transfer' AND le.direction = 'IN' THEN le.amount_cents
+                 WHEN le.type = 'transfer' AND le.direction = 'OUT' THEN -le.amount_cents
+                 WHEN le.type = 'cc_payment' AND le.direction = 'IN' THEN le.amount_cents
+                 WHEN le.type = 'cc_payment' AND le.direction = 'OUT' THEN -le.amount_cents
+                 WHEN le.type = 'refund' AND le.direction = 'IN' THEN le.amount_cents
+                 WHEN le.type = 'refund' AND le.direction = 'OUT' THEN -le.amount_cents
+                 ELSE 0
+               END
+             ),
+             0
+           )
+         END AS total_cents
        FROM accounts a
        LEFT JOIN ledger_entries le
          ON le.user_id = a.user_id
@@ -78,6 +110,57 @@ async function listLedgerBalancesByUser(userId: string): Promise<Map<string, num
     .all(userId)) as AccountBalanceRow[];
 
   return new Map(balanceRows.map((row) => [row.account_id, fromCents(row.total_cents)]));
+}
+
+async function listLatestConfirmedBalancesByUser(userId: string): Promise<
+  Map<
+    string,
+    {
+      amount: number;
+      date: string;
+      sourceType: "csv" | "ofx" | "pdf" | "manual";
+      fileName: string;
+      importBatchId: string | null;
+      openingBalance: number | null;
+      computedClosingBalance: number | null;
+      rowCount: number;
+      balanceAnchorCount: number;
+      importedAt: string;
+    }
+  >
+> {
+  const rows = (await db
+    .prepare(
+      `SELECT DISTINCT ON (account_id)
+         account_id, import_batch_id, source_type, file_name, balance_date, balance_cents,
+         opening_balance_cents, computed_closing_balance_cents, row_count, balance_anchor_count, created_at
+       FROM account_balance_snapshots
+       WHERE user_id = ?
+       ORDER BY account_id, balance_date DESC, created_at DESC`
+    )
+    .all(userId)) as AccountConfirmedBalanceSnapshotRow[];
+
+  return new Map(
+    rows.map((row) => [
+      row.account_id,
+      {
+        amount: fromCents(row.balance_cents),
+        date: row.balance_date,
+        sourceType: row.source_type,
+        fileName: row.file_name,
+        importBatchId: row.import_batch_id,
+        openingBalance:
+          row.opening_balance_cents === null ? null : fromCents(row.opening_balance_cents),
+        computedClosingBalance:
+          row.computed_closing_balance_cents === null
+            ? null
+            : fromCents(row.computed_closing_balance_cents),
+        rowCount: Number(row.row_count),
+        balanceAnchorCount: Number(row.balance_anchor_count),
+        importedAt: row.created_at
+      }
+    ])
+  );
 }
 
 function mapAccount(row: AccountRow) {
@@ -114,14 +197,26 @@ export const accountsRepo = {
       userId,
       includeBalanceAdjustments: true
     });
-    const balanceByAccountId = useLedger
-      ? await listLedgerBalancesByUser(userId)
-      : await listLegacyBalancesByUser(userId);
+    const [balanceByAccountId, confirmedBalanceByAccountId] = await Promise.all([
+      useLedger ? listLedgerBalancesByUser(userId) : listLegacyBalancesByUser(userId),
+      listLatestConfirmedBalancesByUser(userId)
+    ]);
 
-    return accounts.map((account) => ({
-      ...account,
-      currentBalance: balanceByAccountId.get(account.id) ?? 0
-    }));
+    return accounts.map((account) => {
+      const currentBalance = balanceByAccountId.get(account.id) ?? 0;
+      const confirmedBalance = confirmedBalanceByAccountId.get(account.id) ?? null;
+
+      return {
+        ...account,
+        currentBalance,
+        confirmedBalance: confirmedBalance
+          ? {
+              ...confirmedBalance,
+              difference: round2(currentBalance - confirmedBalance.amount)
+            }
+          : null
+      };
+    });
   },
 
   async findByIdForUser(id: string, userId: string) {

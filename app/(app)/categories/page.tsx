@@ -1,9 +1,5 @@
-"use client";
+import { CategoriesPage } from "@/src/features/categories/CategoriesPage";
 
-import { Categories } from "@/src/features/categories/CategoriesPage";
-import { useNovaShell } from "@/src/app-shell/AppShellContext";
-
-export default function CategoriesRoutePage(): React.JSX.Element {
-  const { hideValues } = useNovaShell();
-  return <Categories hideValues={hideValues} />;
+export default function CategoriesRoute(): React.JSX.Element {
+  return <CategoriesPage />;
 }

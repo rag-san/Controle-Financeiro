@@ -1,11 +1,13 @@
 import {
-  dashboardMetricsRepo,
   type DashboardDateRange,
   type DashboardMetricsFilters,
   type DashboardSummary
 } from "@/lib/server/dashboard-metrics.repo";
 import { accountsRepo } from "@/lib/server/accounts.repo";
+import { getFinancialBreakdownSnapshot } from "@/lib/server/financial-breakdown.service";
+import { getFinancialMetricsSnapshot } from "@/lib/server/financial-metrics.service";
 import { ledgerRepo } from "@/lib/server/ledger.repo";
+import type { FinancialBreakdown } from "@/lib/finance/financial-breakdown";
 
 type CashBalanceRow = {
   accountId: string;
@@ -26,6 +28,7 @@ export type DashboardSummaryView = DashboardSummary & {
   totalSpending: number;
   incomeTotal: number;
   cardDebt: CardDebtRow[];
+  financeBreakdown: FinancialBreakdown;
   source: "ledger" | "legacy";
 };
 
@@ -34,17 +37,65 @@ export async function getDashboardSummaryView(input: {
   range: DashboardDateRange;
   filters?: DashboardMetricsFilters;
 }): Promise<DashboardSummaryView> {
-  const [summary, ledgerSnapshot] = await Promise.all([
-    dashboardMetricsRepo.getSummary({
+  const [currentMetrics, previousMetrics, ledgerSnapshot, financeBreakdownSnapshot] = await Promise.all([
+    getFinancialMetricsSnapshot({
       userId: input.userId,
-      range: input.range,
-      filters: input.filters
+      from: input.range.fromDate,
+      to: input.range.toDate,
+      accountId: input.filters?.accountId,
+      categoryId: input.filters?.categoryId,
+      excluded: input.filters?.excluded ?? false,
+      normalizedQuery: input.filters?.normalizedQuery,
+      hideCardPaymentMirrorInflow: true
+    }),
+    getFinancialMetricsSnapshot({
+      userId: input.userId,
+      from: input.range.previousFromDate,
+      to: input.range.previousToDate,
+      accountId: input.filters?.accountId,
+      categoryId: input.filters?.categoryId,
+      excluded: input.filters?.excluded ?? false,
+      normalizedQuery: input.filters?.normalizedQuery,
+      hideCardPaymentMirrorInflow: true
     }),
     ledgerRepo.getDashboardSummary({
       userId: input.userId,
       to: input.range.toDate
+    }),
+    getFinancialBreakdownSnapshot({
+      userId: input.userId,
+      currentFrom: input.range.fromDate,
+      currentTo: input.range.toDate,
+      accountId: input.filters?.accountId,
+      categoryId: input.filters?.categoryId
     })
   ]);
+  const currentNet = Number((currentMetrics.budget.net).toFixed(2));
+  const previousNet = Number((previousMetrics.budget.net).toFixed(2));
+  const delta = Number((currentNet - previousNet).toFixed(2));
+  const percent = previousNet === 0 ? (currentNet === 0 ? 0 : 100) : Number((((currentNet - previousNet) / Math.abs(previousNet)) * 100).toFixed(2));
+  const summary: DashboardSummary = {
+    from: input.range.from,
+    to: input.range.to,
+    totalIncome: currentMetrics.budget.income,
+    totalExpense: currentMetrics.budget.expense,
+    net: currentNet,
+    cashInflow: currentMetrics.cashFlow.inflow,
+    cashOutflow: currentMetrics.cashFlow.outflow,
+    cashNet: currentMetrics.cashFlow.net,
+    excludedTotal: 0,
+    previousPeriodComparison: {
+      delta,
+      percent,
+      previousNet,
+      previousIncome: previousMetrics.budget.income,
+      previousExpense: previousMetrics.budget.expense,
+      previousCashInflow: previousMetrics.cashFlow.inflow,
+      previousCashOutflow: previousMetrics.cashFlow.outflow,
+      previousCashNet: previousMetrics.cashFlow.net,
+      previousExcludedTotal: 0
+    }
+  };
 
   const hasLedgerData = ledgerSnapshot.ledgerEntryCount > 0;
 
@@ -77,6 +128,7 @@ export async function getDashboardSummaryView(input: {
     totalSpending: summary.totalExpense,
     incomeTotal: summary.totalIncome,
     cardDebt,
-    source: hasLedgerData ? "ledger" : "legacy"
+    financeBreakdown: financeBreakdownSnapshot.breakdown,
+    source: currentMetrics.source
   };
 }

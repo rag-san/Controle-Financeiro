@@ -6,6 +6,7 @@ import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
 import { accountsRepo } from "@/lib/server/accounts.repo";
+import { getFinancialBreakdownSnapshot } from "@/lib/server/financial-breakdown.service";
 
 const createAccountSchema = z.object({
   name: z.string().min(2).max(80),
@@ -33,6 +34,26 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         createdAt: Date;
         updatedAt: Date;
         currentBalance: number;
+        confirmedBalance?: {
+          amount: number;
+          date: string;
+          sourceType: "csv" | "ofx" | "pdf" | "manual";
+          fileName: string;
+          importBatchId: string | null;
+          openingBalance: number | null;
+          computedClosingBalance: number | null;
+          rowCount: number;
+          balanceAnchorCount: number;
+          importedAt: string;
+          difference: number;
+        } | null;
+        cardMetrics?: {
+          spending: number;
+          payments: number;
+          openDebt: number;
+          futureInstallments: number;
+          totalCommitted: number;
+        };
       }>
     >(cacheKey);
     if (cached) {
@@ -40,10 +61,39 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const payload = await accountsRepo.listByUserWithBalance(auth.userId);
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+    const financeBreakdown = (
+      await getFinancialBreakdownSnapshot({
+        userId: auth.userId,
+        currentFrom: monthStart,
+        currentTo: now
+      })
+    ).breakdown;
+    const cardMetricsById = new Map(
+      financeBreakdown.cards.map((card) => [
+        card.creditCardAccountId,
+        {
+          spending: card.spending,
+          payments: card.payments,
+          openDebt: card.openDebt,
+          futureInstallments: card.futureInstallments,
+          totalCommitted: card.totalCommitted
+        }
+      ])
+    );
+    const enrichedPayload = payload.map((account) =>
+      account.type === "credit"
+        ? {
+            ...account,
+            cardMetrics: cardMetricsById.get(account.id)
+          }
+        : account
+    );
 
-    setCache(cacheKey, payload, 20_000);
+    setCache(cacheKey, enrichedPayload, 20_000);
 
-    return NextResponse.json(payload, { headers: privateCacheHeaders });
+    return NextResponse.json(enrichedPayload, { headers: privateCacheHeaders });
   });
 }
 

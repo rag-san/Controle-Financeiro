@@ -32,6 +32,10 @@ function readClientIp(request: NextRequest): string {
   return "unknown";
 }
 
+function isUniqueViolation(error: unknown): error is { code?: string } {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "23505");
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const rateLimit = consumeRateLimit({
     key: `auth:register:${readClientIp(request)}`,
@@ -77,11 +81,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
-  const user = await usersRepo.create({
-    name: parsed.data.name.trim(),
-    email,
-    password: passwordHash
-  });
+  let user: Awaited<ReturnType<typeof usersRepo.create>> = null;
+
+  try {
+    user = await usersRepo.create({
+      name: parsed.data.name.trim(),
+      email,
+      password: passwordHash
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            message: "Email ja cadastrado"
+          }
+        },
+        { status: 409 }
+      );
+    }
+
+    throw error;
+  }
 
   if (!user) {
     return NextResponse.json({ error: "Falha ao criar usuario" }, { status: 500 });

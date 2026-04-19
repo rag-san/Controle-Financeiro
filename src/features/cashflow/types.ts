@@ -1,3 +1,5 @@
+import type { FinancialBreakdown } from "@/lib/finance/financial-breakdown";
+
 export type CashflowPeriodKey = "1m" | "3m" | "6m" | "ytd" | "12m";
 
 export type CashflowPeriodOption = {
@@ -57,6 +59,7 @@ export type CashflowViewData = {
   expense: ComparisonMetric;
   classifiedIncome?: ComparisonMetric;
   classifiedExpense?: ComparisonMetric;
+  financeBreakdown?: FinancialBreakdown;
   netChart: NetResultRow[];
   incomeChart: IncomeRow[];
   expensesChart: ExpensesStackedChartData;

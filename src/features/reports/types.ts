@@ -1,4 +1,5 @@
 import type { SankeyModel } from "@/src/features/reports/sankey/types";
+import type { FinancialBreakdown } from "@/lib/finance/financial-breakdown";
 
 export type ReportsSankeyNode = {
   name: string;
@@ -117,6 +118,7 @@ export type ReportsModel = {
   currentTotals: ReportsTotals;
   previousTotals: ReportsTotals;
   cashSummary: ReportsCashSummary;
+  financeBreakdown?: FinancialBreakdown;
   categorySpending: ReportsCategorySpend[];
   topMerchants: ReportsMerchantSpend[];
   recurringDetected: ReportsRecurringDetected[];

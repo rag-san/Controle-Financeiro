@@ -48,7 +48,8 @@ function buildExpenseDailyTotals(
     if (tx.type !== "expense") continue;
     const day = dayOfMonth(tx.date);
     if (day < 1 || day > compareUntilDay) continue;
-    const amount = fromAmountCents(absAmountCents(tx.amount));
+    const signedExpenseCents = tx.amount < 0 ? absAmountCents(tx.amount) : -absAmountCents(tx.amount);
+    const amount = fromAmountCents(signedExpenseCents);
     totals.set(day, (totals.get(day) ?? 0) + amount);
   }
 
@@ -65,10 +66,19 @@ function resolveCompareUntilDay(input: { referenceDate: Date; now: Date }): numb
 }
 
 export function buildSpendingTrendSeries(input: BuildSpendingTrendSeriesInput): SpendingTrendSeries {
-  const compareUntilDay = resolveCompareUntilDay({
-    referenceDate: input.referenceDate,
-    now: input.now
-  });
+  const currentMonthDays = endOfMonth(input.referenceDate).getDate();
+  const previousMonthDays = endOfMonth(subMonths(input.referenceDate, 1)).getDate();
+  const isCurrentMonthReference = isSameMonth(input.referenceDate, input.now);
+  const hasCurrentExpenseActivity = input.currentTransactions.some((tx) => tx.type === "expense");
+  const hasPreviousExpenseActivity = input.previousTransactions.some((tx) => tx.type === "expense");
+
+  const compareUntilDay =
+    isCurrentMonthReference && !hasCurrentExpenseActivity && hasPreviousExpenseActivity
+      ? Math.max(1, Math.min(currentMonthDays, previousMonthDays))
+      : resolveCompareUntilDay({
+          referenceDate: input.referenceDate,
+          now: input.now
+        });
 
   const currentDailyTotals = buildExpenseDailyTotals(input.currentTransactions, compareUntilDay);
   const previousDailyTotals = buildExpenseDailyTotals(input.previousTransactions, compareUntilDay);

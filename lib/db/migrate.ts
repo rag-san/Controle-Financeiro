@@ -111,6 +111,7 @@ async function runMigrations(): Promise<void> {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
     CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
@@ -157,6 +158,31 @@ async function runMigrations(): Promise<void> {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_import_batches_user_imported ON import_batches(user_id, imported_at);
+
+    CREATE TABLE IF NOT EXISTS account_balance_snapshots (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      import_batch_id TEXT,
+      source_type TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      balance_date TEXT NOT NULL,
+      balance_cents INTEGER NOT NULL,
+      opening_balance_cents INTEGER,
+      computed_closing_balance_cents INTEGER,
+      row_count INTEGER NOT NULL DEFAULT 0,
+      balance_anchor_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+      FOREIGN KEY (import_batch_id) REFERENCES import_batches(id) ON DELETE CASCADE,
+      CHECK (source_type IN ('csv', 'ofx', 'pdf', 'manual'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_account_balance_snapshots_user_account_batch
+      ON account_balance_snapshots(user_id, account_id, import_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_account_balance_snapshots_latest
+      ON account_balance_snapshots(user_id, account_id, balance_date DESC, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS import_events (
       id TEXT PRIMARY KEY,
@@ -616,6 +642,27 @@ async function runMigrations(): Promise<void> {
             CREATE UNIQUE INDEX uq_transactions_user_account_external_id
               ON transactions(user_id, account_id, external_id)
               WHERE external_id IS NOT NULL AND BTRIM(external_id) <> '';
+          END IF;
+        END IF;
+      END
+      $$;
+    `);
+
+    await db.exec(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_indexes
+          WHERE schemaname = 'public' AND indexname = 'uq_users_email_lower'
+        ) THEN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM users
+            GROUP BY LOWER(email)
+            HAVING COUNT(*) > 1
+          ) THEN
+            CREATE UNIQUE INDEX uq_users_email_lower ON users (LOWER(email));
           END IF;
         END IF;
       END

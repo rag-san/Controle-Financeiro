@@ -24,6 +24,10 @@ function mapUser(row: UserRow) {
   };
 }
 
+function normalizeUserEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 export const usersRepo = {
   async findById(id: string) {
     const row = (await db
@@ -38,13 +42,14 @@ export const usersRepo = {
   },
 
   async findByEmail(email: string) {
+    const normalizedEmail = normalizeUserEmail(email);
     const row = (await db
       .prepare(
         `SELECT id, email, name, password, role, created_at, updated_at
          FROM users
-         WHERE email = ?`
+         WHERE LOWER(email) = ?`
       )
-      .get(email)) as UserRow | undefined;
+      .get(normalizedEmail)) as UserRow | undefined;
 
     return row ? mapUser(row) : null;
   },
@@ -52,11 +57,12 @@ export const usersRepo = {
   async create(input: { email: string; name: string; password: string | null; role?: "user" | "admin" }) {
     const id = createId();
     const now = nowIso();
+    const normalizedEmail = normalizeUserEmail(input.email);
 
     await db.prepare(
       `INSERT INTO users (id, email, name, password, role, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(id, input.email, input.name, input.password, input.role ?? "user", now, now);
+    ).run(id, normalizedEmail, input.name.trim(), input.password, input.role ?? "user", now, now);
 
     return this.findById(id);
   }

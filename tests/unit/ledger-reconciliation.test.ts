@@ -343,4 +343,7 @@ test("diferença por taxa (1000 vs 998.50) gera sugestão para revisão manual",
 
   const inbox = await deps.getReconciliationInboxForUser(fixture.userId);
   assert.ok(inbox.transferSuggestions.length >= 1);
+  assert.equal(inbox.summary.transferSuggestions, inbox.transferSuggestions.length);
+  assert.equal(inbox.summary.unmatchedCardPayments, inbox.unmatchedCardPayments.length);
+  assert.equal(inbox.summary.pendingItems, inbox.transferSuggestions.length + inbox.unmatchedCardPayments.length);
 });

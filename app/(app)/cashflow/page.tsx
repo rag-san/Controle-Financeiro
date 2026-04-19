@@ -1,9 +1,5 @@
-"use client";
+import { CashflowPage } from "@/src/features/cashflow/CashflowPage";
 
-import { CashFlow } from "@/src/features/cashflow/CashflowPage";
-import { useNovaShell } from "@/src/app-shell/AppShellContext";
-
-export default function CashflowRoutePage(): React.JSX.Element {
-  const { hideValues } = useNovaShell();
-  return <CashFlow hideValues={hideValues} />;
+export default function CashflowRoute(): React.JSX.Element {
+  return <CashflowPage />;
 }

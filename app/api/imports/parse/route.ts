@@ -1,10 +1,23 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
-import { analyzeCsvRows, parseCsvBuffer, suggestCsvMapping, type CsvMapping, type CsvRowDiagnostic } from "@/lib/csv";
+import {
+  analyzeCsvRows,
+  parseCsvBuffer,
+  suggestCsvMapping,
+  type CsvMapping,
+  type CsvParseMetadata,
+  type CsvRowDiagnostic
+} from "@/lib/csv";
+import { toCanonicalImportRow } from "@/lib/import-canonical";
 import { parseOfxBuffer } from "@/lib/ofx";
 import { PdfImportError, parsePdfImport, SUPPORTED_PDF_ISSUER_PROFILES } from "@/lib/pdf";
 import { withRouteProfiling } from "@/lib/profiling";
+import {
+  categorizeCanonicalImportRowWithContext,
+  loadImportAutocategorizationContext,
+  type ImportAutocategorizationContext
+} from "@/lib/server/import-autocategorization.service";
 import { logImportEvent } from "@/lib/server/import-telemetry";
 import {
   buildSourceParserUnavailableError,
@@ -176,6 +189,134 @@ type PreviewRow = {
   accountHint?: string;
 };
 
+type ParsedImportPreviewRow = {
+  date: Date;
+  description: string;
+  amount: number;
+  type?: "income" | "expense" | "transfer";
+  balanceAfter?: number | null;
+  transactionKindRaw?: string;
+  counterpartyRaw?: string;
+  transactionKindNorm?: string;
+  counterpartyNorm?: string;
+  merchantKey?: string;
+  sourceType?: "csv" | "ofx" | "pdf" | "manual";
+  documentType?: string | null;
+  externalId?: string;
+  accountHint?: string;
+  accountId?: string;
+  categoryId?: string | null;
+  transferToAccountId?: string;
+  transferFromAccountId?: string;
+  raw?: Record<string, unknown>;
+};
+
+type AutocategorizedParsedRow = {
+  categoryId?: string | null;
+  categorySource?: string | null;
+  categoryConfidence?: "high" | "medium" | "low" | "none" | null;
+  categoryReason?: string | null;
+  categoryNeedsReview?: boolean;
+};
+
+type ImportAccountMetadata = {
+  accountHint?: string | null;
+  accountIdentifier?: string | null;
+  accountLabel?: string | null;
+  institutionHint?: string | null;
+  issuerProfile?: string | null;
+  openingBalance?: number | null;
+  closingBalance?: number | null;
+  invoicePurchaseTotal?: number | null;
+  invoicePaymentTotal?: number | null;
+  invoiceTotalDue?: number | null;
+  dueDate?: string | null;
+};
+
+function institutionHintFromIssuerProfile(issuerProfile: string | null | undefined): string | null {
+  const normalized = String(issuerProfile ?? "").trim().toLowerCase();
+  if (normalized.startsWith("inter_")) return "Inter";
+  if (normalized.startsWith("nubank_")) return "Nubank";
+  if (normalized.startsWith("mercado_pago_")) return "Mercado Pago";
+  return null;
+}
+
+function enrichParsedRowsWithAccountMetadata<T extends ParsedImportPreviewRow>(
+  rows: T[],
+  metadata: ImportAccountMetadata
+): T[] {
+  const fallbackAccountHint = metadata.accountHint?.trim() || undefined;
+
+  return rows.map((row) => ({
+    ...row,
+    accountHint: row.accountHint ?? fallbackAccountHint,
+    raw: {
+      ...(row.raw ?? {}),
+      importAccountHint: fallbackAccountHint ?? null,
+      importAccountIdentifier: metadata.accountIdentifier ?? null,
+      importAccountLabel: metadata.accountLabel ?? null,
+      importInstitutionHint: metadata.institutionHint ?? null,
+      issuerProfile: metadata.issuerProfile ?? null,
+      importOpeningBalance: metadata.openingBalance ?? null,
+      importClosingBalance: metadata.closingBalance ?? null,
+      importInvoicePurchaseTotal: metadata.invoicePurchaseTotal ?? null,
+      importInvoicePaymentTotal: metadata.invoicePaymentTotal ?? null,
+      importInvoiceTotalDue: metadata.invoiceTotalDue ?? null,
+      importDueDate: metadata.dueDate ?? null
+    }
+  }));
+}
+
+function applyAutocategorizationToParsedRows<T extends ParsedImportPreviewRow>(
+  rows: T[],
+  sourceType: "csv" | "ofx" | "pdf",
+  context: ImportAutocategorizationContext
+): Array<T & AutocategorizedParsedRow> {
+  return rows.map((row) => {
+    const canonical = toCanonicalImportRow({
+      date: row.date,
+      amount: row.amount,
+      balanceAfter: row.balanceAfter ?? null,
+      sourceType: row.sourceType ?? sourceType,
+      documentType: row.documentType ?? null,
+      transactionKindRaw: row.transactionKindRaw,
+      counterpartyRaw: row.counterpartyRaw,
+      description: row.description,
+      type: row.type,
+      externalId: row.externalId,
+      accountHint: row.accountHint,
+      accountId: row.accountId,
+      categoryId: row.categoryId,
+      raw: row.raw ?? {}
+    });
+
+    const categorization = categorizeCanonicalImportRowWithContext({
+      row: canonical,
+      accountId: row.accountId,
+      context
+    });
+
+    return {
+      ...row,
+      merchantKey: categorization.merchantKey || canonical.merchantKey,
+      categoryId: row.categoryId ?? categorization.categoryId,
+      categorySource: row.categoryId ? "manual" : categorization.categorySource,
+      categoryConfidence: row.categoryId ? "high" : categorization.confidence,
+      categoryReason: row.categoryId ? "Categoria informada manualmente." : categorization.reason,
+      categoryNeedsReview: row.categoryId ? false : categorization.shouldReview,
+      raw: {
+        ...(row.raw ?? {}),
+        merchantKey: categorization.merchantKey || canonical.merchantKey,
+        categorySource: row.categoryId ? "manual" : categorization.categorySource,
+        categorizationConfidence: row.categoryId ? "high" : categorization.confidence,
+        categorizationReason: row.categoryId ? "Categoria informada manualmente." : categorization.reason,
+        categorizationReviewNeeded: row.categoryId ? false : categorization.shouldReview,
+        matchedRule: row.categoryId ? null : categorization.matchedRule
+      }
+    } as T & AutocategorizedParsedRow;
+  });
+}
+
 function csvDiagnosticsToPreview(
   diagnostics: CsvRowDiagnostic[],
   mapping: CsvMapping
@@ -262,6 +403,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       const auth = await requireUser(request);
       if (auth instanceof NextResponse) return auth;
+      let categorizationContextPromise: Promise<ImportAutocategorizationContext> | null = null;
+      const getCategorizationContext = (): Promise<ImportAutocategorizationContext> => {
+        if (!categorizationContextPromise) {
+          categorizationContextPromise = loadImportAutocategorizationContext(auth.userId, {
+            applyRules: true
+          });
+        }
+        return categorizationContextPromise;
+      };
 
       const contentType = request.headers.get("content-type") ?? "";
       if (!contentType.toLowerCase().includes("multipart/form-data")) {
@@ -326,7 +476,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               PDF_PARSE_TIMEOUT_MS,
               "Tempo limite excedido para leitura de PDF."
             );
-            const preview = okRowsToPreviewRows(parsedPdf.transactions);
+            const parserAccountMetadata: ImportAccountMetadata = {
+              accountHint:
+                typeof parsedPdf.metadata.accountHint === "string" ? parsedPdf.metadata.accountHint : null,
+              institutionHint: institutionHintFromIssuerProfile(parsedPdf.issuerProfile),
+              issuerProfile: parsedPdf.issuerProfile,
+              invoicePurchaseTotal:
+                typeof parsedPdf.metadata.invoicePurchaseTotal === "number"
+                  ? parsedPdf.metadata.invoicePurchaseTotal
+                  : null,
+              invoicePaymentTotal:
+                typeof parsedPdf.metadata.invoicePaymentTotal === "number"
+                  ? parsedPdf.metadata.invoicePaymentTotal
+                  : null,
+              invoiceTotalDue:
+                typeof parsedPdf.metadata.invoiceTotalDue === "number"
+                  ? parsedPdf.metadata.invoiceTotalDue
+                  : null,
+              dueDate: typeof parsedPdf.metadata.dueDate === "string" ? parsedPdf.metadata.dueDate : null
+            };
+            const rowsWithAccountMetadata = enrichParsedRowsWithAccountMetadata(
+              parsedPdf.transactions,
+              parserAccountMetadata
+            );
+            const categorizedRows = applyAutocategorizationToParsedRows(
+              rowsWithAccountMetadata,
+              sourceType,
+              await getCategorizationContext()
+            );
+            const preview = okRowsToPreviewRows(categorizedRows);
 
             logImportEvent("import.parse", {
               ...parseLogContext,
@@ -343,13 +521,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               metadata: parsedPdf.metadata,
               needsMapping: false,
               columns: [],
-              rows: parsedPdf.transactions,
+              rows: categorizedRows,
               preview,
-              totalRows: parsedPdf.transactions.length,
-              validRows: parsedPdf.transactions.length,
+              totalRows: categorizedRows.length,
+              validRows: categorizedRows.length,
               ignoredRows: 0,
               errorRows: 0,
-              reasons: { ok: parsedPdf.transactions.length }
+              reasons: { ok: categorizedRows.length },
+              accountHint: parserAccountMetadata.accountHint ?? null
             });
           } catch (error) {
             if (error instanceof PdfImportError) {
@@ -407,12 +586,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               throw new Error("Nenhuma transação OFX encontrada");
             }
 
-            const rows = parsed.transactions.map((row) => ({
-              ...row,
-              accountHint: parsed.accountId ?? undefined,
-              documentType: parsed.documentType
-            }));
-            const preview = okRowsToPreviewRows(rows);
+            const parserAccountMetadata: ImportAccountMetadata = {
+              accountHint: parsed.accountId ?? null
+            };
+            const rows = enrichParsedRowsWithAccountMetadata(
+              parsed.transactions.map((row) => ({
+                ...row,
+                accountHint: parsed.accountId ?? undefined,
+                documentType: parsed.documentType
+              })),
+              parserAccountMetadata
+            );
+            const categorizedRows = applyAutocategorizationToParsedRows(
+              rows,
+              sourceType,
+              await getCategorizationContext()
+            );
+            const preview = okRowsToPreviewRows(categorizedRows);
 
             logImportEvent("import.parse", {
               ...parseLogContext,
@@ -427,14 +617,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               documentType: parsed.documentType,
               needsMapping: false,
               columns: [],
-              rows,
+              rows: categorizedRows,
               preview,
-              totalRows: parsed.transactions.length,
-              validRows: parsed.transactions.length,
+              totalRows: categorizedRows.length,
+              validRows: categorizedRows.length,
               ignoredRows: 0,
               errorRows: 0,
-              reasons: { ok: parsed.transactions.length },
-              accountHint: parsed.accountId ?? null
+              reasons: { ok: categorizedRows.length },
+              accountHint: parserAccountMetadata.accountHint ?? null
             });
           } catch (error) {
             const technicalReason = error instanceof Error ? error.message : "Falha desconhecida no parser OFX";
@@ -506,6 +696,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               columns: csv.columns,
               delimiter: csv.delimiter,
               detectedEncoding: csv.detectedEncoding,
+              metadata: csv.metadata,
               suggestedMapping,
               suggestedMappingConfidence: suggestedConfidence,
               appliedMapping: null,
@@ -522,12 +713,43 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               reasons: {},
               rows: [],
               preview: [],
-              sampleRows: csv.rows.slice(0, 15)
+              sampleRows: csv.rows.slice(0, 15),
+              accountHint: csv.metadata.accountHint ?? null
             });
           }
 
-          const analyzed = analyzeCsvRows(csv.rows, effectiveMapping);
-          const preview = csvDiagnosticsToPreview(analyzed.diagnostics, effectiveMapping);
+          const analyzed = analyzeCsvRows(csv.rows, effectiveMapping, {
+            openingBalance: csv.metadata.openingBalance
+          });
+          const parserAccountMetadata: ImportAccountMetadata = {
+            ...(csv.metadata as CsvParseMetadata),
+            issuerProfile: null
+          };
+          const rowsWithAccountMetadata = enrichParsedRowsWithAccountMetadata(
+            analyzed.rows,
+            parserAccountMetadata
+          );
+          const categorizedRows = applyAutocategorizationToParsedRows(
+            rowsWithAccountMetadata,
+            sourceType,
+            await getCategorizationContext()
+          );
+          const categorizedByCommitIndex = new Map(
+            categorizedRows.map((row, index) => [index, row] as const)
+          );
+          const preview = csvDiagnosticsToPreview(analyzed.diagnostics, effectiveMapping).map((row) => {
+            const categorizedRow =
+              row.commitIndex !== null ? categorizedByCommitIndex.get(row.commitIndex) : undefined;
+
+            return {
+              ...row,
+              accountHint: categorizedRow?.accountHint ?? row.accountHint ?? parserAccountMetadata.accountHint ?? undefined,
+              merchantKey: categorizedRow?.merchantKey ?? row.merchantKey,
+              categoryId: categorizedRow?.categoryId ?? null,
+              categoryConfidence: categorizedRow?.categoryConfidence ?? null,
+              categoryNeedsReview: categorizedRow?.categoryNeedsReview ?? false
+            };
+          });
 
           logImportEvent("import.parse", {
             ...parseLogContext,
@@ -542,6 +764,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             columns: csv.columns,
             delimiter: csv.delimiter,
             detectedEncoding: csv.detectedEncoding,
+            metadata: csv.metadata,
             suggestedMapping,
             suggestedMappingConfidence: suggestedConfidence,
             appliedMapping: effectiveMapping,
@@ -551,9 +774,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             ignoredRows: analyzed.summary.ignoredRows,
             errorRows: analyzed.summary.errorRows,
             reasons: analyzed.summary.reasons,
-            rows: analyzed.rows,
+            rows: categorizedRows,
             preview,
-            sampleRows: undefined
+            sampleRows: undefined,
+            accountHint: parserAccountMetadata.accountHint ?? null
           });
         }
       };

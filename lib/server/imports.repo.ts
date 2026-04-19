@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { createId } from "@/lib/db";
-import { nowIso } from "@/lib/server/sql";
+import { nowIso, toCents } from "@/lib/server/sql";
 
 type ImportBatchRow = {
   id: string;
@@ -79,6 +79,75 @@ export const importsRepo = {
        SET total_imported = ?, total_skipped = ?, updated_at = ?
        WHERE id = ?`
     ).run(input.totalImported, input.totalSkipped, nowIso(), input.id);
+  },
+
+  async upsertAccountBalanceSnapshots(input: {
+    userId: string;
+    batchId: string;
+    sourceType: "csv" | "ofx" | "pdf" | "manual";
+    fileName: string;
+    snapshots: Array<{
+      accountId: string;
+      balanceDate: Date;
+      balance: number;
+      openingBalance?: number | null;
+      computedClosingBalance?: number | null;
+      rowCount: number;
+      balanceAnchorCount: number;
+    }>;
+  }): Promise<{ count: number }> {
+    if (input.snapshots.length === 0) {
+      return { count: 0 };
+    }
+
+    const now = nowIso();
+    const insert = db.prepare(
+      `INSERT INTO account_balance_snapshots (
+         id, user_id, account_id, import_batch_id, source_type, file_name, balance_date,
+         balance_cents, opening_balance_cents, computed_closing_balance_cents,
+         row_count, balance_anchor_count, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (user_id, account_id, import_batch_id)
+       DO UPDATE SET
+         source_type = EXCLUDED.source_type,
+         file_name = EXCLUDED.file_name,
+         balance_date = EXCLUDED.balance_date,
+         balance_cents = EXCLUDED.balance_cents,
+         opening_balance_cents = EXCLUDED.opening_balance_cents,
+         computed_closing_balance_cents = EXCLUDED.computed_closing_balance_cents,
+         row_count = EXCLUDED.row_count,
+         balance_anchor_count = EXCLUDED.balance_anchor_count,
+         updated_at = EXCLUDED.updated_at`
+    );
+
+    let count = 0;
+    for (const snapshot of input.snapshots) {
+      if (!Number.isFinite(snapshot.balance) || !Number.isFinite(snapshot.balanceDate.getTime())) {
+        continue;
+      }
+
+      await insert.run(
+        createId(),
+        input.userId,
+        snapshot.accountId,
+        input.batchId,
+        input.sourceType,
+        input.fileName,
+        snapshot.balanceDate.toISOString(),
+        toCents(snapshot.balance),
+        Number.isFinite(snapshot.openingBalance) ? toCents(Number(snapshot.openingBalance)) : null,
+        Number.isFinite(snapshot.computedClosingBalance)
+          ? toCents(Number(snapshot.computedClosingBalance))
+          : null,
+        snapshot.rowCount,
+        snapshot.balanceAnchorCount,
+        now,
+        now
+      );
+      count += 1;
+    }
+
+    return { count };
   },
 
   async insertImportItem(input: { id: string; userId: string; batchId: string; txId: string }) {

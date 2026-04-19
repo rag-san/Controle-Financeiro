@@ -1,8 +1,8 @@
 import { getServerSession, type NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { createHash } from "node:crypto";
 import { z } from "zod";
+import { AUTH_SECRET } from "@/lib/auth-secret";
 import { clearRateLimit, consumeRateLimit } from "@/lib/rate-limit";
 import { usersRepo } from "@/lib/server/users.repo";
 
@@ -13,36 +13,22 @@ const credentialsSchema = z.object({
 
 const LOGIN_RATE_LIMIT_MAX_ATTEMPTS = 8;
 const LOGIN_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-
-function resolveAuthSecret(): string | undefined {
-  const nextAuthSecret = process.env.NEXTAUTH_SECRET?.trim();
-  if (nextAuthSecret) return nextAuthSecret;
-
-  const authSecret = process.env.AUTH_SECRET?.trim();
-  if (authSecret) return authSecret;
-
-  const fallbackSeed =
-    process.env.DATABASE_URL?.trim() ||
-    process.env.POSTGRES_URL?.trim() ||
-    process.env.POSTGRES_URL_NON_POOLING?.trim() ||
-    process.env.NEXTAUTH_URL?.trim() ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
-    process.env.VERCEL_URL?.trim();
-
-  if (!fallbackSeed) return undefined;
-
-  return createHash("sha256").update(`financial-control-auth:${fallbackSeed}`).digest("hex");
-}
-
-export const AUTH_SECRET = resolveAuthSecret();
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+const SESSION_UPDATE_AGE_SECONDS = 24 * 60 * 60;
 
 export const authOptions: NextAuthOptions = {
   secret: AUTH_SECRET,
+  jwt: {
+    maxAge: SESSION_MAX_AGE_SECONDS
+  },
   session: {
-    strategy: "jwt"
+    strategy: "jwt",
+    maxAge: SESSION_MAX_AGE_SECONDS,
+    updateAge: SESSION_UPDATE_AGE_SECONDS
   },
   pages: {
-    signIn: "/login"
+    signIn: "/login",
+    error: "/login"
   },
   providers: [
     CredentialsProvider({
@@ -117,4 +103,6 @@ export async function getRequiredUserId(): Promise<string | null> {
   const session = await getServerSession(authOptions);
   return session?.user?.id ?? null;
 }
+
+export { AUTH_SECRET };
 

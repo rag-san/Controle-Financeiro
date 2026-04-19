@@ -3,19 +3,26 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { AppProviders } from "@/src/components/layout/AppProviders";
 import "@/styles/globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono" });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter"
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono"
+});
 
 export const metadata: Metadata = {
-  title: "Finance Control",
-  description: "Personal finance dashboard with CSV/OFX/PDF imports"
+  title: "Controle Financeiro",
+  description: "Controle financeiro pessoal com dashboard, importacao e relatorios."
 };
 
 export default function RootLayout({
   children
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}): React.JSX.Element {
+}>): React.JSX.Element {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body
@@ -27,5 +34,3 @@ export default function RootLayout({
     </html>
   );
 }
-
-

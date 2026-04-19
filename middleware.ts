@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { AUTH_SECRET } from "@/lib/auth-secret";
 
 const APP_ROUTE_PREFIXES = [
   "/dashboard",
@@ -9,38 +10,37 @@ const APP_ROUTE_PREFIXES = [
   "/net-worth",
   "/recurring",
   "/categories",
-  "/reports",
-  "/settings"
+  "/reports"
 ];
 
 const ADMIN_ROUTE_PREFIXES = ["/admin"];
-const AUTH_ROUTE_PREFIXES = ["/login"];
 
 function matchesAny(pathname: string, prefixes: string[]): boolean {
   return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function buildLoginRedirect(request: NextRequest): NextResponse {
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("callbackUrl", `${request.nextUrl.pathname}${request.nextUrl.search}`);
+  return NextResponse.redirect(loginUrl);
 }
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
   const isAppRoute = matchesAny(pathname, APP_ROUTE_PREFIXES);
   const isAdminRoute = matchesAny(pathname, ADMIN_ROUTE_PREFIXES);
-  const isAuthRoute = matchesAny(pathname, AUTH_ROUTE_PREFIXES);
 
-  if (!isAppRoute && !isAdminRoute && !isAuthRoute) {
+  if (!isAppRoute && !isAdminRoute) {
     return NextResponse.next();
   }
 
   const token = await getToken({
     req: request,
-    secret: process.env.NEXTAUTH_SECRET
+    secret: AUTH_SECRET
   });
 
   if ((isAppRoute || isAdminRoute) && !token?.sub) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  if (isAuthRoute && token?.sub) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return buildLoginRedirect(request);
   }
 
   if (isAdminRoute && token?.role !== "admin") {
@@ -61,7 +61,6 @@ export const config = {
     "/recurring/:path*",
     "/categories/:path*",
     "/reports/:path*",
-    "/settings/:path*",
     "/admin/:path*"
   ]
 };

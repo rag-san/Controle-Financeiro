@@ -1,9 +1,5 @@
-"use client";
+import { RecurringPage } from "@/src/features/recurring/RecurringPage";
 
-import { Recurring } from "@/src/features/recurring/RecurringPage";
-import { useNovaShell } from "@/src/app-shell/AppShellContext";
-
-export default function RecurringRoutePage(): React.JSX.Element {
-  const { hideValues } = useNovaShell();
-  return <Recurring hideValues={hideValues} />;
+export default function RecurringRoute(): React.JSX.Element {
+  return <RecurringPage />;
 }
