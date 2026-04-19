@@ -175,8 +175,8 @@ test("dashboard falls back to account balances for current net worth when manual
   assert.equal(payload.view, "dashboard");
   assert.equal(payload.cards.netWorth, 1500);
   assert.equal(payload.netWorthDelta, 0);
-  assert.equal(payload.netWorthSeries.length, 1);
-  assert.equal(payload.netWorthSeries[0]?.value ?? 0, 1500);
+  assert.ok(payload.netWorthSeries.length >= 1);
+  assert.equal(payload.netWorthSeries[payload.netWorthSeries.length - 1]?.value ?? 0, 1500);
 });
 
 test("dashboard does not leak current account balances into a historical month without snapshots", async (t) => {

@@ -7,7 +7,7 @@ import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
 import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
 import { categoriesRepo } from "@/lib/server/categories.repo";
-import { dashboardRepo } from "@/lib/server/dashboard.repo";
+import { DASHBOARD_CALCULATION_VERSION, dashboardRepo } from "@/lib/server/dashboard.repo";
 import { ledgerRepo } from "@/lib/server/ledger.repo";
 import { officialMetricSnapshotsRepo } from "@/lib/server/official-metric-snapshots.repo";
 import {
@@ -326,6 +326,8 @@ async function buildDashboardViewPayloadWithSnapshots(input: { userId: string; m
       snapshotPayload !== null &&
       snapshotPayload.financeBreakdown !== undefined &&
       Array.isArray(snapshotPayload.financeBreakdown.cards);
+    const hasCurrentDashboardCalculation =
+      snapshotPayload?.dashboardCalculationVersion === DASHBOARD_CALCULATION_VERSION;
 
     const latestSourceMutationAt = snapshot
       ? await officialMetricSnapshotsRepo.latestSourceMutationAt(input.userId)
@@ -335,7 +337,7 @@ async function buildDashboardViewPayloadWithSnapshots(input: { userId: string; m
       (snapshot?.updatedAtDate instanceof Date &&
         snapshot.updatedAtDate.getTime() >= latestSourceMutationAt.getTime());
 
-    if (snapshot && snapshotPayload && hasFinanceBreakdown && snapshotIsFresh) {
+    if (snapshot && snapshotPayload && hasFinanceBreakdown && hasCurrentDashboardCalculation && snapshotIsFresh) {
       const normalizedSnapshot = normalizeDashboardViewPayload(snapshotPayload, { requestedMonth, now });
       if (normalizedSnapshot !== snapshotPayload) {
         await officialMetricSnapshotsRepo.upsert({

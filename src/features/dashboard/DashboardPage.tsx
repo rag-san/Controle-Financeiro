@@ -26,6 +26,7 @@ import type { FinancialBreakdown } from "@/lib/finance/financial-breakdown";
 
 type DashboardMetricsResponse = {
   view: "dashboard";
+  dashboardCalculationVersion?: number;
   referenceMonth: string;
   isCurrentMonthReference: boolean;
   cards: {
@@ -289,7 +290,7 @@ export function DashboardPage(): React.JSX.Element {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <div className="glass-card p-5 sm:p-6 lg:col-span-3">
           <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-foreground">Despesa real do periodo</h2>
+            <h2 className="text-xs font-bold uppercase tracking-widest text-foreground">Saidas reais do periodo</h2>
           </div>
           <div className="mb-4">
             <BigCurrency value={Math.abs(data?.cards.expense ?? 0)} hideValues={hideValues} className="text-4xl sm:text-5xl" />
@@ -476,11 +477,11 @@ export function DashboardPage(): React.JSX.Element {
 
           <div className="mt-auto space-y-3">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Receitas reais</span>
+              <span className="text-muted-foreground">Entradas reais</span>
               <span className="geist-mono font-medium text-foreground">{formatCurrency(data?.periodComparison.current.income ?? 0, hideValues)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Despesas reais</span>
+              <span className="text-muted-foreground">Saidas reais</span>
               <span className="geist-mono font-medium text-foreground">{formatCurrency(data?.periodComparison.current.expense ?? 0, hideValues)}</span>
             </div>
             <div className="flex items-center justify-between border-t border-border pt-3 text-sm font-bold">

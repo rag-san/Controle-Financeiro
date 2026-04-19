@@ -824,6 +824,72 @@ test("official dashboard uses ledger data when no legacy transactions exist", as
   assert.equal(payload.topCategories[0]?.previous ?? 0, 80);
 });
 
+test("official dashboard cards use real cash flow instead of only categorized spending", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("official-dashboard-cash-cards");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const transfers = await deps.categoriesRepo.create({
+    userId: fixture.userId,
+    name: `Transferencias dashboard cash-${Date.now()}`,
+    color: "#64748b"
+  });
+  assert.ok(transfers);
+
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const monthIndex = now.getUTCMonth();
+  const currentMonth = monthKey(now);
+
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 1),
+    amount: 1000,
+    type: "income",
+    direction: "IN",
+    description: "Entrada real dashboard cash",
+    accountId: fixture.checkingAccountId
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 2),
+    amount: 600,
+    type: "expense",
+    direction: "OUT",
+    description: "Transferencia externa dashboard cash",
+    accountId: fixture.checkingAccountId,
+    categoryId: transfers.id
+  });
+  await insertLedgerEntry({
+    userId: fixture.userId,
+    postedAt: utcDate(year, monthIndex, 3),
+    amount: 400,
+    type: "cc_payment",
+    direction: "OUT",
+    description: "Pagamento fatura dashboard cash",
+    accountId: fixture.checkingAccountId
+  });
+
+  const response = await deps.GET(
+    await buildAuthenticatedRequest(`/api/metrics/official?view=dashboard&month=${currentMonth}`, fixture, deps.AUTH_SECRET)
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.view, "dashboard");
+  assert.equal(payload.cards.income, 1000);
+  assert.equal(payload.cards.expense, 1000);
+  assert.equal(payload.cards.result, 0);
+  assert.equal(payload.periodComparison.current.income, 1000);
+  assert.equal(payload.periodComparison.current.expense, 1000);
+  assert.equal(payload.periodComparison.current.result, 0);
+  assert.equal(payload.spendingTrend[payload.spendingTrend.length - 1]?.current ?? 0, 1000);
+  assert.equal(payload.topCategories.length, 0);
+});
+
 test("official dashboard nets ledger refunds against category spend", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -881,8 +947,8 @@ test("official dashboard nets ledger refunds against category spend", async (t) 
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.view, "dashboard");
-  assert.equal(payload.cards.income, 1000);
-  assert.equal(payload.cards.expense, 140);
+  assert.equal(payload.cards.income, 1060);
+  assert.equal(payload.cards.expense, 200);
   assert.equal(payload.cards.result, 860);
   assert.equal(payload.topCategories[0]?.name, groceries.name);
   assert.equal(payload.topCategories[0]?.current ?? 0, 140);

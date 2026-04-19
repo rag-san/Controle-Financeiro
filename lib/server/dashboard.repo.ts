@@ -39,7 +39,14 @@ type DashboardPreparedEntry = {
   categoryIcon: string | null;
 };
 
+type DashboardCashEntry = {
+  date: Date;
+  inflowCents: number;
+  outflowCents: number;
+};
+
 const UNCATEGORIZED_CATEGORY_ID = "uncategorized";
+export const DASHBOARD_CALCULATION_VERSION = 2;
 
 function safeVariation(current: number, previous: number): number {
   if (previous === 0) {
@@ -86,6 +93,23 @@ function toPreparedNormalizedDashboardEntry(
   };
 }
 
+function toPreparedCashDashboardEntry(entry: NormalizedTransaction): DashboardCashEntry | null {
+  if (entry.excluded || entry.isBalanceAdjustment) {
+    return null;
+  }
+
+  const cashSignedAmount = entry.overallCashFlowSignedAmount;
+  if (cashSignedAmount === 0) {
+    return null;
+  }
+
+  return {
+    date: new Date(entry.date),
+    inflowCents: cashSignedAmount > 0 ? Math.round(cashSignedAmount * 100) : 0,
+    outflowCents: cashSignedAmount < 0 ? Math.round(Math.abs(cashSignedAmount) * 100) : 0
+  };
+}
+
 function summarizePreparedEntries(entries: DashboardPreparedEntry[]) {
   const incomeCents = entries.reduce((sum, entry) => sum + entry.incomeCents, 0);
   const expenseCents = entries.reduce((sum, entry) => sum + entry.expenseCents, 0);
@@ -96,6 +120,19 @@ function summarizePreparedEntries(entries: DashboardPreparedEntry[]) {
     income: round2(income),
     expense: round2(expense),
     net: round2(income - expense)
+  };
+}
+
+function summarizeCashEntries(entries: DashboardCashEntry[]) {
+  const inflowCents = entries.reduce((sum, entry) => sum + entry.inflowCents, 0);
+  const outflowCents = entries.reduce((sum, entry) => sum + entry.outflowCents, 0);
+  const inflow = fromAmountCents(inflowCents);
+  const outflow = fromAmountCents(outflowCents);
+
+  return {
+    income: round2(inflow),
+    expense: round2(outflow),
+    net: round2(inflow - outflow)
   };
 }
 
@@ -151,14 +188,14 @@ function buildTopCategoriesFromPrepared(
     });
 }
 
-function buildCashflowFromPrepared(entries: DashboardPreparedEntry[]) {
+function buildCashflowFromPrepared(entries: DashboardCashEntry[]) {
   const monthlyAccumulator = new Map<string, { incomeCents: number; expenseCents: number }>();
 
   for (const entry of entries) {
     const key = monthKey(entry.date);
     const current = monthlyAccumulator.get(key) ?? { incomeCents: 0, expenseCents: 0 };
-    current.incomeCents += entry.incomeCents;
-    current.expenseCents += entry.expenseCents;
+    current.incomeCents += entry.inflowCents;
+    current.expenseCents += entry.outflowCents;
     monthlyAccumulator.set(key, current);
   }
 
@@ -357,27 +394,36 @@ export const dashboardRepo = {
     const preparedEntries = normalizedScope.entries
       .map((entry) => toPreparedNormalizedDashboardEntry(entry, categoriesById))
       .filter((entry): entry is DashboardPreparedEntry => entry !== null);
+    const cashEntries = normalizedScope.entries
+      .map(toPreparedCashDashboardEntry)
+      .filter((entry): entry is DashboardCashEntry => entry !== null);
     const currentEntries = preparedEntries.filter(
       (entry) => entry.date.getTime() >= currentMonthStart.getTime() && entry.date.getTime() <= currentMonthEnd.getTime()
     );
     const previousEntries = preparedEntries.filter(
       (entry) => entry.date.getTime() >= previousMonthStart.getTime() && entry.date.getTime() <= previousMonthEnd.getTime()
     );
-    const currentSummary = summarizePreparedEntries(currentEntries);
-    const previousSummary = summarizePreparedEntries(previousEntries);
+    const currentCashEntries = cashEntries.filter(
+      (entry) => entry.date.getTime() >= currentMonthStart.getTime() && entry.date.getTime() <= currentMonthEnd.getTime()
+    );
+    const previousCashEntries = cashEntries.filter(
+      (entry) => entry.date.getTime() >= previousMonthStart.getTime() && entry.date.getTime() <= previousMonthEnd.getTime()
+    );
+    const currentSummary = summarizeCashEntries(currentCashEntries);
+    const previousSummary = summarizeCashEntries(previousCashEntries);
     const spendingTrendSeries = buildSpendingTrendSeries({
-      currentTransactions: currentEntries
-        .filter((entry) => entry.expenseCents !== 0)
+      currentTransactions: currentCashEntries
+        .filter((entry) => entry.outflowCents !== 0)
         .map((entry) => ({
           date: entry.date,
-          amount: -fromAmountCents(entry.expenseCents),
+          amount: -fromAmountCents(entry.outflowCents),
           type: "expense"
         })),
-      previousTransactions: previousEntries
-        .filter((entry) => entry.expenseCents !== 0)
+      previousTransactions: previousCashEntries
+        .filter((entry) => entry.outflowCents !== 0)
         .map((entry) => ({
           date: entry.date,
-          amount: -fromAmountCents(entry.expenseCents),
+          amount: -fromAmountCents(entry.outflowCents),
           type: "expense"
         })),
       referenceDate,
@@ -385,10 +431,11 @@ export const dashboardRepo = {
     });
     const spendingTrend: TrendPoint[] = spendingTrendSeries.accumulated;
     const topCategories = buildTopCategoriesFromPrepared(currentEntries, previousEntries, 8);
-    const cashflow = buildCashflowFromPrepared(preparedEntries);
+    const cashflow = buildCashflowFromPrepared(cashEntries);
     const financeBreakdown = financeBreakdownSnapshot.breakdown;
 
     return {
+      dashboardCalculationVersion: DASHBOARD_CALCULATION_VERSION,
       referenceMonth: monthKey(referenceDate),
       previousReferenceMonth: monthKey(subMonths(referenceDate, 1)),
       referencePeriod: {
