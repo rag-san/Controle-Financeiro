@@ -167,20 +167,112 @@ async function buildChecks(): Promise<CheckResult[]> {
       FROM account_balance_snapshots
       ORDER BY user_id, account_id, balance_date DESC, created_at DESC
     ),
-    calculated AS (
+    ledger_calculated AS (
       SELECT
-        user_id,
-        account_id,
-        COALESCE(SUM(amount_cents), 0)::bigint AS calculated_cents
-      FROM transactions
-      WHERE excluded = FALSE
-      GROUP BY user_id, account_id
+        a.user_id,
+        a.id AS account_id,
+        COUNT(le.id)::int AS ledger_count,
+        CASE
+          WHEN a.type = 'credit' THEN LEAST(
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN le.type = 'cc_purchase' THEN -le.amount_cents
+                  WHEN le.type = 'refund' THEN le.amount_cents
+                  WHEN le.type = 'cc_payment' THEN le.amount_cents
+                  ELSE 0
+                END
+              ),
+              0
+            ),
+            0
+          )
+          ELSE COALESCE(
+            SUM(
+              CASE
+                WHEN le.type = 'income' THEN le.amount_cents
+                WHEN le.type IN ('expense', 'fee') THEN -le.amount_cents
+                WHEN le.type = 'transfer' AND le.direction = 'IN' THEN le.amount_cents
+                WHEN le.type = 'transfer' AND le.direction = 'OUT' THEN -le.amount_cents
+                WHEN le.type = 'cc_payment' AND le.direction = 'IN' THEN le.amount_cents
+                WHEN le.type = 'cc_payment' AND le.direction = 'OUT' THEN -le.amount_cents
+                WHEN le.type = 'refund' AND le.direction = 'IN' THEN le.amount_cents
+                WHEN le.type = 'refund' AND le.direction = 'OUT' THEN -le.amount_cents
+                ELSE 0
+              END
+            ),
+            0
+          )
+        END::bigint AS calculated_cents
+      FROM accounts a
+      LEFT JOIN ledger_entries le
+        ON le.user_id = a.user_id
+       AND (
+         (a.type = 'credit' AND le.credit_card_account_id = a.id)
+         OR (a.type <> 'credit' AND le.account_id = a.id)
+       )
+       AND (le.excluded = FALSE OR le.is_balance_adjustment = TRUE)
+      GROUP BY a.user_id, a.id, a.type
+    ),
+    legacy_calculated AS (
+      SELECT
+        t.user_id,
+        t.account_id,
+        CASE
+          WHEN a.type = 'credit' THEN LEAST(COALESCE(SUM(t.amount_cents), 0), 0)
+          ELSE COALESCE(SUM(t.amount_cents), 0)
+        END::bigint AS calculated_cents
+      FROM transactions t
+      JOIN accounts a
+        ON a.id = t.account_id
+       AND a.user_id = t.user_id
+      WHERE t.excluded = FALSE
+         OR (
+           t.excluded = TRUE
+           AND t.raw_json IS NOT NULL
+           AND t.raw_json LIKE '%"openingBalanceAdjustment":true%'
+         )
+      GROUP BY t.user_id, t.account_id, a.type
+    ),
+    unmirrored_legacy AS (
+      SELECT
+        t.user_id,
+        t.account_id,
+        COUNT(*)::int AS missing_count
+      FROM transactions t
+      LEFT JOIN ledger_entries le
+        ON le.user_id = t.user_id
+       AND le.external_ref = ('LEGACY_TX:' || t.id)
+      WHERE (
+          t.excluded = FALSE
+          OR (
+            t.excluded = TRUE
+            AND t.raw_json IS NOT NULL
+            AND t.raw_json LIKE '%"openingBalanceAdjustment":true%'
+          )
+        )
+        AND le.id IS NULL
+      GROUP BY t.user_id, t.account_id
     )
     SELECT COUNT(*)::int AS count
     FROM latest_snapshots s
-    LEFT JOIN calculated c
-      ON c.user_id = s.user_id
-     AND c.account_id = s.account_id
+    LEFT JOIN ledger_calculated lc
+      ON lc.user_id = s.user_id
+     AND lc.account_id = s.account_id
+    LEFT JOIN legacy_calculated tc
+      ON tc.user_id = s.user_id
+     AND tc.account_id = s.account_id
+    LEFT JOIN unmirrored_legacy ul
+      ON ul.user_id = s.user_id
+     AND ul.account_id = s.account_id
+    LEFT JOIN LATERAL (
+      SELECT
+        CASE
+          WHEN COALESCE(ul.missing_count, 0) > 0 THEN COALESCE(tc.calculated_cents, 0)
+          WHEN COALESCE(lc.ledger_count, 0) > 0 THEN COALESCE(lc.calculated_cents, 0)
+          ELSE COALESCE(tc.calculated_cents, 0)
+        END AS calculated_cents
+    ) c ON TRUE
     WHERE ABS(COALESCE(c.calculated_cents, 0) - s.balance_cents) > 1
   `);
   results.push({
