@@ -321,6 +321,8 @@ test("parse preview rows can be committed unchanged without frontend value norma
   assert.equal(commitPayload?.totalReceived, 2);
   assert.equal(commitPayload?.totalImported, 2);
   assert.equal(commitPayload?.statementReconciliation?.anchoredAccountCount, 1);
+  assert.equal(commitPayload?.ledgerSync?.processed, 2);
+  assert.equal(commitPayload?.ledgerConsistency?.remainingUnmirroredCount, 0);
 
   const transactions = await deps.transactionsRepo.listAll({
     userId: fixture.userId
@@ -399,6 +401,8 @@ test("CSV parse supports manual column mapping before commit", async (t) => {
   const commitPayload = await commitResponse.json();
   assert.equal(commitPayload?.totalImported, 2);
   assert.equal(commitPayload?.statementReconciliation?.anchoredAccountCount, 1);
+  assert.equal(commitPayload?.ledgerSync?.processed, 2);
+  assert.equal(commitPayload?.ledgerConsistency?.remainingUnmirroredCount, 0);
 });
 
 test("legacy import route is disabled in favor of parse and commit", async (t) => {
@@ -526,6 +530,8 @@ test("real CSV import auto-creates the missing account and becomes visible in of
   assert.ok(commitResult.totalImported > 0);
   assert.equal(commitResult.autoCreatedAccounts?.checking, 1);
   assert.ok((commitResult.autoCreatedAccounts?.credit ?? 0) >= 1);
+  assert.ok((commitResult.ledgerSync?.processed ?? 0) >= commitResult.totalImported);
+  assert.equal(commitResult.ledgerConsistency?.remainingUnmirroredCount, 0);
 
   const accounts = await deps.accountsRepo.listByUser(fixture.userId);
   assert.ok(accounts.length >= 2);
@@ -599,11 +605,67 @@ test("real PDF invoice import auto-creates a credit account from parser metadata
   assert.ok((commitResult.autoCreatedAccounts?.credit ?? 0) >= 1);
   assert.equal(commitResult.invoiceReconciliation?.checkedAccountCount, 1);
   assert.equal(commitResult.invoiceReconciliation?.mismatchCount, 0);
+  assert.ok((commitResult.ledgerSync?.processed ?? 0) >= commitResult.totalImported);
+  assert.equal(commitResult.ledgerConsistency?.remainingUnmirroredCount, 0);
 
   const accounts = await deps.accountsRepo.listByUser(fixture.userId);
   assert.equal(accounts.length, 1);
   assert.equal(accounts[0]?.type, "credit");
   assert.match(accounts[0]?.name ?? "", /nubank/i);
+});
+
+test("real Inter PDF invoice import reconciles using 'Fatura atual' total", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createUserOnly("imports-real-pdf-inter");
+  t.after(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await cleanupUser(fixture.userId);
+  });
+
+  const filePath = path.resolve(process.cwd(), "Arquivosdeexemplo", "pdf", "fatura-inter-2026-01.pdf");
+
+  let fixtureBuffer: Buffer;
+  try {
+    fixtureBuffer = await fs.readFile(filePath);
+  } catch {
+    t.skip(`Real fixture unavailable: ${filePath}`);
+    return;
+  }
+
+  const formData = new FormData();
+  formData.set("file", new File([new Uint8Array(fixtureBuffer)], path.basename(filePath), { type: "application/pdf" }));
+
+  const parseResponse = await deps.parseRoutePOST(
+    await buildAuthenticatedMultipartRequest("/api/imports/parse", fixture, deps.AUTH_SECRET, formData)
+  );
+
+  if (parseResponse.status !== 200) {
+    const payload = await parseResponse.json();
+    t.skip(`Real PDF parser unavailable for local fixture: ${payload?.code ?? "unknown"}`);
+    return;
+  }
+
+  const parsePayload = await parseResponse.json();
+  assert.equal(parsePayload?.documentType, "credit_card_invoice");
+  assert.equal(parsePayload?.metadata?.invoicePurchaseTotal, 676.27);
+  assert.ok(Array.isArray(parsePayload?.rows));
+  assert.ok(parsePayload.rows.length > 0);
+
+  const commitResult = await deps.commitImportForUser(fixture.userId, {
+    sourceType: "pdf",
+    fileName: path.basename(filePath),
+    applyRules: false,
+    applyLocalAi: false,
+    rows: parsePayload.rows
+  });
+
+  assert.ok(commitResult.totalImported > 0);
+  assert.equal(commitResult.invoiceReconciliation?.checkedAccountCount, 1);
+  assert.equal(commitResult.invoiceReconciliation?.mismatchCount, 0);
+  assert.equal(commitResult.invoiceReconciliation?.accounts?.[0]?.expectedPurchaseTotal, 676.27);
+  assert.equal(commitResult.invoiceReconciliation?.accounts?.[0]?.actualPurchaseTotal, 676.27);
 });
 
 test("card payment imported from bank statement auto-creates and links a credit account before invoice import", async (t) => {
@@ -927,6 +989,46 @@ test("commit route rejects credit card invoices whose purchases do not match the
     userId: fixture.userId
   });
   assert.equal(transactions.length, 0);
+});
+
+test("commit route reconciles invoices when total de compras is derived from total a pagar + pagamentos", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixture("imports-invoice-derived-total");
+  t.after(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await cleanupUser(fixture.userId);
+  });
+
+  const response = await deps.commitRoutePOST(
+    await buildAuthenticatedJsonRequest("/api/imports/commit", fixture, deps.AUTH_SECRET, {
+      sourceType: "pdf",
+      fileName: "invoice-derived-total.pdf",
+      defaultAccountId: fixture.accountId,
+      applyRules: false,
+      rows: [
+        {
+          date: "2026-01-15",
+          description: "Compra cartao reconciliada por derivacao",
+          amount: -676.27,
+          documentType: "credit_card_invoice",
+          raw: {
+            importInvoicePurchaseTotal: 89.84,
+            importInvoicePaymentTotal: 586.43,
+            importInvoiceTotalDue: 89.84
+          }
+        }
+      ]
+    })
+  );
+
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.equal(payload?.invoiceReconciliation?.checkedAccountCount, 1);
+  assert.equal(payload?.invoiceReconciliation?.mismatchCount, 0);
+  assert.equal(payload?.invoiceReconciliation?.accounts?.[0]?.expectedPurchaseTotal, 676.27);
+  assert.equal(payload?.invoiceReconciliation?.accounts?.[0]?.actualPurchaseTotal, 676.27);
 });
 
 test("commit route persists confirmed statement balance snapshots", async (t) => {

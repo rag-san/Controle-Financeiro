@@ -50,6 +50,76 @@ test("classifyPdfText detects Inter invoice", () => {
   assert.equal(result.issuerProfile, "inter_invoice");
 });
 
+test("parsePdfImport keeps mixed signed Inter invoice rows netted for reconciliation", async () => {
+  const fakePdf = Buffer.from(
+    [
+      "(BANCO INTER) Tj",
+      "(Despesas da fatura) Tj",
+      "(Vencimento: 15/03/2026) Tj",
+      "(Total de compras R$ 43,97) Tj",
+      "(05 de marco 2026 COMPRA LOJA XYZ R$ 1.031,62) Tj",
+      "(06 de marco 2026 AJUSTE DE LANCAMENTO +R$ 987,65) Tj"
+    ].join("\n"),
+    "latin1"
+  );
+
+  const parsed = await parsePdfImport(fakePdf);
+
+  assert.equal(parsed.documentType, "credit_card_invoice");
+  assert.equal(parsed.issuerProfile, "inter_invoice");
+  assert.equal(parsed.metadata.invoicePurchaseTotal, 43.97);
+  assert.equal(parsed.transactions.length, 2);
+  assert.equal(parsed.transactions[0]?.amount, -1031.62);
+  assert.equal(parsed.transactions[1]?.amount, 987.65);
+  assert.equal(
+    Number(parsed.transactions.reduce((sum, row) => sum + row.amount, 0).toFixed(2)),
+    -43.97
+  );
+});
+
+test("parsePdfImport does not treat Inter 'Total Cartao' line as purchase total", async () => {
+  const fakePdf = Buffer.from(
+    [
+      "(BANCO INTER) Tj",
+      "(Despesas da fatura) Tj",
+      "(Vencimento: 15/03/2026) Tj",
+      "(Total Cartao R$ 43,97) Tj",
+      "(Total a pagar: R$ 43,97) Tj",
+      "(05 de marco 2026 COMPRA LOJA XYZ R$ 43,97) Tj"
+    ].join("\n"),
+    "latin1"
+  );
+
+  const parsed = await parsePdfImport(fakePdf);
+
+  assert.equal(parsed.documentType, "credit_card_invoice");
+  assert.equal(parsed.issuerProfile, "inter_invoice");
+  assert.equal(parsed.metadata.invoicePurchaseTotal, null);
+  assert.equal(parsed.metadata.invoiceTotalDue, 43.97);
+});
+
+test("parsePdfImport prioritizes Inter 'Fatura atual' over partial totals", async () => {
+  const fakePdf = Buffer.from(
+    [
+      "(BANCO INTER) Tj",
+      "(Despesas da fatura) Tj",
+      "(Vencimento: 15/03/2026) Tj",
+      "(Total de compras R$ 422,35) Tj",
+      "(FATURA ATUAL) Tj",
+      "(Fatura atual R$ 1.031,62) Tj",
+      "(07 de marco 2026 PAGAMENTO ON LINE +R$ 609,27) Tj",
+      "(08 de marco 2026 COMPRA LOJA XYZ R$ 1.031,62) Tj"
+    ].join("\n"),
+    "latin1"
+  );
+
+  const parsed = await parsePdfImport(fakePdf);
+
+  assert.equal(parsed.documentType, "credit_card_invoice");
+  assert.equal(parsed.issuerProfile, "inter_invoice");
+  assert.equal(parsed.metadata.invoicePurchaseTotal, 1031.62);
+});
+
 test("classifyPdfText detects Mercado Pago invoice", () => {
   const result = classifyPdfText(`
     Mercado Pago

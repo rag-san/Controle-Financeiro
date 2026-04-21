@@ -282,7 +282,8 @@ async function resolveLegacyLedgerCandidate(input: {
     merchantNormalized,
     accountId,
     creditCardAccountId,
-    institutionId
+    institutionId,
+    sourceRef: externalRef
   });
 
   const reconciliationStatus =
@@ -492,7 +493,8 @@ export async function syncLedgerFromImportBatch(input: {
       merchantNormalized,
       accountId,
       creditCardAccountId,
-      institutionId
+      institutionId,
+      sourceRef: externalRef
     });
 
     const rawTransactionId = await ledgerRepo.insertRawTransaction({

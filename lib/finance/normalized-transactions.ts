@@ -78,6 +78,7 @@ type LedgerFinancialEntryLike = {
   } | null;
   raw?: Record<string, unknown> | null;
   excluded?: boolean;
+  isBalanceAdjustment?: boolean;
   accountId?: string | null;
   creditCardAccountId?: string | null;
   account?: LedgerAccountLike | null;
@@ -337,9 +338,11 @@ function buildNormalizedTransaction(input: {
   budgetImpactOverride?: BudgetImpact;
   raw?: Record<string, unknown> | null;
   excluded?: boolean;
+  isBalanceAdjustment?: boolean;
   isInternalTransfer?: boolean;
 }): NormalizedTransaction {
-  const isBalanceAdjustment = readRawBoolean(input.raw ?? null, "openingBalanceAdjustment");
+  const isBalanceAdjustment =
+    input.isBalanceAdjustment ?? readRawBoolean(input.raw ?? null, "openingBalanceAdjustment");
   const budgetImpact = input.budgetImpactOverride ?? resolveBudgetImpact(input.nature);
 
   return {
@@ -414,6 +417,7 @@ export function normalizeLegacyFinancialTransaction(
     budgetImpactOverride,
     raw: tx.raw ?? null,
     excluded: tx.excluded ?? false,
+    isBalanceAdjustment: readRawBoolean(tx.raw ?? null, "openingBalanceAdjustment"),
     isInternalTransfer: tx.isInternalTransfer ?? tx.type === "transfer"
   });
 }
@@ -505,6 +509,7 @@ export function normalizeLedgerFinancialTransaction(
     budgetImpactOverride,
     raw: accountContext.raw,
     excluded: entry.excluded ?? false,
+    isBalanceAdjustment: entry.isBalanceAdjustment ?? false,
     isInternalTransfer: entry.type === "transfer"
   });
 
@@ -580,29 +585,4 @@ export function sumCashFlowMetrics(
     outflow: round2(outflow),
     net: round2(inflow - outflow)
   };
-}
-
-export function groupExpenseByCategory(
-  entries: NormalizedTransaction[],
-  getCategoryName: (categoryId: string | null | undefined) => string
-): Array<{ categoryId: string | null; name: string; amount: number }> {
-  const totals = new Map<string, { categoryId: string | null; name: string; amount: number }>();
-
-  for (const entry of entries) {
-    if (entry.excluded || entry.isBalanceAdjustment) continue;
-    if (entry.budgetImpact !== "counts_as_expense") continue;
-
-    const key = entry.categoryId ?? "__uncategorized";
-    const current = totals.get(key) ?? {
-      categoryId: entry.categoryId ?? null,
-      name: getCategoryName(entry.categoryId),
-      amount: 0
-    };
-    current.amount = round2(current.amount + -entry.budgetSignedAmount);
-    totals.set(key, current);
-  }
-
-  return [...totals.values()]
-    .filter((item) => item.amount > 0)
-    .sort((left, right) => right.amount - left.amount);
 }

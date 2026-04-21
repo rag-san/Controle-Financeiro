@@ -13,13 +13,6 @@ export function formatCurrency(value: number, hideValue = false): string {
   }).format(value);
 }
 
-export function formatPercent(value: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1
-  }).format(value / 100);
-}
-
 export function getInitials(name?: string | null): string {
   const safeName = (name ?? "").trim();
   if (!safeName) return "CF";

@@ -271,6 +271,9 @@ export async function seedTestData(): Promise<SeedResult> {
       description: "Transferencia interna seed",
       normalizedDescription: normalizeDescription("Transferencia interna seed"),
       amount: transfer.amount,
+      raw: {
+        transferDetectedFromCardPayment: true
+      },
       status: "posted"
     });
 

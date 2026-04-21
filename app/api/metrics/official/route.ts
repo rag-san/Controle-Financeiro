@@ -1,20 +1,24 @@
-import { endOfMonth, format, startOfMonth, subMonths } from "date-fns";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
 import { getCache, setCache } from "@/lib/cache";
+import {
+  toUtcMonthKey,
+  utcEndOfMonth,
+  utcMonthReference,
+  utcStartOfMonth
+} from "@/lib/finance/utc-date";
 import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
-import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
+import { LedgerCoverageError } from "@/lib/server/analytics-source";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { DASHBOARD_CALCULATION_VERSION, dashboardRepo } from "@/lib/server/dashboard.repo";
-import { ledgerRepo } from "@/lib/server/ledger.repo";
+import { loadNormalizedTransactionsForScope } from "@/lib/server/financial-metrics.service";
 import { officialMetricSnapshotsRepo } from "@/lib/server/official-metric-snapshots.repo";
 import {
   getOfficialCashflowData,
   getOfficialReportsData
 } from "@/lib/server/official-analytics.service";
-import { transactionsRepo } from "@/lib/server/transactions.repo";
 import { buildCategoryMonthAggregates } from "@/src/features/categories/utils/categoryAggregates";
 import type { CashflowPeriodKey } from "@/src/features/cashflow/types";
 import type { ReportsPeriodPreset } from "@/src/features/reports/types";
@@ -53,100 +57,65 @@ function serializePeriodRange(range: { preset: string; label: string; start: Dat
   };
 }
 
-function toTransactionDTO(
-  item: Awaited<ReturnType<typeof transactionsRepo.listPaged>>[number]
-) {
-  return {
-    id: item.id,
-    accountId: item.accountId,
-    categoryId: item.categoryId ?? null,
-    importBatchId: item.importBatchId ?? null,
-    date: item.date.toISOString(),
-    description: item.description,
-    amount: item.amount,
-    type: item.type,
-    direction: item.direction,
-    isInternalTransfer: item.isInternalTransfer,
-    status: item.status,
-    transferGroupId: item.transferGroupId ?? null,
-    transferPeerTxId: item.transferPeerTxId ?? null,
-    transferFromAccountId: item.transferFromAccountId ?? null,
-    transferToAccountId: item.transferToAccountId ?? null,
-    account: {
-      id: item.account.id,
-      name: item.account.name,
-      type: item.account.type,
-      institution: item.account.institution ?? null,
-      currency: item.account.currency,
-      parentAccountId: item.account.parentAccountId ?? null
-    },
-    category: item.category
-      ? {
-          id: item.category.id,
-          name: item.category.name,
-          color: item.category.color,
-          icon: item.category.icon ?? null,
-          parentId: item.category.parentId ?? null
-        }
-      : null
-  };
+function resolveAccountType(
+  type: "checking" | "credit" | "cash" | "investment" | null | undefined
+): TransactionDTO["account"]["type"] {
+  if (type === "checking" || type === "credit" || type === "cash" || type === "investment") {
+    return type;
+  }
+  return "checking";
 }
 
-function toLedgerTransactionDTO(
-  item: Awaited<ReturnType<typeof ledgerRepo.listAnalyticsEntries>>[number]
+function toCategoryExpenseTransactionDTO(
+  entry: Awaited<ReturnType<typeof loadNormalizedTransactionsForScope>>["entries"][number],
+  categoriesById: Map<string, Awaited<ReturnType<typeof categoriesRepo.listByUser>>[number]>
 ): TransactionDTO | null {
-  if (item.type !== "expense" && item.type !== "cc_purchase" && item.type !== "fee" && item.type !== "refund") {
+  if (entry.excluded || entry.isBalanceAdjustment || entry.budgetImpact !== "counts_as_expense") {
     return null;
   }
 
-  const accountId = item.accountId ?? item.creditCardAccountId ?? null;
+  const accountId = entry.accountId?.trim();
   if (!accountId) {
     return null;
   }
 
-  const account =
-    item.account ??
-    (item.creditCardAccount
-      ? {
-          id: item.creditCardAccount.id,
-          name: item.creditCardAccount.name,
-          type: "credit" as const,
-          institution: null,
-          currency: item.creditCardAccount.currency,
-          parentAccountId: null
-        }
-      : null);
-
-  if (!account) {
-    return null;
-  }
+  const category = entry.categoryId ? categoriesById.get(entry.categoryId) ?? null : null;
+  const amount = Number(entry.budgetSignedAmount.toFixed(2));
+  const direction: TransactionDTO["direction"] = amount >= 0 ? "in" : "out";
 
   return {
-    id: item.id,
+    id: entry.id,
     accountId,
-    categoryId: item.categoryId ?? null,
-    importBatchId: item.importSourceId ?? null,
-    date: item.postedAt.toISOString(),
-    description: item.descriptionNormalized,
-    amount: item.type === "refund" ? Math.abs(item.amount) : -Math.abs(item.amount),
+    categoryId: entry.categoryId ?? null,
+    importBatchId: entry.importBatchId ?? null,
+    date: entry.date,
+    description: entry.descriptionOriginal,
+    amount,
     type: "expense",
-    direction: item.type === "refund" ? "in" : "out",
-    excluded: item.excluded,
-    isInternalTransfer: false,
+    direction,
+    excluded: entry.excluded,
+    isInternalTransfer: entry.isInternalTransfer,
     status: "posted",
-    transferGroupId: item.transferGroupId ?? null,
+    transferGroupId: null,
     transferPeerTxId: null,
     transferFromAccountId: null,
     transferToAccountId: null,
     raw: null,
-    account,
-    category: item.category
+    account: {
+      id: accountId,
+      name: entry.accountName?.trim() || "Conta",
+      type: resolveAccountType(entry.accountType),
+      institution: null,
+      currency: "BRL",
+      parentAccountId: null
+    },
+    category: category
       ? {
-          id: item.category.id,
-          name: item.category.name,
-          color: item.category.color,
-          icon: item.category.icon ?? null,
-          parentId: item.category.parentId ?? null
+          id: category.id,
+          name: category.name,
+          color: category.color,
+          icon: category.icon ?? null,
+          parentId: category.parentId ?? null
         }
       : null
   };
@@ -198,38 +167,27 @@ async function buildCategoriesViewPayload(input: { userId: string; month: string
   const referenceDate = parseMonthKey(input.month);
   const monthStart = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth(), 1, 0, 0, 0));
   const monthEnd = new Date(Date.UTC(referenceDate.getUTCFullYear(), referenceDate.getUTCMonth() + 1, 0, 23, 59, 59, 999));
-  const categories = await categoriesRepo.listByUser(input.userId);
-  const useLedger = await shouldUseLedgerForAnalytics({
-    userId: input.userId,
-    from: monthStart,
-    to: monthEnd,
-    accountId: input.accountId,
-    excluded: false,
-    transactionTypes: ["expense"]
-  });
-  const transactions = useLedger
-    ? (await ledgerRepo.listAnalyticsEntries({
-        userId: input.userId,
-        from: monthStart,
-        to: monthEnd,
-        accountId: input.accountId
-      }))
-        .map((item) => toLedgerTransactionDTO(item))
-        .filter((item): item is TransactionDTO => item !== null)
-    : (await transactionsRepo
-        .listAll({
-          userId: input.userId,
-          dateFrom: monthStart,
-          dateTo: monthEnd,
-          accountId: input.accountId,
-          excluded: false
-        }))
-        .map(toTransactionDTO);
+  const [categories, normalizedScope] = await Promise.all([
+    categoriesRepo.listByUser(input.userId),
+    loadNormalizedTransactionsForScope({
+      userId: input.userId,
+      from: monthStart,
+      to: monthEnd,
+      accountId: input.accountId,
+      transactionType: "expense",
+      excluded: false,
+      hideCardPaymentMirrorInflow: true
+    })
+  ]);
+  const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const transactions = normalizedScope.entries
+    .map((entry) => toCategoryExpenseTransactionDTO(entry, categoriesById))
+    .filter((item): item is TransactionDTO => item !== null);
   const aggregates = buildCategoryMonthAggregates(categories, transactions, referenceDate);
 
   return {
     view: "categories" as const,
-    month: format(referenceDate, "yyyy-MM"),
+    month: toUtcMonthKey(referenceDate),
     aggregates: {
       ...aggregates,
       monthInterval: {
@@ -241,22 +199,22 @@ async function buildCategoriesViewPayload(input: { userId: string; month: string
 }
 
 function isHistoricalMonth(monthKey: string): boolean {
-  return monthKey < format(new Date(), "yyyy-MM");
+  return monthKey < toUtcMonthKey(new Date());
 }
 
 function buildDashboardReferenceMeta(referenceMonth: string) {
   const referenceDate = parseMonthKey(referenceMonth);
-  const previousReferenceDate = subMonths(referenceDate, 1);
+  const previousReferenceDate = utcMonthReference(referenceDate, -1);
 
   return {
-    previousReferenceMonth: format(previousReferenceDate, "yyyy-MM"),
+    previousReferenceMonth: toUtcMonthKey(previousReferenceDate),
     referencePeriod: {
-      start: startOfMonth(referenceDate).toISOString(),
-      end: endOfMonth(referenceDate).toISOString()
+      start: utcStartOfMonth(referenceDate).toISOString(),
+      end: utcEndOfMonth(referenceDate).toISOString()
     },
     comparisonPeriod: {
-      start: startOfMonth(previousReferenceDate).toISOString(),
-      end: endOfMonth(previousReferenceDate).toISOString()
+      start: utcStartOfMonth(previousReferenceDate).toISOString(),
+      end: utcEndOfMonth(previousReferenceDate).toISOString()
     }
   };
 }
@@ -280,7 +238,7 @@ function normalizeDashboardViewPayload(
   input: { requestedMonth: string | null; now: Date }
 ): DashboardViewPayload {
   const referenceMonth = input.requestedMonth || payload.referenceMonth;
-  const isCurrentMonthReference = referenceMonth === format(input.now, "yyyy-MM");
+  const isCurrentMonthReference = referenceMonth === toUtcMonthKey(input.now);
   const expectedMeta = buildDashboardReferenceMeta(referenceMonth);
   const hasMatchingReferencePeriod =
     typeof payload.referencePeriod?.start === "string" &&
@@ -397,30 +355,51 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(cached, { headers: privateCacheHeaders });
     }
 
-    const payload =
-      parsed.data.view === "reports"
-        ? await buildReportsViewPayload({
-            userId: auth.userId,
-            preset: parsed.data.preset as ReportsPeriodPreset,
-            accountId: parsed.data.accountId,
-            categoryId: parsed.data.categoryId
-          })
-        : parsed.data.view === "cashflow"
-          ? await buildCashflowViewPayload({
+    let payload;
+    try {
+      payload =
+        parsed.data.view === "reports"
+          ? await buildReportsViewPayload({
               userId: auth.userId,
-              period: parsed.data.period as CashflowPeriodKey,
-              accountId: parsed.data.accountId
+              preset: parsed.data.preset as ReportsPeriodPreset,
+              accountId: parsed.data.accountId,
+              categoryId: parsed.data.categoryId
             })
-          : parsed.data.view === "categories"
-            ? await buildCategoriesViewPayload({
+          : parsed.data.view === "cashflow"
+            ? await buildCashflowViewPayload({
                 userId: auth.userId,
-                month: parsed.data.month as string,
+                period: parsed.data.period as CashflowPeriodKey,
                 accountId: parsed.data.accountId
               })
-            : await buildDashboardViewPayloadWithSnapshots({
-                userId: auth.userId,
-                month: parsed.data.month
-              });
+            : parsed.data.view === "categories"
+              ? await buildCategoriesViewPayload({
+                  userId: auth.userId,
+                  month: parsed.data.month as string,
+                  accountId: parsed.data.accountId
+                })
+              : await buildDashboardViewPayloadWithSnapshots({
+                  userId: auth.userId,
+                  month: parsed.data.month
+                });
+    } catch (error) {
+      if (error instanceof LedgerCoverageError) {
+        return NextResponse.json(
+          {
+            code: "ledger_coverage_incomplete",
+            message:
+              "A cobertura do ledger está incompleta para esta consulta. Corrija a sincronização antes de recalcular métricas.",
+            details: {
+              reason: error.resolution.reason,
+              legacyTransactionCount: error.resolution.legacyTransactionCount,
+              unmirroredLegacyTransactionCount: error.resolution.unmirroredLegacyTransactionCount,
+              ledgerEntryCount: error.resolution.ledgerEntryCount
+            }
+          },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
 
     setCache(cacheKey, payload, 10_000);
 

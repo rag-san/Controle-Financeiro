@@ -1,23 +1,20 @@
 import {
-  groupExpenseByCategory,
   normalizeLedgerFinancialTransaction,
-  normalizeLegacyFinancialTransaction,
   sumBudgetMetrics,
   sumCashFlowMetrics,
   type FinancialAccountType,
   type NormalizedTransaction
 } from "@/lib/finance/normalized-transactions";
-import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
+import { assertLedgerCoverageForAnalytics } from "@/lib/server/analytics-source";
 import { accountsRepo } from "@/lib/server/accounts.repo";
-import { categoriesRepo } from "@/lib/server/categories.repo";
 import { ledgerRepo } from "@/lib/server/ledger.repo";
-import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 type FinancialMetricsScope = {
   userId: string;
   from?: Date;
   to?: Date;
   accountId?: string;
+  accountType?: FinancialAccountType;
   categoryId?: string;
   transactionType?: "income" | "expense" | "transfer";
   excluded?: boolean;
@@ -53,13 +50,13 @@ function matchesRequestedTransactionType(
 export async function loadNormalizedTransactionsForScope(
   input: FinancialMetricsScope
 ): Promise<{
-  source: "ledger" | "legacy";
+  source: "ledger";
   entries: NormalizedTransaction[];
   scopedAccountType: FinancialAccountType | null;
 }> {
   const scopedAccount = input.accountId ? await accountsRepo.findByIdForUser(input.accountId, input.userId) : null;
   const scopedAccountType = scopedAccount?.type ?? null;
-  const useLedger = await shouldUseLedgerForAnalytics({
+  await assertLedgerCoverageForAnalytics({
     userId: input.userId,
     from: input.from,
     to: input.to,
@@ -68,44 +65,26 @@ export async function loadNormalizedTransactionsForScope(
     excluded: input.excluded,
     normalizedQuery: input.normalizedQuery,
     transactionTypes: input.transactionType ? [input.transactionType] : ["income", "expense", "transfer"],
+    accountTypes: input.accountType ? [input.accountType] : undefined,
     hideCardPaymentMirrorInflow: input.hideCardPaymentMirrorInflow,
     includeBalanceAdjustments: input.includeBalanceAdjustments
   });
-
-  if (useLedger) {
-    const entries = await ledgerRepo.listAnalyticsEntries({
-      userId: input.userId,
-      from: input.from,
-      to: input.to,
-      accountId: input.accountId,
-      categoryId: input.categoryId
-    });
-
-    return {
-      source: "ledger",
-      entries: entries
-        .map((entry) => normalizeLedgerFinancialTransaction(entry))
-        .filter((entry) => matchesRequestedTransactionType(entry, input.transactionType)),
-      scopedAccountType
-    };
-  }
-
-  const entries = await transactionsRepo.listAll({
+  const entries = await ledgerRepo.listAnalyticsEntries({
     userId: input.userId,
-    dateFrom: input.from,
-    dateTo: input.to,
+    from: input.from,
+    to: input.to,
     accountId: input.accountId,
+    accountType: input.accountType,
     categoryId: input.categoryId,
-    type: input.transactionType,
-    excluded: input.excluded,
+    excluded: input.excluded ?? false,
+    includeBalanceAdjustments: input.includeBalanceAdjustments ?? false,
     normalizedQuery: input.normalizedQuery,
-    hideCardPaymentMirrorInflow: input.hideCardPaymentMirrorInflow
   });
 
   return {
-    source: "legacy",
+    source: "ledger",
     entries: entries
-      .map((entry) => normalizeLegacyFinancialTransaction(entry))
+      .map((entry) => normalizeLedgerFinancialTransaction(entry))
       .filter((entry) => matchesRequestedTransactionType(entry, input.transactionType)),
     scopedAccountType
   };
@@ -114,7 +93,7 @@ export async function loadNormalizedTransactionsForScope(
 export async function getFinancialMetricsSnapshot(
   input: FinancialMetricsScope
 ): Promise<{
-  source: "ledger" | "legacy";
+  source: "ledger";
   entries: NormalizedTransaction[];
   budget: {
     income: number;
@@ -163,19 +142,4 @@ export async function getFinancialMetricsSnapshot(
     }),
     currentBalance
   };
-}
-
-export async function getExpenseCategorySnapshot(
-  input: FinancialMetricsScope
-): Promise<Array<{ categoryId: string | null; name: string; amount: number }>> {
-  const [{ entries }, categories] = await Promise.all([
-    loadNormalizedTransactionsForScope(input),
-    categoriesRepo.listByUser(input.userId)
-  ]);
-  const categoryById = new Map(categories.map((category) => [category.id, category.name]));
-
-  return groupExpenseByCategory(entries, (categoryId) => {
-    if (!categoryId) return "Sem categoria";
-    return categoryById.get(categoryId) ?? "Sem categoria";
-  });
 }

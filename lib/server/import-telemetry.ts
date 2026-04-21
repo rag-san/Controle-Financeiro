@@ -81,6 +81,8 @@ export function logImportEvent(event: ImportEvent, input: ImportTelemetryInput):
       internalTransferAutoMatched: input.internalTransferAutoMatched,
       cardPaymentDetected: input.cardPaymentDetected,
       cardPaymentNotConverted: input.cardPaymentNotConverted
+    }).catch(() => {
+      // observability nao deve interromper o fluxo de importacao
     });
   } catch {
     // observability nao deve interromper o fluxo de importacao

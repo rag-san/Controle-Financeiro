@@ -1,14 +1,23 @@
-import { endOfMonth, format, isSameMonth, startOfMonth, subMonths } from "date-fns";
 import { fromAmountCents } from "@/lib/finance/official-metrics";
+import {
+  formatUtcDate,
+  isSameUtcMonth,
+  utcEndOfMonth,
+  utcMonthReference,
+  utcStartOfMonth,
+  toUtcMonthKey
+} from "@/lib/finance/utc-date";
 import { loadNormalizedTransactionsForScope } from "@/lib/server/financial-metrics.service";
-import { dashboardMetricsRepo } from "@/lib/server/dashboard-metrics.repo";
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import { categoriesRepo } from "@/lib/server/categories.repo";
+import {
+  getDashboardPatrimonyCompatibilityView,
+  resolveDashboardDateRange
+} from "@/lib/server/dashboard-analytics.service";
 import { buildSpendingTrendSeries } from "@/lib/server/dashboard-spending-trend";
 import { getFinancialBreakdownSnapshot } from "@/lib/server/financial-breakdown.service";
 import { ledgerRepo } from "@/lib/server/ledger.repo";
 import { netWorthRepo } from "@/lib/server/net-worth.repo";
-import { transactionsRepo } from "@/lib/server/transactions.repo";
 import { themeColors } from "@/src/lib/theme/colors";
 import type { CategoryDTO } from "@/lib/types";
 import type { NormalizedTransaction } from "@/lib/finance/normalized-transactions";
@@ -56,7 +65,7 @@ function safeVariation(current: number, previous: number): number {
 }
 
 function monthKey(date: Date): string {
-  return date.toISOString().slice(0, 7);
+  return toUtcMonthKey(date);
 }
 
 function round2(value: number): number {
@@ -107,19 +116,6 @@ function toPreparedCashDashboardEntry(entry: NormalizedTransaction): DashboardCa
     date: new Date(entry.date),
     inflowCents: cashSignedAmount > 0 ? Math.round(cashSignedAmount * 100) : 0,
     outflowCents: cashSignedAmount < 0 ? Math.round(Math.abs(cashSignedAmount) * 100) : 0
-  };
-}
-
-function summarizePreparedEntries(entries: DashboardPreparedEntry[]) {
-  const incomeCents = entries.reduce((sum, entry) => sum + entry.incomeCents, 0);
-  const expenseCents = entries.reduce((sum, entry) => sum + entry.expenseCents, 0);
-  const income = fromAmountCents(incomeCents);
-  const expense = fromAmountCents(expenseCents);
-
-  return {
-    income: round2(income),
-    expense: round2(expense),
-    net: round2(income - expense)
   };
 }
 
@@ -214,9 +210,9 @@ function buildCashflowFromPrepared(entries: DashboardCashEntry[]) {
 }
 
 async function buildNetWorthForReference(input: { userId: string; referenceDate: Date; now: Date }) {
-  const cutoffDate = isSameMonth(input.referenceDate, input.now)
+  const cutoffDate = isSameUtcMonth(input.referenceDate, input.now)
     ? input.now
-    : endOfMonth(input.referenceDate);
+    : utcEndOfMonth(input.referenceDate);
   const netWorthSeriesByDate = new Map<string, number>();
   const manualEntries = await netWorthRepo.listByUser(input.userId);
   for (const entry of manualEntries) {
@@ -224,7 +220,7 @@ async function buildNetWorthForReference(input: { userId: string; referenceDate:
       continue;
     }
 
-    const key = format(entry.date, "yyyy-MM-dd");
+    const key = formatUtcDate(entry.date);
     const signedValue = entry.type === "asset" ? entry.value : -entry.value;
     netWorthSeriesByDate.set(key, (netWorthSeriesByDate.get(key) ?? 0) + signedValue);
   }
@@ -233,27 +229,18 @@ async function buildNetWorthForReference(input: { userId: string; referenceDate:
     const oldestLedgerDate = await ledgerRepo.oldestVisiblePostedAt({
       userId: input.userId
     });
-    const oldestTransactionDate = oldestLedgerDate
-      ? null
-      : await transactionsRepo.oldestPostedAt(input.userId, {
-          excluded: false
-        });
-    const oldestVisibleDate = oldestLedgerDate ?? oldestTransactionDate;
+    const oldestVisibleDate = oldestLedgerDate;
 
     if (oldestVisibleDate && oldestVisibleDate.getTime() <= cutoffDate.getTime()) {
-      const patrimonyRangeStart = startOfMonth(oldestVisibleDate);
-      const patrimony = await dashboardMetricsRepo.getPatrimony({
+      const patrimonyRangeStart = utcStartOfMonth(oldestVisibleDate);
+      const patrimonyRange = resolveDashboardDateRange({
+        from: patrimonyRangeStart,
+        to: cutoffDate,
+        now: cutoffDate
+      });
+      const patrimony = await getDashboardPatrimonyCompatibilityView({
         userId: input.userId,
-        range: {
-          fromDate: patrimonyRangeStart,
-          toDate: cutoffDate,
-          previousFromDate: patrimonyRangeStart,
-          previousToDate: cutoffDate,
-          from: patrimonyRangeStart.toISOString(),
-          to: cutoffDate.toISOString(),
-          previousFrom: patrimonyRangeStart.toISOString(),
-          previousTo: cutoffDate.toISOString()
-        },
+        range: patrimonyRange,
         granularity: "day"
       });
 
@@ -277,14 +264,14 @@ async function buildNetWorthForReference(input: { userId: string; referenceDate:
     }
   }
 
-  if (netWorthSeriesByDate.size === 0 && isSameMonth(input.referenceDate, input.now)) {
+  if (netWorthSeriesByDate.size === 0 && isSameUtcMonth(input.referenceDate, input.now)) {
     const accounts = await accountsRepo.listByUserWithBalance(input.userId);
     const snapshotValue = round2(
       accounts.reduce((sum, account) => sum + (Number.isFinite(account.currentBalance ?? 0) ? account.currentBalance ?? 0 : 0), 0)
     );
 
     if (snapshotValue !== 0) {
-      const snapshotDateKey = format(input.now, "yyyy-MM-dd");
+      const snapshotDateKey = formatUtcDate(input.now);
       return {
         netWorthSeries: [
           {
@@ -321,55 +308,17 @@ type FullDashboardOptions = {
 };
 
 export const dashboardRepo = {
-  async summaryByRange(userId: string, from: Date, to: Date) {
-    const [categories, normalizedScope] = await Promise.all([
-      categoriesRepo.listByUser(userId),
-      loadNormalizedTransactionsForScope({
-        userId,
-        from,
-        to,
-        excluded: false,
-        hideCardPaymentMirrorInflow: true
-      })
-    ]);
-    const categoriesById = new Map(categories.map((item) => [item.id, item]));
-    const entries = normalizedScope.entries
-      .map((entry) => toPreparedNormalizedDashboardEntry(entry, categoriesById))
-      .filter((entry): entry is DashboardPreparedEntry => entry !== null);
-    const totals = summarizePreparedEntries(entries);
-    const topCategories = buildTopCategoriesFromPrepared(entries, [], 12);
-    const byCategory = topCategories.map((item) => ({
-      categoryId: item.categoryId,
-      name: item.name,
-      color: item.color,
-      expenseCents: Math.round(item.current * 100)
-    }));
-
-    return {
-      totals: {
-        income: Math.round(totals.income * 100),
-        expenses: Math.round(totals.expense * 100),
-        net: Math.round(totals.net * 100)
-      },
-      byCategory
-    };
-  },
-
   async fullDashboard(userId: string, now = new Date(), options?: FullDashboardOptions) {
-    const latestTransactionDate = await transactionsRepo.latestPostedAt(userId, { excluded: false });
     const latestLedgerDate = await ledgerRepo.latestVisiblePostedAt({ userId });
     const referenceDate = options?.forceReferenceDate
       ? options.referenceDate ?? now
-      : latestLedgerDate && latestTransactionDate
-        ? latestLedgerDate.getTime() >= latestTransactionDate.getTime()
-          ? latestLedgerDate
-          : latestTransactionDate
-        : latestLedgerDate ?? latestTransactionDate ?? now;
-    const currentMonthStart = startOfMonth(referenceDate);
-    const currentMonthEnd = endOfMonth(referenceDate);
-    const previousMonthStart = startOfMonth(subMonths(referenceDate, 1));
-    const previousMonthEnd = endOfMonth(subMonths(referenceDate, 1));
-    const sixMonthsAgo = startOfMonth(subMonths(referenceDate, 5));
+      : latestLedgerDate ?? now;
+    const currentMonthStart = utcStartOfMonth(referenceDate);
+    const currentMonthEnd = utcEndOfMonth(referenceDate);
+    const previousMonthReference = utcMonthReference(referenceDate, -1);
+    const previousMonthStart = utcStartOfMonth(previousMonthReference);
+    const previousMonthEnd = utcEndOfMonth(previousMonthReference);
+    const sixMonthsAgo = utcStartOfMonth(utcMonthReference(referenceDate, -5));
     const [categories, normalizedScope, netWorth, financeBreakdownSnapshot] = await Promise.all([
       categoriesRepo.listByUser(userId),
       loadNormalizedTransactionsForScope({
@@ -437,7 +386,7 @@ export const dashboardRepo = {
     return {
       dashboardCalculationVersion: DASHBOARD_CALCULATION_VERSION,
       referenceMonth: monthKey(referenceDate),
-      previousReferenceMonth: monthKey(subMonths(referenceDate, 1)),
+      previousReferenceMonth: monthKey(previousMonthReference),
       referencePeriod: {
         start: currentMonthStart.toISOString(),
         end: currentMonthEnd.toISOString()
@@ -446,7 +395,7 @@ export const dashboardRepo = {
         start: previousMonthStart.toISOString(),
         end: previousMonthEnd.toISOString()
       },
-      isCurrentMonthReference: isSameMonth(referenceDate, now),
+      isCurrentMonthReference: isSameUtcMonth(referenceDate, now),
       cards: {
         income: currentSummary.income,
         expense: currentSummary.expense,

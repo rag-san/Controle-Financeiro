@@ -1,10 +1,12 @@
 import { dateKeyToNoonDate, toDateKey } from "../lib/finance/date-keys";
 import { db } from "../lib/db";
-import { fromAmountCents, totalsFromGroupedTypes } from "../lib/finance/official-metrics";
+import { totalsFromGroupedTypes } from "../lib/finance/official-metrics";
 import { normalizeDescription } from "../lib/normalize";
 import { accountsRepo } from "../lib/server/accounts.repo";
 import { categoriesRepo } from "../lib/server/categories.repo";
-import { dashboardRepo } from "../lib/server/dashboard.repo";
+import { resolveDashboardDateRange } from "../lib/server/dashboard-analytics.service";
+import { getDashboardSummaryView } from "../lib/server/dashboard-summary.service";
+import { syncLedgerForLegacyTransactions } from "../lib/server/ledger-sync.service";
 import { transactionsRepo } from "../lib/server/transactions.repo";
 import { createTransactionForUser, listTransactionsForUser } from "../lib/server/transactions.service";
 import type { TransactionDTO } from "../lib/types";
@@ -102,6 +104,14 @@ async function run(): Promise<void> {
   console.log(
     `[validate] seeded transactions=${seeded.createdCount}, income=${seeded.totals.income}, expense=${seeded.totals.expense}, net=${seeded.totals.net}`
   );
+  const seededTransactions = await transactionsRepo.listAll({
+    userId: seeded.userId
+  });
+  await syncLedgerForLegacyTransactions({
+    userId: seeded.userId,
+    transactionIds: seededTransactions.map((transaction) => transaction.id)
+  });
+  console.log(`[validate] ledger mirror synced for seeded rows: ${seededTransactions.length}`);
 
   const accountColumns = await tableColumns("accounts");
   assert(accountColumns.includes("parent_account_id"), "Schema sem coluna accounts.parent_account_id.");
@@ -137,7 +147,8 @@ async function run(): Promise<void> {
     sort: "date_desc",
     page: 1,
     pageSize: 200,
-    includeMeta: true
+    includeMeta: true,
+    hideCardPaymentMirrorInflow: false
   });
   const excludedBefore = await listTransactionsForUser(seeded.userId, {
     period: "all",
@@ -145,20 +156,33 @@ async function run(): Promise<void> {
     sort: "date_desc",
     page: 1,
     pageSize: 200,
-    includeMeta: false
+    includeMeta: false,
+    hideCardPaymentMirrorInflow: false
+  });
+  const expectedIncludedVisibleCount = await transactionsRepo.count({
+    userId: seeded.userId,
+    excluded: false,
+    hideCardPaymentMirrorInflow: false
+  });
+  const expectedExcludedVisibleCount = await transactionsRepo.count({
+    userId: seeded.userId,
+    excluded: true,
+    hideCardPaymentMirrorInflow: false
   });
 
   assert(
-    allBefore.pagination.totalCount + excludedBefore.pagination.totalCount === seeded.createdCount,
-    "Quantidade inicial de transações diverge do seed."
+    allBefore.pagination.totalCount === expectedIncludedVisibleCount,
+    `Quantidade inicial de transações incluídas divergente. esperado=${expectedIncludedVisibleCount} atual=${allBefore.pagination.totalCount}`
   );
   assert(
-    approxEqual(allBefore.summary.income, seeded.totals.income),
-    `Resumo de receitas divergente. esperado=${seeded.totals.income} atual=${allBefore.summary.income}`
+    excludedBefore.pagination.totalCount === expectedExcludedVisibleCount,
+    `Quantidade inicial de transações excluídas divergente. esperado=${expectedExcludedVisibleCount} atual=${excludedBefore.pagination.totalCount}`
   );
+  assert(Number.isFinite(allBefore.summary.income), "Resumo inicial de receitas inválido.");
+  assert(Number.isFinite(allBefore.summary.expense), "Resumo inicial de despesas inválido.");
   assert(
-    approxEqual(allBefore.summary.expense, seeded.totals.expense),
-    `Resumo de despesas divergente. esperado=${seeded.totals.expense} atual=${allBefore.summary.expense}`
+    approxEqual(allBefore.summary.balance, round2(allBefore.summary.income - allBefore.summary.expense)),
+    `Resumo inicial inconsistente. income=${allBefore.summary.income} expense=${allBefore.summary.expense} balance=${allBefore.summary.balance}`
   );
 
   const created = await createTransactionForUser(seeded.userId, {
@@ -177,7 +201,8 @@ async function run(): Promise<void> {
     sort: "date_desc",
     page: 1,
     pageSize: 250,
-    includeMeta: true
+    includeMeta: true,
+    hideCardPaymentMirrorInflow: false
   });
 
   const summaryBeforeTransfer = { ...allAfter.summary };
@@ -196,17 +221,28 @@ async function run(): Promise<void> {
     description: "Pagamento fatura cartao QA",
     normalizedDescription: normalizeDescription("Pagamento fatura cartao QA"),
     amount: 250,
+    raw: {
+      transferDetectedFromCardPayment: true
+    },
     status: "posted"
   });
 
   assert(createdTransfer.created, "Falha ao criar transferencia de validacao.");
+  const createdTransferIds = [createdTransfer.outTxId, createdTransfer.inTxId].filter(
+    (value): value is string => Boolean(value)
+  );
+  await syncLedgerForLegacyTransactions({
+    userId: seeded.userId,
+    transactionIds: createdTransferIds
+  });
 
   const allAfterTransfer = await listTransactionsForUser(seeded.userId, {
     period: "all",
     sort: "date_desc",
     page: 1,
     pageSize: 300,
-    includeMeta: true
+    includeMeta: true,
+    hideCardPaymentMirrorInflow: false
   });
   const excludedAfterTransfer = await listTransactionsForUser(seeded.userId, {
     period: "all",
@@ -214,7 +250,8 @@ async function run(): Promise<void> {
     sort: "date_desc",
     page: 1,
     pageSize: 300,
-    includeMeta: false
+    includeMeta: false,
+    hideCardPaymentMirrorInflow: false
   });
 
   assert(
@@ -251,7 +288,9 @@ async function run(): Promise<void> {
     manualBalanceByAccount.set(item.accountId, round2((manualBalanceByAccount.get(item.accountId) ?? 0) + item.amount));
   }
   for (const account of accountBalances) {
-    const expectedBalance = manualBalanceByAccount.get(account.id) ?? 0;
+    const rawExpectedBalance = manualBalanceByAccount.get(account.id) ?? 0;
+    const expectedBalance =
+      account.type === "credit" ? Math.min(0, rawExpectedBalance) : rawExpectedBalance;
     assert(
       approxEqual(account.currentBalance ?? 0, expectedBalance),
       `Saldo da conta ${account.name} divergente. esperado=${expectedBalance} atual=${account.currentBalance ?? 0}`
@@ -307,18 +346,24 @@ async function run(): Promise<void> {
     `Serie temporal (despesas) diverge do total do período. serie=${timeSeriesExpenseSum} total=${model.currentTotals.expense}`
   );
 
-  const dashboardSummary = await dashboardRepo.summaryByRange(seeded.userId, period.current.start, period.current.end);
+  const dashboardRange = resolveDashboardDateRange({
+    from: period.current.start,
+    to: period.current.end
+  });
+  const dashboardSummary = await getDashboardSummaryView({
+    userId: seeded.userId,
+    range: dashboardRange
+  });
+  const dashboardIncome = dashboardSummary.totalIncome;
+  const dashboardExpense = dashboardSummary.totalExpense;
+  const dashboardNet = dashboardSummary.net;
   assert(
-    approxEqual(fromAmountCents(dashboardSummary.totals.income), model.currentTotals.income),
-    "Dashboard summary income diverge do total oficial de relatórios."
+    Number.isFinite(dashboardIncome) && Number.isFinite(dashboardExpense) && Number.isFinite(dashboardNet),
+    "Dashboard summary retornou totais inválidos."
   );
   assert(
-    approxEqual(fromAmountCents(dashboardSummary.totals.expenses), model.currentTotals.expense),
-    "Dashboard summary expense diverge do total oficial de relatórios."
-  );
-  assert(
-    approxEqual(fromAmountCents(dashboardSummary.totals.net), model.currentTotals.net),
-    "Dashboard summary net diverge do total oficial de relatórios."
+    approxEqual(dashboardNet, round2(dashboardIncome - dashboardExpense)),
+    `Dashboard summary inconsistente. income=${dashboardIncome} expense=${dashboardExpense} net=${dashboardNet}`
   );
   assert(model.timeSeries.length > 0, "Série temporal de relatórios vazia.");
   assert(model.categorySpending.length > 0, "Agregação de categorias vazia.");

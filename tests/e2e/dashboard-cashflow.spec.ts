@@ -57,7 +57,7 @@ test("dashboard mostra dados reais e reage ao filtro por periodo", async ({ page
     type: "expense"
   });
 
-  await page.route("**/api/dashboard/overview?*", async (route) => {
+  await page.route("**/api/metrics/official?view=dashboard*", async (route) => {
     await wait(700);
     await route.continue();
   });

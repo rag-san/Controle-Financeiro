@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, format, startOfMonth } from "date-fns";
+import { endOfMonth, startOfMonth } from "date-fns";
 import { isDateInRangeByKey } from "@/lib/finance/date-keys";
 import { absAmountCents, fromAmountCents, toAmountCents } from "@/lib/finance/official-metrics";
 import type { CategoryDTO, TransactionDTO } from "@/lib/types";
@@ -211,15 +211,11 @@ function buildGroups(
   return groups.sort((left, right) => right.total - left.total);
 }
 
-export function resolveMonthInterval(referenceDate: Date): MonthInterval {
+function resolveMonthInterval(referenceDate: Date): MonthInterval {
   return {
     start: startOfMonth(referenceDate),
     end: endOfMonth(referenceDate)
   };
-}
-
-export function shiftMonth(referenceDate: Date, delta: number): Date {
-  return addMonths(referenceDate, delta);
 }
 
 export function buildCategoryMonthAggregates(
@@ -248,10 +244,4 @@ export function buildCategoryMonthAggregates(
     groups: buildGroups(categories, totalsMap, totalSpent),
     monthInterval
   };
-}
-
-export function buildTransactionsMonthQuery(interval: MonthInterval): string {
-  const from = format(interval.start, "yyyy-MM-dd");
-  const to = `${format(interval.end, "yyyy-MM-dd")}T23:59:59.999`;
-  return `period=custom&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&type=expense`;
 }

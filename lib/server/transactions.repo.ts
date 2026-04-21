@@ -140,11 +140,13 @@ type FilterInput = {
   dateFrom?: Date;
   dateTo?: Date;
   accountId?: string;
+  accountType?: AccountType;
   categoryId?: string;
   type?: "income" | "expense" | "transfer";
   excluded?: boolean;
   normalizedQuery?: string;
   hideCardPaymentMirrorInflow?: boolean;
+  includeBalanceAdjustments?: boolean;
 };
 
 type AccountType = "checking" | "credit" | "cash" | "investment";
@@ -180,6 +182,18 @@ function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[]
     clauses.push("t.account_id = ?");
     params.push(filter.accountId);
   }
+  if (filter.accountType) {
+    clauses.push(
+      `EXISTS (
+        SELECT 1
+        FROM accounts a_filter
+        WHERE a_filter.id = t.account_id
+          AND a_filter.user_id = t.user_id
+          AND a_filter.type = ?
+      )`
+    );
+    params.push(filter.accountType);
+  }
   if (filter.categoryId) {
     clauses.push("t.category_id = ?");
     params.push(filter.categoryId);
@@ -189,8 +203,15 @@ function buildFilterWhere(filter: FilterInput): { sql: string; params: unknown[]
     params.push(filter.type);
   }
   if (filter.excluded !== undefined) {
-    clauses.push("t.excluded = ?");
-    params.push(filter.excluded);
+    if (filter.excluded) {
+      clauses.push("t.excluded = TRUE");
+    } else if (filter.includeBalanceAdjustments) {
+      clauses.push(
+        `(t.excluded = FALSE OR (t.excluded = TRUE AND t.raw_json IS NOT NULL AND t.raw_json LIKE '%"openingBalanceAdjustment":true%'))`
+      );
+    } else {
+      clauses.push("t.excluded = FALSE");
+    }
   }
   if (filter.normalizedQuery) {
     clauses.push("t.normalized_description LIKE ? ESCAPE '\\'");

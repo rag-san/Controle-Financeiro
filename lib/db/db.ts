@@ -45,6 +45,39 @@ type PgLikeError = Error & {
   port?: number;
 };
 
+const RETRYABLE_PG_CODES = new Set(["40P01", "40001"]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(attempt: number): number {
+  const cappedAttempt = Math.max(1, Math.min(attempt, 5));
+  const base = 25 * cappedAttempt;
+  return base + Math.floor(Math.random() * 25);
+}
+
+function getPgErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+  const maybeCode = (error as PgLikeError).code;
+  return typeof maybeCode === "string" && maybeCode.length > 0 ? maybeCode : undefined;
+}
+
+function isRetryablePgError(error: unknown): boolean {
+  const code = getPgErrorCode(error);
+  return Boolean(code && RETRYABLE_PG_CODES.has(code));
+}
+
+function toErrorWithCode(message: string, code?: string): Error {
+  const error = new Error(message) as PgLikeError;
+  if (code) {
+    error.code = code;
+  }
+  return error;
+}
+
 function resolvePostgresUrl(): string {
   const configuredUrl =
     (
@@ -79,8 +112,21 @@ function describePostgresTarget(connectionString: string): string {
 }
 
 function formatPgError(error: unknown): Error {
+  if (error instanceof Error) {
+    if (
+      error.message.startsWith("Falha no PostgreSQL") ||
+      error.message.startsWith("Conexao com PostgreSQL recusada") ||
+      error.message.startsWith("Host do PostgreSQL nao encontrado") ||
+      error.message.startsWith("Autenticacao no PostgreSQL falhou") ||
+      error.message.startsWith("Banco PostgreSQL nao encontrado") ||
+      error.message.startsWith("Falha inesperada ao conectar no PostgreSQL")
+    ) {
+      return error;
+    }
+  }
+
   if (!(error instanceof Error)) {
-    return new Error("Falha inesperada ao conectar no PostgreSQL.");
+    return toErrorWithCode("Falha inesperada ao conectar no PostgreSQL.");
   }
 
   const pgError = error as PgLikeError;
@@ -90,34 +136,38 @@ function formatPgError(error: unknown): Error {
   const port = pgError.port ? ` porta=${pgError.port}` : "";
 
   if (pgError.code === "ECONNREFUSED") {
-    return new Error(
-      `Conexao com PostgreSQL recusada em ${target}.${address}${port}${code} Verifique se o servidor esta ativo e se DATABASE_URL/POSTGRES_URL apontam para a porta correta.`
+    return toErrorWithCode(
+      `Conexao com PostgreSQL recusada em ${target}.${address}${port}${code} Verifique se o servidor esta ativo e se DATABASE_URL/POSTGRES_URL apontam para a porta correta.`,
+      pgError.code
     );
   }
 
   if (pgError.code === "ENOTFOUND") {
-    return new Error(
-      `Host do PostgreSQL nao encontrado para ${target}.${code} Revise DATABASE_URL/POSTGRES_URL.`
+    return toErrorWithCode(
+      `Host do PostgreSQL nao encontrado para ${target}.${code} Revise DATABASE_URL/POSTGRES_URL.`,
+      pgError.code
     );
   }
 
   if (pgError.code === "28P01") {
-    return new Error(
-      `Autenticacao no PostgreSQL falhou para ${target}.${code} Revise usuario e senha em DATABASE_URL/POSTGRES_URL.`
+    return toErrorWithCode(
+      `Autenticacao no PostgreSQL falhou para ${target}.${code} Revise usuario e senha em DATABASE_URL/POSTGRES_URL.`,
+      pgError.code
     );
   }
 
   if (pgError.code === "3D000") {
-    return new Error(
-      `Banco PostgreSQL nao encontrado em ${target}.${code} Revise o nome do database na URL de conexao.`
+    return toErrorWithCode(
+      `Banco PostgreSQL nao encontrado em ${target}.${code} Revise o nome do database na URL de conexao.`,
+      pgError.code
     );
   }
 
   if (pgError.message) {
-    return new Error(`Falha no PostgreSQL (${target}): ${pgError.message}`);
+    return toErrorWithCode(`Falha no PostgreSQL (${target}): ${pgError.message}`, pgError.code);
   }
 
-  return new Error(`Falha inesperada ao conectar no PostgreSQL (${target}).${code}`);
+  return toErrorWithCode(`Falha inesperada ao conectar no PostgreSQL (${target}).${code}`, pgError.code);
 }
 
 function mapQuestionPlaceholders(sql: string): string {
@@ -178,17 +228,29 @@ async function queryInternal<T extends QueryResultRow = QueryResultRow>(
 ): Promise<{ rows: T[]; rowCount: number }> {
   await ensureDbInitialized();
   const statement = normalizeSqlForPostgres(sql);
-  const context = txStorage.getStore();
-  const queryable = context?.pgClient ?? getPgPool();
-  try {
-    const result = await queryable.query<T>(statement, params as unknown[]);
-    return {
-      rows: result.rows,
-      rowCount: result.rowCount ?? 0
-    };
-  } catch (error) {
-    throw formatPgError(error);
+  const maxAttempts = Math.max(1, Number(process.env.PG_QUERY_RETRY_ATTEMPTS ?? 3));
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const context = txStorage.getStore();
+    const queryable = context?.pgClient ?? getPgPool();
+    try {
+      const result = await queryable.query<T>(statement, params as unknown[]);
+      return {
+        rows: result.rows,
+        rowCount: result.rowCount ?? 0
+      };
+    } catch (error) {
+      const canRetry =
+        !context?.pgClient && isRetryablePgError(error) && attempt < maxAttempts;
+      if (canRetry) {
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+      throw formatPgError(error);
+    }
   }
+
+  throw toErrorWithCode("Falha inesperada ao executar query no PostgreSQL.");
 }
 
 let savepointCounter = 0;
@@ -212,26 +274,36 @@ async function withPgTransaction<T>(run: () => Promise<T>): Promise<T> {
     }
   }
 
-  let client: PoolClient | null = null;
-  try {
-    client = await getPgPool().connect();
-    const connectedClient = client;
-    await connectedClient.query("BEGIN");
-    return await txStorage.run({ pgClient: connectedClient }, async () => {
-      try {
-        const result = await run();
-        await connectedClient.query("COMMIT");
-        return result;
-      } catch (error) {
-        await connectedClient.query("ROLLBACK");
-        throw error;
+  const maxAttempts = Math.max(1, Number(process.env.PG_TRANSACTION_RETRY_ATTEMPTS ?? 3));
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let client: PoolClient | null = null;
+    try {
+      client = await getPgPool().connect();
+      const connectedClient = client;
+      await connectedClient.query("BEGIN");
+      return await txStorage.run({ pgClient: connectedClient }, async () => {
+        try {
+          const result = await run();
+          await connectedClient.query("COMMIT");
+          return result;
+        } catch (error) {
+          await connectedClient.query("ROLLBACK");
+          throw error;
+        }
+      });
+    } catch (error) {
+      const canRetry = isRetryablePgError(error) && attempt < maxAttempts;
+      if (canRetry) {
+        await sleep(retryDelayMs(attempt));
+        continue;
       }
-    });
-  } catch (error) {
-    throw formatPgError(error);
-  } finally {
-    client?.release();
+      throw formatPgError(error);
+    } finally {
+      client?.release();
+    }
   }
+
+  throw toErrorWithCode("Falha inesperada ao executar transacao no PostgreSQL.");
 }
 
 function createStatement(sql: string): DbStatement {

@@ -334,7 +334,7 @@ function parseInterInvoiceTransactions(text: string): ParsedPdfCandidate[] {
     const rest = line.slice(datePrefixMatch[0].length).trim();
     if (!rest) continue;
 
-    const amountMatches = [...rest.matchAll(/R\$\s*[\d.,\s]+/gi)];
+    const amountMatches = [...rest.matchAll(/[+\-−]?\s*R\$\s*[\d.,\s]+(?:\s*[+\-−])?/gi)];
     if (amountMatches.length === 0) {
       continue;
     }
@@ -352,15 +352,28 @@ function parseInterInvoiceTransactions(text: string): ParsedPdfCandidate[] {
       continue;
     }
 
-    const absolute = Math.abs(parseMoneyInput(amountText));
+    const normalizedAmountText = normalizeMoneyTokenForParse(amountText);
+    const parsedAmount = parseMoneyInput(normalizedAmountText);
+    const absolute = Math.abs(parsedAmount);
     if (!Number.isFinite(absolute) || Math.abs(absolute) < 0.01) {
       continue;
     }
 
-    const positive =
+    const hasExplicitNegativeSign =
+      /^-\s*R\$/i.test(normalizedAmountText) || /-\s*$/.test(normalizedAmountText);
+    const hasExplicitPositiveSign =
+      /^\+\s*R\$/i.test(normalizedAmountText) || /\+\s*$/.test(normalizedAmountText);
+    const positiveByDescription =
       /\+\s*R\$/i.test(rest) ||
       /\b(PAGAMENTO|ESTORNO|CREDITO|DEVOLUCAO)\b/i.test(normalizeText(description));
-    const amount = positive ? absolute : -absolute;
+
+    const amount = hasExplicitNegativeSign
+      ? -absolute
+      : hasExplicitPositiveSign
+        ? absolute
+        : positiveByDescription
+          ? absolute
+          : -absolute;
     const date = parsePortugueseWordDate(day, monthToken, year);
 
     rows.push({
@@ -716,7 +729,7 @@ function extractDueDateMetadata(text: string): Date | null {
 }
 
 function extractLastMoneyFromLine(line: string): number | null {
-  const matches = [...line.matchAll(/[−-]?\s*R\$\s*[\d.,]+/gi)];
+  const matches = [...line.matchAll(/[+\-−]?\s*R\$\s*[\d.,]+(?:\s*[+\-−])?/gi)];
   if (matches.length === 0) {
     return null;
   }
@@ -754,10 +767,18 @@ function extractInvoiceAmountMetadata(
     }
 
     if (
+      classification.issuerProfile === "inter_invoice" &&
+      /^FATURA ATUAL\b/.test(normalized)
+    ) {
+      invoicePurchaseTotal = Math.abs(amount);
+      continue;
+    }
+
+    if (
       invoicePurchaseTotal === null &&
       (
         /^TOTAL DE COMPRAS\b/.test(normalized) ||
-        /^TOTAL CARTAO\b/.test(normalized) ||
+        (classification.issuerProfile !== "inter_invoice" && /^TOTAL CARTAO\b/.test(normalized)) ||
         (classification.issuerProfile === "mercado_pago_invoice" && /^TOTAL\s+R\$/.test(normalized))
       )
     ) {
@@ -776,7 +797,7 @@ function extractInvoiceAmountMetadata(
 
     if (
       invoiceTotalDue === null &&
-      /^TOTAL A PAGAR\b(?!:)/.test(normalized)
+      /^TOTAL A PAGAR\b:?/.test(normalized)
     ) {
       invoiceTotalDue = amount;
     }

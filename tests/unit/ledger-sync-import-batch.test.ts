@@ -187,3 +187,75 @@ test("syncLedgerFromImportBatch keeps card flow coherent and idempotent", async 
   assert.equal(secondSync.created, 0);
   assert.ok(secondSync.deduped >= 2);
 });
+
+test("syncLedgerFromImportBatch mirrors same-day duplicates with distinct external ids", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("ledger-sync-duplicates");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const batch = await deps.importsRepo.createBatch({
+    userId: fixture.userId,
+    sourceType: "csv",
+    fileName: "batch-sync-duplicates.csv",
+    mapping: null
+  });
+  assert.ok(batch);
+
+  const tx1 = await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.checkingAccountId,
+    categoryId: null,
+    importBatchId: batch.id,
+    date: new Date("2026-01-08T12:00:00.000Z"),
+    description: "Reserva por gastos Futuro",
+    normalizedDescription: deps.normalizeDescription("Reserva por gastos Futuro"),
+    amount: -1,
+    type: "expense",
+    status: "posted",
+    externalId: "RESERVA-REF-001"
+  });
+  const tx2 = await deps.transactionsRepo.create({
+    userId: fixture.userId,
+    accountId: fixture.checkingAccountId,
+    categoryId: null,
+    importBatchId: batch.id,
+    date: new Date("2026-01-08T12:00:00.000Z"),
+    description: "Reserva por gastos Futuro",
+    normalizedDescription: deps.normalizeDescription("Reserva por gastos Futuro"),
+    amount: -1,
+    type: "expense",
+    status: "posted",
+    externalId: "RESERVA-REF-002"
+  });
+  assert.ok(tx1);
+  assert.ok(tx2);
+
+  const firstSync = await deps.syncLedgerFromImportBatch({
+    userId: fixture.userId,
+    importBatchId: batch.id,
+    fileName: batch.fileName
+  });
+
+  assert.equal(firstSync.processed, 2);
+  assert.equal(firstSync.created, 2);
+  assert.equal(firstSync.skipped, 0);
+
+  const entry1 = await deps.ledgerRepo.findLedgerEntryByExternalRef(fixture.userId, `LEGACY_TX:${tx1.id}`);
+  const entry2 = await deps.ledgerRepo.findLedgerEntryByExternalRef(fixture.userId, `LEGACY_TX:${tx2.id}`);
+  assert.ok(entry1);
+  assert.ok(entry2);
+  assert.notEqual(entry1?.id, entry2?.id);
+
+  const secondSync = await deps.syncLedgerFromImportBatch({
+    userId: fixture.userId,
+    importBatchId: batch.id,
+    fileName: batch.fileName
+  });
+  assert.equal(secondSync.processed, 2);
+  assert.equal(secondSync.created, 0);
+  assert.ok(secondSync.deduped >= 2);
+});

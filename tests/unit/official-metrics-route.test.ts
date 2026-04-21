@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 import { encode } from "next-auth/jwt";
 import { NextRequest } from "next/server";
@@ -23,6 +23,7 @@ type LoadedDeps = {
   accountsRepo: typeof import("@/lib/server/accounts.repo").accountsRepo;
   categoriesRepo: typeof import("@/lib/server/categories.repo").categoriesRepo;
   ledgerRepo: typeof import("@/lib/server/ledger.repo").ledgerRepo;
+  syncLedgerForLegacyTransactions: typeof import("@/lib/server/ledger-sync.service").syncLedgerForLegacyTransactions;
   transactionsRepo: typeof import("@/lib/server/transactions.repo").transactionsRepo;
   listTransactionsForUser: typeof import("@/lib/server/transactions.service").listTransactionsForUser;
   formatRange: typeof import("@/src/features/cashflow/utils/cashflow").formatRange;
@@ -34,7 +35,7 @@ let depsPromise: Promise<LoadedDeps> | null = null;
 function loadDeps(): Promise<LoadedDeps> {
   if (!depsPromise) {
     depsPromise = (async () => {
-      const [{ db, initDbOnce }, authModule, routeModule, cacheKeysModule, ledgerNormalizationModule, normalizeModule, usersModule, accountsModule, categoriesModule, ledgerModule, transactionsModule, transactionsServiceModule, cashflowModule] =
+      const [{ db, initDbOnce }, authModule, routeModule, cacheKeysModule, ledgerNormalizationModule, normalizeModule, usersModule, accountsModule, categoriesModule, ledgerModule, ledgerSyncModule, transactionsModule, transactionsServiceModule, cashflowModule] =
         await Promise.all([
           import("@/lib/db"),
           import("@/lib/auth"),
@@ -46,6 +47,7 @@ function loadDeps(): Promise<LoadedDeps> {
           import("@/lib/server/accounts.repo"),
           import("@/lib/server/categories.repo"),
           import("@/lib/server/ledger.repo"),
+          import("@/lib/server/ledger-sync.service"),
           import("@/lib/server/transactions.repo"),
           import("@/lib/server/transactions.service"),
           import("@/src/features/cashflow/utils/cashflow")
@@ -63,6 +65,7 @@ function loadDeps(): Promise<LoadedDeps> {
         accountsRepo: accountsModule.accountsRepo,
         categoriesRepo: categoriesModule.categoriesRepo,
         ledgerRepo: ledgerModule.ledgerRepo,
+        syncLedgerForLegacyTransactions: ledgerSyncModule.syncLedgerForLegacyTransactions,
         transactionsRepo: transactionsModule.transactionsRepo,
         listTransactionsForUser: transactionsServiceModule.listTransactionsForUser,
         formatRange: cashflowModule.formatRange,
@@ -188,6 +191,19 @@ async function buildAuthenticatedRequest(
   });
 }
 
+async function createMirroredLegacyTransaction(
+  deps: LoadedDeps,
+  input: Parameters<LoadedDeps["transactionsRepo"]["create"]>[0]
+) {
+  const transaction = await deps.transactionsRepo.create(input);
+  assert.ok(transaction);
+  await deps.syncLedgerForLegacyTransactions({
+    userId: input.userId,
+    transactionIds: [transaction.id]
+  });
+  return transaction;
+}
+
 test("official metrics route ignores excluded rows and opening balance adjustments", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -209,7 +225,7 @@ test("official metrics route ignores excluded rows and opening balance adjustmen
   const year = now.getUTCFullYear();
   const monthIndex = now.getUTCMonth();
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     date: utcDate(year, monthIndex, 1),
@@ -223,7 +239,7 @@ test("official metrics route ignores excluded rows and opening balance adjustmen
     },
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     date: utcDate(year, monthIndex, 2),
@@ -233,7 +249,7 @@ test("official metrics route ignores excluded rows and opening balance adjustmen
     type: "income",
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     categoryId: groceries.id,
@@ -244,7 +260,7 @@ test("official metrics route ignores excluded rows and opening balance adjustmen
     type: "expense",
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     categoryId: groceries.id,
@@ -406,7 +422,7 @@ test("official categories route nets ledger refunds inside category totals", asy
   assert.equal(payload.aggregates.list[0]?.value ?? 0, 150);
 });
 
-test("official categories route stays on legacy data while the month has transactions without ledger mirror", async (t) => {
+test("official categories route returns 409 while the month has transactions without ledger mirror", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
 
@@ -439,7 +455,7 @@ test("official categories route stays on legacy data while the month has transac
     status: "posted"
   });
 
-  const mirroredTx = await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     categoryId: groceries.id,
@@ -450,29 +466,6 @@ test("official categories route stays on legacy data while the month has transac
     type: "expense",
     status: "posted"
   });
-  assert.ok(mirroredTx);
-
-  await deps.ledgerRepo.upsertLedgerEntry({
-    userId: fixture.userId,
-    postedAt: utcDate(year, monthIndex, 3),
-    amount: 120,
-    direction: "OUT",
-    type: "expense",
-    descriptionNormalized: deps.normalizeDescription("Mercado categories com espelho"),
-    accountId: fixture.checkingAccountId,
-    categoryId: groceries.id,
-    externalRef: `LEGACY_TX:${mirroredTx.id}`,
-    fingerprint: deps.buildFingerprint({
-      postedAt: utcDate(year, monthIndex, 3),
-      amountCents: 12000,
-      type: "expense",
-      direction: "OUT",
-      descriptionNormalized: deps.normalizeDescription("Mercado categories com espelho"),
-      accountId: fixture.checkingAccountId,
-      creditCardAccountId: null
-    })
-  });
-
   const response = await deps.GET(
     await buildAuthenticatedRequest(
       `/api/metrics/official?view=categories&month=${currentMonth}`,
@@ -480,12 +473,10 @@ test("official categories route stays on legacy data while the month has transac
       deps.AUTH_SECRET
     )
   );
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 409);
   const payload = await response.json();
-  assert.equal(payload.view, "categories");
-  assert.equal(payload.aggregates.totalSpent, 200);
-  assert.equal(payload.aggregates.list[0]?.value ?? 0, 200);
-  assert.equal(payload.aggregates.list[0]?.name, groceries.name);
+  assert.equal(payload.code, "ledger_coverage_incomplete");
+  assert.equal(payload.details?.unmirroredLegacyTransactionCount, 1);
 });
 
 test("official cashflow route anchors to latest included transaction and ignores excluded opening balance", async (t) => {
@@ -502,7 +493,7 @@ test("official cashflow route anchors to latest included transaction and ignores
   const monthIndex = now.getUTCMonth();
   const latestIncludedDate = utcDate(year, monthIndex, 3);
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     date: utcDate(year, monthIndex, 2),
@@ -512,7 +503,7 @@ test("official cashflow route anchors to latest included transaction and ignores
     type: "income",
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     date: latestIncludedDate,
@@ -522,7 +513,7 @@ test("official cashflow route anchors to latest included transaction and ignores
     type: "expense",
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     date: utcDate(year, monthIndex, 4),
@@ -1129,7 +1120,7 @@ test("accounts repo exposes ledger-backed current balance when the user is fully
   assert.equal(checking?.currentBalance ?? 0, 1180);
 });
 
-test("official analytics stay on legacy data while the compared range still has transactions without ledger mirror", async (t) => {
+test("official analytics return 409 while the compared range still has transactions without ledger mirror", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
 
@@ -1154,7 +1145,7 @@ test("official analytics stay on legacy data while the compared range still has 
   const previousDay = previousMonthDate.getUTCDate();
   const currentMonth = monthKey(now);
 
-  const previousTx = await deps.transactionsRepo.create({
+  await deps.transactionsRepo.create({
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     categoryId: groceries.id,
@@ -1165,9 +1156,8 @@ test("official analytics stay on legacy data while the compared range still has 
     type: "expense",
     status: "posted"
   });
-  assert.ok(previousTx);
 
-  const currentTx = await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.checkingAccountId,
     categoryId: groceries.id,
@@ -1178,54 +1168,29 @@ test("official analytics stay on legacy data while the compared range still has 
     type: "expense",
     status: "posted"
   });
-  assert.ok(currentTx);
-
-  await deps.ledgerRepo.upsertLedgerEntry({
-    userId: fixture.userId,
-    postedAt: utcDate(year, monthIndex, 3),
-    amount: 120,
-    direction: "OUT",
-    type: "expense",
-    descriptionNormalized: deps.normalizeDescription("Mercado atual com espelho"),
-    accountId: fixture.checkingAccountId,
-    categoryId: groceries.id,
-    externalRef: `LEGACY_TX:${currentTx.id}`,
-    fingerprint: deps.buildFingerprint({
-      postedAt: utcDate(year, monthIndex, 3),
-      amountCents: 12000,
-      type: "expense",
-      direction: "OUT",
-      descriptionNormalized: deps.normalizeDescription("Mercado atual com espelho"),
-      accountId: fixture.checkingAccountId,
-      creditCardAccountId: null
-    })
-  });
 
   const dashboardResponse = await deps.GET(
     await buildAuthenticatedRequest(`/api/metrics/official?view=dashboard&month=${currentMonth}`, fixture, deps.AUTH_SECRET)
   );
-  assert.equal(dashboardResponse.status, 200);
+  assert.equal(dashboardResponse.status, 409);
   const dashboardPayload = await dashboardResponse.json();
-  assert.equal(dashboardPayload.view, "dashboard");
-  assert.equal(dashboardPayload.cards.expense, 120);
-  assert.equal(dashboardPayload.periodComparison.previous.expense, 80);
-  assert.equal(dashboardPayload.topCategories[0]?.previous ?? 0, 80);
+  assert.equal(dashboardPayload.code, "ledger_coverage_incomplete");
+  assert.equal(dashboardPayload.details?.unmirroredLegacyTransactionCount, 1);
 
   const reportsResponse = await deps.GET(
     await buildAuthenticatedRequest("/api/metrics/official?view=reports&preset=1M", fixture, deps.AUTH_SECRET)
   );
-  assert.equal(reportsResponse.status, 200);
+  assert.equal(reportsResponse.status, 409);
   const reportsPayload = await reportsResponse.json();
-  assert.equal(reportsPayload.view, "reports");
-  assert.equal(reportsPayload.model.currentTotals.expense, 120);
-  assert.equal(reportsPayload.model.previousTotals.expense, 80);
+  assert.equal(reportsPayload.code, "ledger_coverage_incomplete");
+  assert.equal(reportsPayload.details?.unmirroredLegacyTransactionCount, 1);
 
   const cashflowResponse = await deps.GET(
     await buildAuthenticatedRequest("/api/metrics/official?view=cashflow&period=1m", fixture, deps.AUTH_SECRET)
   );
-  assert.equal(cashflowResponse.status, 200);
+  assert.equal(cashflowResponse.status, 409);
   const cashflowPayload = await cashflowResponse.json();
-  assert.equal(cashflowPayload.view, "cashflow");
-  assert.equal(cashflowPayload.data.expense.current, 120);
-  assert.equal(cashflowPayload.data.expense.previous, 80);
+  assert.equal(cashflowPayload.code, "ledger_coverage_incomplete");
+  assert.equal(cashflowPayload.details?.unmirroredLegacyTransactionCount, 1);
 });
+

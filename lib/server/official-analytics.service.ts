@@ -10,7 +10,6 @@ import {
 import { getFinancialBreakdownSnapshot } from "@/lib/server/financial-breakdown.service";
 import { loadNormalizedTransactionsForScope } from "@/lib/server/financial-metrics.service";
 import { ledgerRepo } from "@/lib/server/ledger.repo";
-import { transactionsRepo } from "@/lib/server/transactions.repo";
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import type { CategoryDTO } from "@/lib/types";
 import { buildReportsModelFromPrepared } from "@/src/features/reports/buildReportsModel";
@@ -65,37 +64,13 @@ function buildReportsCashSummary(input: {
   };
 }
 
-async function getLegacyScopedPostedBounds(input: {
-  userId: string;
-  accountId?: string;
-  categoryId?: string;
-}): Promise<{ latest: Date | null; earliest: Date | null }> {
-  const filter = {
-    userId: input.userId,
-    accountId: input.accountId,
-    categoryId: input.categoryId,
-    excluded: false,
-    hideCardPaymentMirrorInflow: true
-  } as const;
-
-  const [latestRows, earliestRows] = await Promise.all([
-    transactionsRepo.listPaged(filter, { page: 1, pageSize: 1 }, { sort: "date_desc" }),
-    transactionsRepo.listPaged(filter, { page: 1, pageSize: 1 }, { sort: "date_asc" })
-  ]);
-
-  return {
-    latest: latestRows[0]?.date ?? null,
-    earliest: earliestRows[0]?.date ?? null
-  };
-}
-
 async function resolveReportsPeriod(input: {
   userId: string;
   preset: ReportsPeriodPreset;
   accountId?: string;
   categoryId?: string;
 }): Promise<ReportsPeriodComparison> {
-  const [ledgerLatest, ledgerEarliest, legacyBounds] = await Promise.all([
+  const [ledgerLatest, ledgerEarliest] = await Promise.all([
     ledgerRepo.latestVisiblePostedAt({
       userId: input.userId,
       accountId: input.accountId,
@@ -105,17 +80,12 @@ async function resolveReportsPeriod(input: {
       userId: input.userId,
       accountId: input.accountId,
       categoryId: input.categoryId
-    }),
-    getLegacyScopedPostedBounds({
-      userId: input.userId,
-      accountId: input.accountId,
-      categoryId: input.categoryId
     })
   ]);
 
   return buildPeriodComparison(input.preset, {
-    now: ledgerLatest ?? legacyBounds.latest ?? new Date(),
-    earliestDate: ledgerEarliest ?? legacyBounds.earliest ?? undefined
+    now: ledgerLatest ?? new Date(),
+    earliestDate: ledgerEarliest ?? undefined
   });
 }
 
@@ -534,15 +504,7 @@ async function buildNormalizedCashflowPayload(input: {
     userId: input.userId,
     accountId: input.accountId
   });
-  const latestLegacyDate = await transactionsRepo.latestPostedAt(input.userId, {
-    excluded: false
-  });
-  const referenceDate =
-    latestLedgerDate && latestLegacyDate
-      ? latestLedgerDate.getTime() >= latestLegacyDate.getTime()
-        ? latestLedgerDate
-        : latestLegacyDate
-      : latestLedgerDate ?? latestLegacyDate ?? new Date();
+  const referenceDate = latestLedgerDate ?? new Date();
   const currentRange = resolveCurrentRange(input.period, referenceDate);
   const previousRange = resolvePreviousRange(currentRange);
   const mergedRange = {

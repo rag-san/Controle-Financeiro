@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { createId } from "@/lib/db";
 import { type LedgerDirection, type LedgerEntryType } from "@/lib/ledger/normalization";
-import { nowIso } from "@/lib/server/sql";
+import { escapeLike, nowIso } from "@/lib/server/sql";
 import { themeColors } from "@/src/lib/theme/colors";
 
 type ImportSourceKind = "BANK_STATEMENT" | "CC_STATEMENT";
@@ -249,9 +249,13 @@ function buildDateFilters(
 
 function buildLedgerVisibilityClause(
   alias: string,
-  options?: { includeBalanceAdjustments?: boolean }
+  options?: { includeBalanceAdjustments?: boolean; excluded?: boolean }
 ): string {
   const scoped = alias.trim().length > 0 ? `${alias}.` : "";
+
+  if (options?.excluded) {
+    return `${scoped}excluded = TRUE`;
+  }
 
   if (options?.includeBalanceAdjustments) {
     return `(${scoped}excluded = FALSE OR ${scoped}is_balance_adjustment = TRUE)`;
@@ -1048,7 +1052,7 @@ export const ledgerRepo = {
         creditCardAccountId: row.credit_card_account_id,
         creditCardName: row.credit_card_name,
         currency: row.currency,
-        amount: Number((Number(row.debt_cents ?? 0) / 100).toFixed(2))
+        amount: Math.max(0, Number((Number(row.debt_cents ?? 0) / 100).toFixed(2)))
       }))
     };
   },
@@ -1058,24 +1062,49 @@ export const ledgerRepo = {
     from?: Date;
     to?: Date;
     accountId?: string;
+    accountType?: "checking" | "credit" | "cash" | "investment";
     categoryId?: string;
+    excluded?: boolean;
+    includeBalanceAdjustments?: boolean;
+    normalizedQuery?: string;
   }) {
     const range = buildDateFilters({ from: input.from, to: input.to }, "le");
+    const excluded = input.excluded ?? false;
     const clauses = [
       "le.user_id = ?",
-      buildLedgerVisibilityClause("le", { includeBalanceAdjustments: false }),
-      "le.is_balance_adjustment = FALSE"
+      buildLedgerVisibilityClause("le", {
+        includeBalanceAdjustments: input.includeBalanceAdjustments ?? false,
+        excluded
+      })
     ];
     const params: unknown[] = [input.userId];
+
+    if (!(input.includeBalanceAdjustments ?? false) || excluded) {
+      clauses.push("le.is_balance_adjustment = FALSE");
+    }
 
     if (input.accountId) {
       clauses.push("(le.account_id = ? OR le.credit_card_account_id = ?)");
       params.push(input.accountId, input.accountId);
     }
 
+    if (input.accountType) {
+      if (input.accountType === "credit") {
+        clauses.push("le.credit_card_account_id IS NOT NULL");
+      } else {
+        clauses.push("a.type = ?");
+        params.push(input.accountType);
+      }
+    }
+
     if (input.categoryId) {
       clauses.push("le.category_id = ?");
       params.push(input.categoryId);
+    }
+
+    if (input.normalizedQuery) {
+      clauses.push("le.description_normalized LIKE ? ESCAPE '\\'");
+      params.push(`%${escapeLike(input.normalizedQuery)}%`);
     }
 
     const rows = (await db

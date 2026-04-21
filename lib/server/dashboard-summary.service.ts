@@ -2,7 +2,7 @@ import {
   type DashboardDateRange,
   type DashboardMetricsFilters,
   type DashboardSummary
-} from "@/lib/server/dashboard-metrics.repo";
+} from "@/lib/server/dashboard-analytics.service";
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import { getFinancialBreakdownSnapshot } from "@/lib/server/financial-breakdown.service";
 import { getFinancialMetricsSnapshot } from "@/lib/server/financial-metrics.service";
@@ -29,7 +29,7 @@ export type DashboardSummaryView = DashboardSummary & {
   incomeTotal: number;
   cardDebt: CardDebtRow[];
   financeBreakdown: FinancialBreakdown;
-  source: "ledger" | "legacy";
+  source: "ledger";
 };
 
 export async function getDashboardSummaryView(input: {
@@ -37,14 +37,16 @@ export async function getDashboardSummaryView(input: {
   range: DashboardDateRange;
   filters?: DashboardMetricsFilters;
 }): Promise<DashboardSummaryView> {
-  const [currentMetrics, previousMetrics, ledgerSnapshot, financeBreakdownSnapshot] = await Promise.all([
+  const excludedOnly = input.filters?.excluded ?? false;
+  const [currentMetrics, previousMetrics, currentExcludedMetrics, previousExcludedMetrics, ledgerSnapshot, financeBreakdownSnapshot] = await Promise.all([
     getFinancialMetricsSnapshot({
       userId: input.userId,
       from: input.range.fromDate,
       to: input.range.toDate,
       accountId: input.filters?.accountId,
       categoryId: input.filters?.categoryId,
-      excluded: input.filters?.excluded ?? false,
+      transactionType: input.filters?.type,
+      excluded: excludedOnly,
       normalizedQuery: input.filters?.normalizedQuery,
       hideCardPaymentMirrorInflow: true
     }),
@@ -54,10 +56,37 @@ export async function getDashboardSummaryView(input: {
       to: input.range.previousToDate,
       accountId: input.filters?.accountId,
       categoryId: input.filters?.categoryId,
-      excluded: input.filters?.excluded ?? false,
+      transactionType: input.filters?.type,
+      excluded: excludedOnly,
       normalizedQuery: input.filters?.normalizedQuery,
       hideCardPaymentMirrorInflow: true
     }),
+    excludedOnly
+      ? Promise.resolve(null)
+      : getFinancialMetricsSnapshot({
+          userId: input.userId,
+          from: input.range.fromDate,
+          to: input.range.toDate,
+          accountId: input.filters?.accountId,
+          categoryId: input.filters?.categoryId,
+          transactionType: input.filters?.type,
+          excluded: true,
+          normalizedQuery: input.filters?.normalizedQuery,
+          hideCardPaymentMirrorInflow: true
+        }),
+    excludedOnly
+      ? Promise.resolve(null)
+      : getFinancialMetricsSnapshot({
+          userId: input.userId,
+          from: input.range.previousFromDate,
+          to: input.range.previousToDate,
+          accountId: input.filters?.accountId,
+          categoryId: input.filters?.categoryId,
+          transactionType: input.filters?.type,
+          excluded: true,
+          normalizedQuery: input.filters?.normalizedQuery,
+          hideCardPaymentMirrorInflow: true
+        }),
     ledgerRepo.getDashboardSummary({
       userId: input.userId,
       to: input.range.toDate
@@ -70,6 +99,14 @@ export async function getDashboardSummaryView(input: {
       categoryId: input.filters?.categoryId
     })
   ]);
+  const currentExcludedScope = excludedOnly ? currentMetrics : currentExcludedMetrics;
+  const previousExcludedScope = excludedOnly ? previousMetrics : previousExcludedMetrics;
+  const excludedTotal = Number(
+    ((currentExcludedScope?.budget.income ?? 0) + (currentExcludedScope?.budget.expense ?? 0)).toFixed(2)
+  );
+  const previousExcludedTotal = Number(
+    ((previousExcludedScope?.budget.income ?? 0) + (previousExcludedScope?.budget.expense ?? 0)).toFixed(2)
+  );
   const currentNet = Number((currentMetrics.budget.net).toFixed(2));
   const previousNet = Number((previousMetrics.budget.net).toFixed(2));
   const delta = Number((currentNet - previousNet).toFixed(2));
@@ -83,7 +120,7 @@ export async function getDashboardSummaryView(input: {
     cashInflow: currentMetrics.cashFlow.inflow,
     cashOutflow: currentMetrics.cashFlow.outflow,
     cashNet: currentMetrics.cashFlow.net,
-    excludedTotal: 0,
+    excludedTotal,
     previousPeriodComparison: {
       delta,
       percent,
@@ -93,7 +130,7 @@ export async function getDashboardSummaryView(input: {
       previousCashInflow: previousMetrics.cashFlow.inflow,
       previousCashOutflow: previousMetrics.cashFlow.outflow,
       previousCashNet: previousMetrics.cashFlow.net,
-      previousExcludedTotal: 0
+      previousExcludedTotal
     }
   };
 

@@ -16,6 +16,7 @@ type LoadedDeps = {
   usersRepo: typeof import("@/lib/server/users.repo").usersRepo;
   accountsRepo: typeof import("@/lib/server/accounts.repo").accountsRepo;
   transactionsRepo: typeof import("@/lib/server/transactions.repo").transactionsRepo;
+  syncLedgerForLegacyTransactions: typeof import("@/lib/server/ledger-sync.service").syncLedgerForLegacyTransactions;
   importsRepo: typeof import("@/lib/server/imports.repo").importsRepo;
   ledgerRepo: typeof import("@/lib/server/ledger.repo").ledgerRepo;
 };
@@ -25,13 +26,14 @@ let depsPromise: Promise<LoadedDeps> | null = null;
 function loadDeps(): Promise<LoadedDeps> {
   if (!depsPromise) {
     depsPromise = (async () => {
-      const [{ db, initDbOnce }, normalizeModule, usersModule, accountsModule, transactionsModule, importsModule, ledgerModule] =
+      const [{ db, initDbOnce }, normalizeModule, usersModule, accountsModule, transactionsModule, ledgerSyncModule, importsModule, ledgerModule] =
         await Promise.all([
           import("@/lib/db"),
           import("@/lib/normalize"),
           import("@/lib/server/users.repo"),
           import("@/lib/server/accounts.repo"),
           import("@/lib/server/transactions.repo"),
+          import("@/lib/server/ledger-sync.service"),
           import("@/lib/server/imports.repo"),
           import("@/lib/server/ledger.repo")
         ]);
@@ -43,6 +45,7 @@ function loadDeps(): Promise<LoadedDeps> {
         usersRepo: usersModule.usersRepo,
         accountsRepo: accountsModule.accountsRepo,
         transactionsRepo: transactionsModule.transactionsRepo,
+        syncLedgerForLegacyTransactions: ledgerSyncModule.syncLedgerForLegacyTransactions,
         importsRepo: importsModule.importsRepo,
         ledgerRepo: ledgerModule.ledgerRepo
       };
@@ -133,7 +136,7 @@ function findBalance(
   return account.currentBalance;
 }
 
-test("legacy balances do not turn credit-card payments into positive card assets", async (t) => {
+test("ledger-backed balances do not turn credit-card payments into positive card assets", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
 
@@ -156,12 +159,18 @@ test("legacy balances do not turn credit-card payments into positive card assets
     }
   });
   assert.equal(payment.created, true);
+  assert.ok(payment.outTxId);
+  assert.ok(payment.inTxId);
+  await deps.syncLedgerForLegacyTransactions({
+    userId: fixture.userId,
+    transactionIds: [payment.outTxId, payment.inTxId]
+  });
 
   let balances = await deps.accountsRepo.listByUserWithBalance(fixture.userId);
   assert.equal(findBalance(balances, fixture.checkingAccountId), -2280.95);
   assert.equal(findBalance(balances, fixture.creditAccountId), 0);
 
-  await deps.transactionsRepo.create({
+  const purchase = await deps.transactionsRepo.create({
     userId: fixture.userId,
     accountId: fixture.creditAccountId,
     date: new Date("2026-04-08T12:00:00.000Z"),
@@ -170,6 +179,11 @@ test("legacy balances do not turn credit-card payments into positive card assets
     amount: -2500,
     type: "expense",
     status: "posted"
+  });
+  assert.ok(purchase);
+  await deps.syncLedgerForLegacyTransactions({
+    userId: fixture.userId,
+    transactionIds: [purchase.id]
   });
 
   balances = await deps.accountsRepo.listByUserWithBalance(fixture.userId);

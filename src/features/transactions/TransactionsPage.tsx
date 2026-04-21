@@ -19,6 +19,7 @@ import { EmptyState } from "@/src/app-shell/components/EmptyState";
 import { PageSkeleton } from "@/src/app-shell/components/ShellSkeleton";
 import { cn, formatCurrency } from "@/src/app-shell/utils";
 import { fetchJsonOrThrow, notifyFinanceDataChanged } from "@/src/features/shared/fetch";
+import { resolveTransactionsHeaderSummary } from "@/src/features/transactions/transactions-summary";
 
 type TransactionsResponse = {
   items: TransactionDTO[];
@@ -46,11 +47,12 @@ const PERIOD_OPTIONS = [
   { label: "Todos", value: "all" }
 ] as const;
 
-const TYPE_OPTIONS = [
-  { label: "Todas as Transacoes", value: "" },
-  { label: "Apenas Receitas", value: "income" },
-  { label: "Apenas Despesas", value: "expense" },
-  { label: "Transferencias", value: "transfer" }
+const ACCOUNT_TYPE_OPTIONS = [
+  { label: "Todos os tipos", value: "" },
+  { label: "Conta corrente / Debito", value: "checking" },
+  { label: "Cartao de credito", value: "credit" },
+  { label: "Dinheiro", value: "cash" },
+  { label: "Investimentos", value: "investment" }
 ] as const;
 
 function formatTransactionDate(value: string): string {
@@ -115,7 +117,7 @@ export function TransactionsPage(): React.JSX.Element {
   });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [period, setPeriod] = useState<(typeof PERIOD_OPTIONS)[number]["value"]>("30d");
-  const [type, setType] = useState<(typeof TYPE_OPTIONS)[number]["value"]>("");
+  const [accountType, setAccountType] = useState<(typeof ACCOUNT_TYPE_OPTIONS)[number]["value"]>("");
   const [categoryId, setCategoryId] = useState("");
   const [search, setSearch] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -131,23 +133,14 @@ export function TransactionsPage(): React.JSX.Element {
         includeMeta: "true",
         sort: "date_desc"
       });
-      if (type) query.set("type", type);
+      if (accountType) query.set("accountType", accountType);
       if (categoryId) query.set("categoryId", categoryId);
       if (search.trim()) query.set("q", search.trim());
 
       const payload = await fetchJsonOrThrow<TransactionsResponse>(`/api/transactions?${query.toString()}`);
       setTransactions(payload.items);
       setCategories(payload.meta.categories ?? []);
-      setSummary({
-        income: payload.summary?.income ?? 0,
-        expense: payload.summary?.expense ?? 0,
-        balance: payload.summary?.balance ?? 0,
-        netBudget: payload.summary?.netBudget ?? payload.summary?.balance ?? 0,
-        periodCashInflow: payload.summary?.periodCashInflow ?? payload.summary?.income ?? 0,
-        periodCashOutflow: payload.summary?.periodCashOutflow ?? payload.summary?.expense ?? 0,
-        periodCashFlow: payload.summary?.periodCashFlow ?? 0,
-        cashBalance: payload.summary?.cashBalance ?? 0
-      });
+      setSummary(resolveTransactionsHeaderSummary(payload.summary));
     } catch (loadError) {
       setTransactions([]);
       setCategories([]);
@@ -165,7 +158,7 @@ export function TransactionsPage(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [categoryId, period, search, type]);
+  }, [accountType, categoryId, period, search]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -273,11 +266,11 @@ export function TransactionsPage(): React.JSX.Element {
         </select>
 
         <select
-          value={type}
-          onChange={(event) => setType(event.target.value as (typeof TYPE_OPTIONS)[number]["value"])}
+          value={accountType}
+          onChange={(event) => setAccountType(event.target.value as (typeof ACCOUNT_TYPE_OPTIONS)[number]["value"])}
           className="rounded-md border border-border bg-secondary px-3 py-2 text-sm text-foreground outline-none transition-colors hover:bg-accent"
         >
-          {TYPE_OPTIONS.map((option) => (
+          {ACCOUNT_TYPE_OPTIONS.map((option) => (
             <option key={option.label} value={option.value}>
               {option.label}
             </option>
@@ -297,11 +290,11 @@ export function TransactionsPage(): React.JSX.Element {
           ))}
         </select>
 
-        {(period !== "30d" || type || categoryId || search) ? (
+        {(period !== "30d" || accountType || categoryId || search) ? (
           <button
             onClick={() => {
               setPeriod("30d");
-              setType("");
+              setAccountType("");
               setCategoryId("");
               setSearch("");
             }}

@@ -15,6 +15,7 @@ type LoadedDeps = {
   normalizeDescription: typeof import("@/lib/normalize").normalizeDescription;
   accountsRepo: typeof import("@/lib/server/accounts.repo").accountsRepo;
   categoriesRepo: typeof import("@/lib/server/categories.repo").categoriesRepo;
+  syncLedgerForLegacyTransactions: typeof import("@/lib/server/ledger-sync.service").syncLedgerForLegacyTransactions;
   transactionsRepo: typeof import("@/lib/server/transactions.repo").transactionsRepo;
   usersRepo: typeof import("@/lib/server/users.repo").usersRepo;
   listTransactionsForUser: typeof import("@/lib/server/transactions.service").listTransactionsForUser;
@@ -26,12 +27,13 @@ let depsPromise: Promise<LoadedDeps> | null = null;
 function loadDeps(): Promise<LoadedDeps> {
   if (!depsPromise) {
     depsPromise = (async () => {
-      const [{ db, initDbOnce }, normalizeModule, accountsModule, categoriesModule, transactionsModule, usersModule, transactionsServiceModule] =
+      const [{ db, initDbOnce }, normalizeModule, accountsModule, categoriesModule, ledgerSyncModule, transactionsModule, usersModule, transactionsServiceModule] =
         await Promise.all([
           import("@/lib/db"),
           import("@/lib/normalize"),
           import("@/lib/server/accounts.repo"),
           import("@/lib/server/categories.repo"),
+          import("@/lib/server/ledger-sync.service"),
           import("@/lib/server/transactions.repo"),
           import("@/lib/server/users.repo"),
           import("@/lib/server/transactions.service")
@@ -43,6 +45,7 @@ function loadDeps(): Promise<LoadedDeps> {
         normalizeDescription: normalizeModule.normalizeDescription,
         accountsRepo: accountsModule.accountsRepo,
         categoriesRepo: categoriesModule.categoriesRepo,
+        syncLedgerForLegacyTransactions: ledgerSyncModule.syncLedgerForLegacyTransactions,
         transactionsRepo: transactionsModule.transactionsRepo,
         usersRepo: usersModule.usersRepo,
         listTransactionsForUser: transactionsServiceModule.listTransactionsForUser,
@@ -107,6 +110,33 @@ async function requireDeps(t: import("node:test").TestContext): Promise<LoadedDe
   }
 }
 
+async function createMirroredLegacyTransaction(
+  deps: LoadedDeps,
+  input: Parameters<LoadedDeps["transactionsRepo"]["create"]>[0]
+) {
+  const transaction = await deps.transactionsRepo.create(input);
+  assert.ok(transaction);
+  await deps.syncLedgerForLegacyTransactions({
+    userId: input.userId,
+    transactionIds: [transaction.id]
+  });
+  return transaction;
+}
+
+async function createMirroredTransferPair(
+  deps: LoadedDeps,
+  input: Parameters<LoadedDeps["transactionsRepo"]["createTransferPair"]>[0]
+) {
+  const pair = await deps.transactionsRepo.createTransferPair(input);
+  if (pair.created && pair.outTxId && pair.inTxId) {
+    await deps.syncLedgerForLegacyTransactions({
+      userId: input.userId,
+      transactionIds: [pair.outTxId, pair.inTxId]
+    });
+  }
+  return pair;
+}
+
 test("listTransactionsForUser applies excluded/search/type filters and sorting", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -129,7 +159,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.ok(groceries);
   assert.ok(housing);
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: null,
@@ -141,7 +171,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -153,7 +183,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: housing.id,
@@ -165,7 +195,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: housing.id,
@@ -178,7 +208,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
     status: "posted"
   });
 
-  const transferPair = await deps.transactionsRepo.createTransferPair({
+  const transferPair = await createMirroredTransferPair(deps, {
     userId: fixture.userId,
     fromAccountId: fixture.primaryAccountId,
     toAccountId: fixture.secondaryAccountId,
@@ -205,7 +235,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(all.summary.periodCashInflow, 3000);
   assert.equal(all.summary.periodCashOutflow, 1400);
   assert.equal(all.summary.periodCashFlow, 1600);
-  assert.equal(all.summary.cashBalance, 1550);
+  assert.equal(all.summary.cashBalance, 1600);
   assert.ok((all.meta?.accounts?.length ?? 0) >= 2);
   assert.ok((all.meta?.categories?.length ?? 0) >= 2);
 
@@ -224,7 +254,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(includedOnly.summary.periodCashInflow, 3000);
   assert.equal(includedOnly.summary.periodCashOutflow, 1400);
   assert.equal(includedOnly.summary.periodCashFlow, 1600);
-  assert.equal(includedOnly.summary.cashBalance, 1550);
+  assert.equal(includedOnly.summary.cashBalance, 1600);
 
   const excludedOnly = await deps.listTransactionsForUser(fixture.userId, {
     period: "all",
@@ -241,7 +271,7 @@ test("listTransactionsForUser applies excluded/search/type filters and sorting",
   assert.equal(excludedOnly.summary.periodCashInflow, 0);
   assert.equal(excludedOnly.summary.periodCashOutflow, 50);
   assert.equal(excludedOnly.summary.periodCashFlow, -50);
-  assert.equal(excludedOnly.summary.cashBalance, 1550);
+  assert.equal(excludedOnly.summary.cashBalance, 1600);
 
   const bySearch = await deps.listTransactionsForUser(fixture.userId, {
     period: "all",
@@ -332,7 +362,7 @@ test("listTransactionsForUser hides mirrored credit inflow from card payment tra
   });
   assert.ok(creditAccount);
 
-  const createdPair = await deps.transactionsRepo.createTransferPair({
+  const createdPair = await createMirroredTransferPair(deps, {
     userId: fixture.userId,
     fromAccountId: fixture.primaryAccountId,
     toAccountId: creditAccount.id,
@@ -379,6 +409,90 @@ test("listTransactionsForUser hides mirrored credit inflow from card payment tra
   assert.equal(withMirrorVisible.summary.periodCashFlow, -676.27);
 });
 
+test("listTransactionsForUser filters by accountType with consistent summary totals", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("tx-account-type-filter");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
+  });
+
+  const creditAccount = await deps.accountsRepo.create({
+    userId: fixture.userId,
+    name: `Cartao Filtro QA ${Date.now()}`,
+    type: "credit",
+    institution: "QA",
+    parentAccountId: fixture.primaryAccountId
+  });
+  assert.ok(creditAccount);
+
+  await createMirroredLegacyTransaction(deps, {
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    categoryId: null,
+    date: new Date("2026-03-01T12:00:00.000Z"),
+    description: "Salario conta corrente",
+    normalizedDescription: deps.normalizeDescription("Salario conta corrente"),
+    amount: 1000,
+    type: "income",
+    excluded: false,
+    status: "posted"
+  });
+  await createMirroredLegacyTransaction(deps, {
+    userId: fixture.userId,
+    accountId: fixture.primaryAccountId,
+    categoryId: null,
+    date: new Date("2026-03-02T12:00:00.000Z"),
+    description: "Despesa debito",
+    normalizedDescription: deps.normalizeDescription("Despesa debito"),
+    amount: -200,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+  await createMirroredLegacyTransaction(deps, {
+    userId: fixture.userId,
+    accountId: creditAccount.id,
+    categoryId: null,
+    date: new Date("2026-03-03T12:00:00.000Z"),
+    description: "Compra cartao",
+    normalizedDescription: deps.normalizeDescription("Compra cartao"),
+    amount: -450,
+    type: "expense",
+    excluded: false,
+    status: "posted"
+  });
+
+  const creditOnly = await deps.listTransactionsForUser(fixture.userId, {
+    period: "all",
+    accountType: "credit",
+    sort: "date_desc",
+    page: 1,
+    pageSize: 50,
+    includeMeta: false
+  });
+  assert.equal(creditOnly.pagination.totalCount, 1);
+  assert.ok(creditOnly.items.every((item) => item.account.type === "credit"));
+  assert.equal(creditOnly.summary.income, 0);
+  assert.equal(creditOnly.summary.expense, 450);
+  assert.equal(creditOnly.summary.balance, -450);
+
+  const checkingOnly = await deps.listTransactionsForUser(fixture.userId, {
+    period: "all",
+    accountType: "checking",
+    sort: "date_desc",
+    page: 1,
+    pageSize: 50,
+    includeMeta: false
+  });
+  assert.equal(checkingOnly.pagination.totalCount, 2);
+  assert.ok(checkingOnly.items.every((item) => item.account.type === "checking"));
+  assert.equal(checkingOnly.summary.income, 1000);
+  assert.equal(checkingOnly.summary.expense, 200);
+  assert.equal(checkingOnly.summary.balance, 800);
+});
+
 test("createTransactionForUser rejects manual transactions on credit accounts", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -423,7 +537,7 @@ test("listTransactionsForUser last-month uses posted transaction dates for the m
   const previousMonthLastDay = new Date(now.getFullYear(), now.getMonth(), 0, 12, 0, 0, 0);
   const currentMonthFirstDay = new Date(now.getFullYear(), now.getMonth(), 1, 12, 0, 0, 0);
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: previousMonthLastDay,
@@ -434,7 +548,7 @@ test("listTransactionsForUser last-month uses posted transaction dates for the m
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: currentMonthFirstDay,
@@ -473,7 +587,7 @@ test("listTransactionsForUser custom date-only range includes the whole financia
     await cleanupUser(fixture.userId);
   });
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: new Date("2026-04-01T00:30:00.000Z"),
@@ -484,7 +598,7 @@ test("listTransactionsForUser custom date-only range includes the whole financia
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: new Date("2026-04-01T23:30:00.000Z"),
@@ -495,7 +609,7 @@ test("listTransactionsForUser custom date-only range includes the whole financia
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: new Date("2026-04-02T00:00:00.000Z"),
@@ -535,7 +649,7 @@ test("listTransactionsForUser this-month includes transactions at the start of t
   const firstDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 30, 0, 0));
   const previousDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0, 23, 30, 0, 0));
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: firstDay,
@@ -546,7 +660,7 @@ test("listTransactionsForUser this-month includes transactions at the start of t
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: previousDay,
@@ -569,3 +683,4 @@ test("listTransactionsForUser this-month includes transactions at the start of t
   assert.equal(response.pagination.totalCount, 1);
   assert.equal(response.items[0]?.description, "Primeiro dia do mes");
 });
+

@@ -6,13 +6,16 @@ type AccountType = "checking" | "credit" | "cash" | "investment";
 type LedgerComparableType = "income" | "expense" | "transfer" | "cc_purchase" | "cc_payment" | "fee" | "refund";
 
 export type AnalyticsSourceResolution = {
-  source: "legacy" | "ledger";
+  source: "ledger";
   reason:
-    | "unmirrored_legacy_transactions"
     | "ledger_entries_available"
-    | "no_ledger_entries_in_scope";
+    | "no_ledger_entries_in_scope"
+    | "ledger_coverage_incomplete";
   hasUnmirroredLegacyTransactions: boolean;
   hasLedgerEntriesInScope: boolean;
+  legacyTransactionCount: number;
+  unmirroredLegacyTransactionCount: number;
+  ledgerEntryCount: number;
 };
 
 export type AnalyticsSourceScope = {
@@ -28,6 +31,19 @@ export type AnalyticsSourceScope = {
   hideCardPaymentMirrorInflow?: boolean;
   includeBalanceAdjustments?: boolean;
 };
+
+export class LedgerCoverageError extends Error {
+  readonly code = "LEDGER_COVERAGE_INCOMPLETE";
+  readonly resolution: AnalyticsSourceResolution;
+
+  constructor(resolution: AnalyticsSourceResolution) {
+    super(
+      `Ledger analytics coverage incomplete: ${resolution.unmirroredLegacyTransactionCount} unmirrored transaction(s) detected.`
+    );
+    this.name = "LedgerCoverageError";
+    this.resolution = resolution;
+  }
+}
 
 function normalizeTransactionTypes(value?: TransactionType[]): TransactionType[] {
   return [
@@ -118,6 +134,18 @@ function buildLedgerVisibilityClause(
   }
 
   return `(${scoped}excluded = FALSE OR ${scoped}is_balance_adjustment = TRUE)`;
+}
+
+function buildIgnoredTechnicalCardMirrorClause(): string {
+  return `(
+    t.type = 'transfer'::transaction_type
+    AND t.direction = 'in'::transaction_direction
+    AND t.is_internal_transfer = TRUE
+    AND a.type = 'credit'
+    AND t.transfer_to_account_id = t.account_id
+    AND t.raw_json IS NOT NULL
+    AND t.raw_json LIKE '%"transferDetectedFromCardPayment":true%'
+  )`;
 }
 
 function buildLegacyScopeWhere(input: AnalyticsSourceScope): { sql: string; params: unknown[] } {
@@ -252,7 +280,24 @@ function buildLedgerScopeWhere(input: AnalyticsSourceScope): {
   };
 }
 
-export async function hasUnmirroredLegacyTransactions(input: AnalyticsSourceScope): Promise<boolean> {
+async function countLegacyTransactionsInScope(input: AnalyticsSourceScope): Promise<number> {
+  const where = buildLegacyScopeWhere(input);
+  const row = (await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM transactions t
+       JOIN accounts a
+         ON a.id = t.account_id
+        AND a.user_id = t.user_id
+       WHERE ${where.sql}
+         AND NOT ${buildIgnoredTechnicalCardMirrorClause()}`
+    )
+    .get(...where.params)) as { count: number | string | null } | undefined;
+
+  return Number(row?.count ?? 0);
+}
+
+async function countUnmirroredLegacyTransactions(input: AnalyticsSourceScope): Promise<number> {
   const where = buildLegacyScopeWhere(input);
   const row = (await db
     .prepare(
@@ -265,14 +310,15 @@ export async function hasUnmirroredLegacyTransactions(input: AnalyticsSourceScop
          ON le.user_id = t.user_id
         AND le.external_ref = ('LEGACY_TX:' || t.id)
        WHERE ${where.sql}
+         AND NOT ${buildIgnoredTechnicalCardMirrorClause()}
          AND le.id IS NULL`
     )
     .get(...where.params)) as { count: number | string | null } | undefined;
 
-  return Number(row?.count ?? 0) > 0;
+  return Number(row?.count ?? 0);
 }
 
-export async function hasLedgerEntriesInScope(input: AnalyticsSourceScope): Promise<boolean> {
+async function countLedgerEntriesInScope(input: AnalyticsSourceScope): Promise<number> {
   const where = buildLedgerScopeWhere(input);
   const row = (await db
     .prepare(
@@ -285,41 +331,56 @@ export async function hasLedgerEntriesInScope(input: AnalyticsSourceScope): Prom
     )
     .get(...where.params)) as { count: number | string | null } | undefined;
 
-  return Number(row?.count ?? 0) > 0;
+  return Number(row?.count ?? 0);
+}
+
+export async function hasUnmirroredLegacyTransactions(input: AnalyticsSourceScope): Promise<boolean> {
+  return (await countUnmirroredLegacyTransactions(input)) > 0;
+}
+
+export async function hasLedgerEntriesInScope(input: AnalyticsSourceScope): Promise<boolean> {
+  return (await countLedgerEntriesInScope(input)) > 0;
 }
 
 export async function resolveAnalyticsSource(
   input: AnalyticsSourceScope
 ): Promise<AnalyticsSourceResolution> {
-  const missingLegacy = await hasUnmirroredLegacyTransactions(input);
-  if (missingLegacy) {
-    return {
-      source: "legacy",
-      reason: "unmirrored_legacy_transactions",
-      hasUnmirroredLegacyTransactions: true,
-      hasLedgerEntriesInScope: false
-    };
-  }
-
-  const ledgerAvailable = await hasLedgerEntriesInScope(input);
-  if (ledgerAvailable) {
-    return {
-      source: "ledger",
-      reason: "ledger_entries_available",
-      hasUnmirroredLegacyTransactions: false,
-      hasLedgerEntriesInScope: true
-    };
-  }
+  const [legacyTransactionCount, unmirroredLegacyTransactionCount, ledgerEntryCount] = await Promise.all([
+    countLegacyTransactionsInScope(input),
+    countUnmirroredLegacyTransactions(input),
+    countLedgerEntriesInScope(input)
+  ]);
+  const hasUnmirroredLegacyTransactions = unmirroredLegacyTransactionCount > 0;
+  const hasLedgerEntriesInScope = ledgerEntryCount > 0;
+  const reason = hasUnmirroredLegacyTransactions
+    ? "ledger_coverage_incomplete"
+    : hasLedgerEntriesInScope
+      ? "ledger_entries_available"
+      : "no_ledger_entries_in_scope";
 
   return {
-    source: "legacy",
-    reason: "no_ledger_entries_in_scope",
-    hasUnmirroredLegacyTransactions: false,
-    hasLedgerEntriesInScope: false
+    source: "ledger",
+    reason,
+    hasUnmirroredLegacyTransactions,
+    hasLedgerEntriesInScope,
+    legacyTransactionCount,
+    unmirroredLegacyTransactionCount,
+    ledgerEntryCount
   };
 }
 
 export async function shouldUseLedgerForAnalytics(input: AnalyticsSourceScope): Promise<boolean> {
   const resolution = await resolveAnalyticsSource(input);
-  return resolution.source === "ledger";
+  return !resolution.hasUnmirroredLegacyTransactions;
 }
+
+export async function assertLedgerCoverageForAnalytics(
+  input: AnalyticsSourceScope
+): Promise<AnalyticsSourceResolution> {
+  const resolution = await resolveAnalyticsSource(input);
+  if (resolution.hasUnmirroredLegacyTransactions) {
+    throw new LedgerCoverageError(resolution);
+  }
+  return resolution;
+}
+

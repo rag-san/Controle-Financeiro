@@ -18,14 +18,6 @@ export type ComparisonMetric = {
   changePercent: number | null;
 };
 
-export type MonthlyAggregate = {
-  monthKey: string;
-  monthLabel: string;
-  income: number;
-  expense: number;
-  net: number;
-};
-
 export type NetResultRow = {
   month: string;
   net: number;

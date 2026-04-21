@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { db } from "@/lib/db";
 import { createImportedHash, createTransferKeyHash } from "@/lib/hash";
 import { reconcileAccountStatement } from "@/lib/finance/statement-reconciliation";
 import { toCanonicalImportRow } from "@/lib/import-canonical";
@@ -100,6 +101,43 @@ export const importCommitPayloadSchema = z.object({
 type ImportCommitPayload = z.infer<typeof importCommitPayloadSchema>;
 type ImportRowInput = ImportCommitPayload["rows"][number];
 type UserAccount = Awaited<ReturnType<typeof accountsRepo.listByUser>>[number];
+
+async function listUnmirroredImportBatchTransactionIds(input: {
+  userId: string;
+  importBatchId: string;
+  limit?: number;
+}): Promise<string[]> {
+  const limit = Math.max(1, Math.min(input.limit ?? 5000, 20000));
+
+  const rows = (await db
+    .prepare(
+      `SELECT t.id
+       FROM transactions t
+       JOIN accounts a
+         ON a.id = t.account_id
+        AND a.user_id = t.user_id
+       LEFT JOIN ledger_entries le
+         ON le.user_id = t.user_id
+        AND le.external_ref = ('LEGACY_TX:' || t.id)
+       WHERE t.user_id = ?
+         AND t.import_batch_id = ?
+         AND le.id IS NULL
+         AND NOT (
+           t.type = 'transfer'::transaction_type
+           AND t.direction = 'in'::transaction_direction
+           AND t.is_internal_transfer = TRUE
+           AND a.type = 'credit'
+           AND t.transfer_to_account_id = t.account_id
+           AND t.raw_json IS NOT NULL
+           AND t.raw_json LIKE '%"transferDetectedFromCardPayment":true%'
+         )
+       ORDER BY t.posted_at ASC, t.created_at ASC
+       LIMIT ?`
+    )
+    .all(input.userId, input.importBatchId, limit)) as Array<{ id: string }>;
+
+  return rows.map((row) => row.id);
+}
 
 export class ImportCommitError extends Error {
   readonly status: number;
@@ -1099,6 +1137,8 @@ type InvoiceReconciliationAccumulator = {
   accountId: string;
   accountName: string;
   expectedPurchaseTotal: number | null;
+  invoicePaymentTotal: number | null;
+  invoiceTotalDue: number | null;
   actualPurchaseTotal: number;
   purchaseRowCount: number;
   skippedPaymentRowCount: number;
@@ -1197,6 +1237,28 @@ function resolveExpectedInvoicePurchaseTotal(raw: Record<string, unknown> | null
   return value === null ? null : roundCurrency(Math.abs(value));
 }
 
+function resolveInvoicePaymentTotal(raw: Record<string, unknown> | null | undefined): number | null {
+  const value = readRawFiniteNumber(raw, [
+    "importInvoicePaymentTotal",
+    "invoicePaymentTotal",
+    "invoicePaymentsTotal",
+    "invoiceTotalPayments"
+  ]);
+
+  return value === null ? null : roundCurrency(Math.abs(value));
+}
+
+function resolveInvoiceTotalDue(raw: Record<string, unknown> | null | undefined): number | null {
+  const value = readRawFiniteNumber(raw, [
+    "importInvoiceTotalDue",
+    "invoiceTotalDue",
+    "invoiceAmountDue",
+    "invoiceDueTotal"
+  ]);
+
+  return value === null ? null : roundCurrency(Math.abs(value));
+}
+
 function getInvoiceReconciliationAccumulator(
   target: Map<string, InvoiceReconciliationAccumulator>,
   account: UserAccount
@@ -1210,6 +1272,8 @@ function getInvoiceReconciliationAccumulator(
     accountId: account.id,
     accountName: account.name,
     expectedPurchaseTotal: null,
+    invoicePaymentTotal: null,
+    invoiceTotalDue: null,
     actualPurchaseTotal: 0,
     purchaseRowCount: 0,
     skippedPaymentRowCount: 0
@@ -1223,13 +1287,20 @@ function trackInvoiceExpectedTotal(input: {
   account: UserAccount;
   raw: Record<string, unknown> | null | undefined;
 }) {
-  const expected = resolveExpectedInvoicePurchaseTotal(input.raw);
-  if (expected === null) {
-    return;
-  }
-
   const accumulator = getInvoiceReconciliationAccumulator(input.target, input.account);
-  accumulator.expectedPurchaseTotal = expected;
+  const expected = resolveExpectedInvoicePurchaseTotal(input.raw);
+  const paymentTotal = resolveInvoicePaymentTotal(input.raw);
+  const totalDue = resolveInvoiceTotalDue(input.raw);
+
+  if (expected !== null) {
+    accumulator.expectedPurchaseTotal = expected;
+  }
+  if (paymentTotal !== null) {
+    accumulator.invoicePaymentTotal = paymentTotal;
+  }
+  if (totalDue !== null) {
+    accumulator.invoiceTotalDue = totalDue;
+  }
 }
 
 function trackInvoiceImportedPurchase(input: {
@@ -1255,12 +1326,43 @@ function trackInvoiceSkippedPayment(input: {
   accumulator.skippedPaymentRowCount += 1;
 }
 
+function deriveExpectedInvoicePurchaseTotal(
+  accumulator: InvoiceReconciliationAccumulator,
+  actualPurchaseTotal: number
+): number | null {
+  const explicitExpected = accumulator.expectedPurchaseTotal;
+  const paymentTotal = accumulator.invoicePaymentTotal;
+  const totalDue = accumulator.invoiceTotalDue;
+  const recomposedFromDueAndPayments =
+    paymentTotal !== null && totalDue !== null
+      ? roundCurrency(totalDue + paymentTotal)
+      : null;
+
+  if (explicitExpected !== null && recomposedFromDueAndPayments !== null) {
+    const explicitDelta = Math.abs(actualPurchaseTotal - explicitExpected);
+    const recomposedDelta = Math.abs(actualPurchaseTotal - recomposedFromDueAndPayments);
+    return recomposedDelta + INVOICE_RECONCILIATION_TOLERANCE < explicitDelta
+      ? recomposedFromDueAndPayments
+      : explicitExpected;
+  }
+
+  if (explicitExpected !== null) {
+    return explicitExpected;
+  }
+
+  return recomposedFromDueAndPayments;
+}
+
 function reconcileCreditCardInvoices(target: Map<string, InvoiceReconciliationAccumulator>) {
   const accounts = [...target.values()]
-    .filter((item) => item.expectedPurchaseTotal !== null)
     .map((item) => {
-      const expectedPurchaseTotal = roundCurrency(Number(item.expectedPurchaseTotal));
       const actualPurchaseTotal = roundCurrency(item.actualPurchaseTotal);
+      const expected = deriveExpectedInvoicePurchaseTotal(item, actualPurchaseTotal);
+      if (expected === null) {
+        return null;
+      }
+
+      const expectedPurchaseTotal = roundCurrency(Number(expected));
       const delta = roundCurrency(actualPurchaseTotal - expectedPurchaseTotal);
 
       return {
@@ -1273,7 +1375,21 @@ function reconcileCreditCardInvoices(target: Map<string, InvoiceReconciliationAc
         skippedPaymentRowCount: item.skippedPaymentRowCount,
         ok: Math.abs(delta) <= INVOICE_RECONCILIATION_TOLERANCE
       };
-    });
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        accountId: string;
+        accountName: string;
+        expectedPurchaseTotal: number;
+        actualPurchaseTotal: number;
+        delta: number;
+        purchaseRowCount: number;
+        skippedPaymentRowCount: number;
+        ok: boolean;
+      } => item !== null
+    );
   const mismatchCount = accounts.filter((item) => !item.ok).length;
 
   return {
@@ -2557,6 +2673,12 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
         skipped: number;
       }
     | null = null;
+  let ledgerConsistency:
+    | {
+        recoveredUnmirroredCount: number;
+        remainingUnmirroredCount: number;
+      }
+    | null = null;
   let reconciliationBacklog:
     | {
         transferSuggestions: number;
@@ -2572,9 +2694,68 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       importBatchId: batch.id,
       fileName: payload.fileName
     });
+
+    const initialUnmirroredIds = await listUnmirroredImportBatchTransactionIds({
+      userId,
+      importBatchId: batch.id
+    });
+
+    if (initialUnmirroredIds.length > 0) {
+      await syncLedgerForLegacyTransactions({
+        userId,
+        transactionIds: initialUnmirroredIds
+      });
+
+      const remainingUnmirroredIds = await listUnmirroredImportBatchTransactionIds({
+        userId,
+        importBatchId: batch.id
+      });
+
+      ledgerConsistency = {
+        recoveredUnmirroredCount: initialUnmirroredIds.length - remainingUnmirroredIds.length,
+        remainingUnmirroredCount: remainingUnmirroredIds.length
+      };
+
+      if (remainingUnmirroredIds.length > 0) {
+        throw new ImportCommitError(
+          500,
+          "import_ledger_sync_incomplete",
+          "Importação concluída sem espelhamento contábil completo no ledger.",
+          {
+            batchId: batch.id,
+            totalImported,
+            recoveredUnmirroredCount: ledgerConsistency.recoveredUnmirroredCount,
+            remainingUnmirroredCount: remainingUnmirroredIds.length,
+            unmirroredTransactionIds: remainingUnmirroredIds.slice(0, 50)
+          }
+        );
+      }
+
+      warnings.push(
+        `${initialUnmirroredIds.length} lançamento(s) foram resincronizados para garantir consistência entre transações e ledger.`
+      );
+    } else {
+      ledgerConsistency = {
+        recoveredUnmirroredCount: 0,
+        remainingUnmirroredCount: 0
+      };
+    }
   } catch (error) {
+    if (error instanceof ImportCommitError) {
+      throw error;
+    }
+
     const message = error instanceof Error ? error.message : "falha desconhecida";
-    warnings.push(`Não foi possível sincronizar o ledger para este lote (${message}).`);
+    throw new ImportCommitError(
+      500,
+      "import_ledger_sync_failed",
+      "Falha ao sincronizar o ledger para este lote importado.",
+      {
+        batchId: batch.id,
+        totalImported,
+        reason: message
+      }
+    );
   }
 
   try {
@@ -2733,6 +2914,7 @@ export async function commitImportForUser(userId: string, payload: ImportCommitP
       accounts: invoiceReconciliation.accounts
     },
     ledgerSync,
+    ledgerConsistency,
     reconciliationBacklog
   };
 

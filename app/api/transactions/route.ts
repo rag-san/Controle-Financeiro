@@ -5,9 +5,9 @@ import { getCache, setCache } from "@/lib/cache";
 import { invalidateFinanceCaches } from "@/lib/cache-keys";
 import { privateCacheHeaders } from "@/lib/http";
 import { withRouteProfiling } from "@/lib/profiling";
+import { LedgerCoverageError } from "@/lib/server/analytics-source";
 import {
-  deleteLedgerForLegacyTransactions,
-  syncLedgerForLegacyTransactions
+  deleteLedgerForLegacyTransactions
 } from "@/lib/server/ledger-sync.service";
 import {
   createTransactionForUser,
@@ -39,7 +39,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const payload = await listTransactionsForUser(auth.userId, parsed.data);
+    let payload;
+    try {
+      payload = await listTransactionsForUser(auth.userId, parsed.data);
+    } catch (error) {
+      if (error instanceof LedgerCoverageError) {
+        return NextResponse.json(
+          {
+            code: "ledger_coverage_incomplete",
+            message:
+              "A cobertura do ledger está incompleta para esta consulta. Corrija a sincronização antes de continuar.",
+            details: {
+              reason: error.resolution.reason,
+              legacyTransactionCount: error.resolution.legacyTransactionCount,
+              unmirroredLegacyTransactionCount: error.resolution.unmirroredLegacyTransactionCount,
+              ledgerEntryCount: error.resolution.ledgerEntryCount
+            }
+          },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
 
     setCache(cacheKey, payload, 10_000);
 
@@ -86,11 +107,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!transaction) {
       return NextResponse.json({ error: "Falha ao criar transação" }, { status: 500 });
     }
-
-    await syncLedgerForLegacyTransactions({
-      userId: auth.userId,
-      transactionIds: [transaction.id]
-    });
 
     invalidateFinanceCaches(auth.userId);
 

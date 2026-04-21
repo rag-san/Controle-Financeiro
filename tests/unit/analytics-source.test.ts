@@ -18,6 +18,7 @@ type LoadedDeps = {
   accountsRepo: typeof import("@/lib/server/accounts.repo").accountsRepo;
   ledgerRepo: typeof import("@/lib/server/ledger.repo").ledgerRepo;
   transactionsRepo: typeof import("@/lib/server/transactions.repo").transactionsRepo;
+  syncLedgerForLegacyTransactions: typeof import("@/lib/server/ledger-sync.service").syncLedgerForLegacyTransactions;
   hasLedgerEntriesInScope: typeof import("@/lib/server/analytics-source").hasLedgerEntriesInScope;
   resolveAnalyticsSource: typeof import("@/lib/server/analytics-source").resolveAnalyticsSource;
   shouldUseLedgerForAnalytics: typeof import("@/lib/server/analytics-source").shouldUseLedgerForAnalytics;
@@ -28,7 +29,7 @@ let depsPromise: Promise<LoadedDeps> | null = null;
 function loadDeps(): Promise<LoadedDeps> {
   if (!depsPromise) {
     depsPromise = (async () => {
-      const [{ db, initDbOnce }, ledgerNormalizationModule, normalizeModule, usersModule, accountsModule, ledgerModule, transactionsModule, analyticsSourceModule] =
+      const [{ db, initDbOnce }, ledgerNormalizationModule, normalizeModule, usersModule, accountsModule, ledgerModule, transactionsModule, ledgerSyncModule, analyticsSourceModule] =
         await Promise.all([
           import("@/lib/db"),
           import("@/lib/ledger/normalization"),
@@ -37,6 +38,7 @@ function loadDeps(): Promise<LoadedDeps> {
           import("@/lib/server/accounts.repo"),
           import("@/lib/server/ledger.repo"),
           import("@/lib/server/transactions.repo"),
+          import("@/lib/server/ledger-sync.service"),
           import("@/lib/server/analytics-source")
         ]);
 
@@ -49,6 +51,7 @@ function loadDeps(): Promise<LoadedDeps> {
         accountsRepo: accountsModule.accountsRepo,
         ledgerRepo: ledgerModule.ledgerRepo,
         transactionsRepo: transactionsModule.transactionsRepo,
+        syncLedgerForLegacyTransactions: ledgerSyncModule.syncLedgerForLegacyTransactions,
         hasLedgerEntriesInScope: analyticsSourceModule.hasLedgerEntriesInScope,
         resolveAnalyticsSource: analyticsSourceModule.resolveAnalyticsSource,
         shouldUseLedgerForAnalytics: analyticsSourceModule.shouldUseLedgerForAnalytics
@@ -252,7 +255,7 @@ test("shouldUseLedgerForAnalytics maps ledger credit-card flows to expense and t
   );
 });
 
-test("resolveAnalyticsSource stays on legacy while mirrored coverage is incomplete", async (t) => {
+test("resolveAnalyticsSource reports ledger coverage incomplete while legacy mirror is missing", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
 
@@ -281,10 +284,65 @@ test("resolveAnalyticsSource stays on legacy while mirrored coverage is incomple
     transactionTypes: ["expense"]
   });
 
-  assert.deepEqual(resolution, {
-    source: "legacy",
-    reason: "unmirrored_legacy_transactions",
-    hasUnmirroredLegacyTransactions: true,
-    hasLedgerEntriesInScope: false
+  assert.equal(resolution.source, "ledger");
+  assert.equal(resolution.reason, "ledger_coverage_incomplete");
+  assert.equal(resolution.hasUnmirroredLegacyTransactions, true);
+  assert.equal(resolution.hasLedgerEntriesInScope, false);
+  assert.equal(resolution.legacyTransactionCount, 1);
+  assert.equal(resolution.unmirroredLegacyTransactionCount, 1);
+  assert.equal(resolution.ledgerEntryCount, 0);
+});
+
+test("resolveAnalyticsSource ignores mirrored card-payment inflow legs that are intentionally absent from ledger", async (t) => {
+  const deps = await requireDeps(t);
+  if (!deps) return;
+
+  const fixture = await createFixtureUser("analytics-source-card-mirror");
+  t.after(async () => {
+    await cleanupUser(fixture.userId);
   });
+
+  const credit = await deps.accountsRepo.create({
+    userId: fixture.userId,
+    name: `Cartao analytics source mirror-${Date.now()}`,
+    type: "credit",
+    institution: "QA",
+    parentAccountId: fixture.checkingAccountId
+  });
+  assert.ok(credit);
+
+  const transfer = await deps.transactionsRepo.createTransferPair({
+    userId: fixture.userId,
+    fromAccountId: fixture.checkingAccountId,
+    toAccountId: credit.id,
+    date: utcDate(2026, 1, 12),
+    description: "Pagamento fatura analytics source mirror",
+    normalizedDescription: deps.normalizeDescription("Pagamento fatura analytics source mirror"),
+    amount: 500,
+    status: "posted",
+    raw: {
+      transferDetectedFromCardPayment: true
+    }
+  });
+  assert.equal(transfer.created, true);
+  assert.ok(transfer.outTxId);
+  assert.ok(transfer.inTxId);
+
+  await deps.syncLedgerForLegacyTransactions({
+    userId: fixture.userId,
+    transactionIds: [transfer.outTxId as string, transfer.inTxId as string]
+  });
+
+  const resolution = await deps.resolveAnalyticsSource({
+    userId: fixture.userId,
+    includeBalanceAdjustments: true
+  });
+
+  assert.equal(resolution.source, "ledger");
+  assert.equal(resolution.reason, "ledger_entries_available");
+  assert.equal(resolution.hasUnmirroredLegacyTransactions, false);
+  assert.equal(resolution.hasLedgerEntriesInScope, true);
+  assert.equal(resolution.legacyTransactionCount, 1);
+  assert.equal(resolution.unmirroredLegacyTransactionCount, 0);
+  assert.equal(resolution.ledgerEntryCount, 1);
 });

@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 
 const testDatabaseUrl =
@@ -13,12 +13,18 @@ type LoadedDeps = {
   db: typeof import("@/lib/db").db;
   initDbOnce: typeof import("@/lib/db").initDbOnce;
   normalizeDescription: typeof import("@/lib/normalize").normalizeDescription;
-  dashboardMetricsRepo: typeof import("@/lib/server/dashboard-metrics.repo").dashboardMetricsRepo;
-  resolveDashboardDateRange: typeof import("@/lib/server/dashboard-metrics.repo").resolveDashboardDateRange;
+  dashboardMetricsRepo: {
+    getSummary: typeof import("@/lib/server/dashboard-summary.service").getDashboardSummaryView;
+    getTopCategories: typeof import("@/lib/server/dashboard-analytics.service").getDashboardCategoriesCompatibilityView;
+    getTrends: typeof import("@/lib/server/dashboard-analytics.service").getDashboardTrendsCompatibilityView;
+    getPatrimony: typeof import("@/lib/server/dashboard-analytics.service").getDashboardPatrimonyCompatibilityView;
+  };
+  resolveDashboardDateRange: typeof import("@/lib/server/dashboard-analytics.service").resolveDashboardDateRange;
   accountsRepo: typeof import("@/lib/server/accounts.repo").accountsRepo;
   categoriesRepo: typeof import("@/lib/server/categories.repo").categoriesRepo;
   ledgerRepo: typeof import("@/lib/server/ledger.repo").ledgerRepo;
   transactionsRepo: typeof import("@/lib/server/transactions.repo").transactionsRepo;
+  syncLedgerForLegacyTransactions: typeof import("@/lib/server/ledger-sync.service").syncLedgerForLegacyTransactions;
   usersRepo: typeof import("@/lib/server/users.repo").usersRepo;
 };
 
@@ -27,14 +33,27 @@ let depsPromise: Promise<LoadedDeps> | null = null;
 function loadDeps(): Promise<LoadedDeps> {
   if (!depsPromise) {
     depsPromise = (async () => {
-      const [{ db, initDbOnce }, normalizeModule, dashboardMetricsModule, accountsModule, categoriesModule, ledgerRepoModule, transactionsModule, usersModule] =
+      const [
+        { db, initDbOnce },
+        normalizeModule,
+        dashboardAnalyticsModule,
+        dashboardSummaryModule,
+        accountsModule,
+        categoriesModule,
+        ledgerRepoModule,
+        ledgerSyncModule,
+        transactionsModule,
+        usersModule
+      ] =
         await Promise.all([
           import("@/lib/db"),
           import("@/lib/normalize"),
-          import("@/lib/server/dashboard-metrics.repo"),
+          import("@/lib/server/dashboard-analytics.service"),
+          import("@/lib/server/dashboard-summary.service"),
           import("@/lib/server/accounts.repo"),
           import("@/lib/server/categories.repo"),
           import("@/lib/server/ledger.repo"),
+          import("@/lib/server/ledger-sync.service"),
           import("@/lib/server/transactions.repo"),
           import("@/lib/server/users.repo")
         ]);
@@ -43,11 +62,17 @@ function loadDeps(): Promise<LoadedDeps> {
         db,
         initDbOnce,
         normalizeDescription: normalizeModule.normalizeDescription,
-        dashboardMetricsRepo: dashboardMetricsModule.dashboardMetricsRepo,
-        resolveDashboardDateRange: dashboardMetricsModule.resolveDashboardDateRange,
+        dashboardMetricsRepo: {
+          getSummary: dashboardSummaryModule.getDashboardSummaryView,
+          getTopCategories: dashboardAnalyticsModule.getDashboardCategoriesCompatibilityView,
+          getTrends: dashboardAnalyticsModule.getDashboardTrendsCompatibilityView,
+          getPatrimony: dashboardAnalyticsModule.getDashboardPatrimonyCompatibilityView
+        },
+        resolveDashboardDateRange: dashboardAnalyticsModule.resolveDashboardDateRange,
         accountsRepo: accountsModule.accountsRepo,
         categoriesRepo: categoriesModule.categoriesRepo,
         ledgerRepo: ledgerRepoModule.ledgerRepo,
+        syncLedgerForLegacyTransactions: ledgerSyncModule.syncLedgerForLegacyTransactions,
         transactionsRepo: transactionsModule.transactionsRepo,
         usersRepo: usersModule.usersRepo
       };
@@ -106,6 +131,33 @@ async function requireDeps(t: import("node:test").TestContext): Promise<LoadedDe
   }
 }
 
+async function createMirroredLegacyTransaction(
+  deps: LoadedDeps,
+  input: Parameters<LoadedDeps["transactionsRepo"]["create"]>[0]
+) {
+  const transaction = await deps.transactionsRepo.create(input);
+  assert.ok(transaction);
+  await deps.syncLedgerForLegacyTransactions({
+    userId: input.userId,
+    transactionIds: [transaction.id]
+  });
+  return transaction;
+}
+
+async function createMirroredTransferPair(
+  deps: LoadedDeps,
+  input: Parameters<LoadedDeps["transactionsRepo"]["createTransferPair"]>[0]
+) {
+  const pair = await deps.transactionsRepo.createTransferPair(input);
+  if (pair.created && pair.outTxId && pair.inTxId) {
+    await deps.syncLedgerForLegacyTransactions({
+      userId: input.userId,
+      transactionIds: [pair.outTxId, pair.inTxId]
+    });
+  }
+  return pair;
+}
+
 test("dashboard summary ignores transfers and separates excluded amounts", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
@@ -126,7 +178,7 @@ test("dashboard summary ignores transfers and separates excluded amounts", async
     to: new Date("2026-02-16T00:00:00.000Z")
   });
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: null,
@@ -138,7 +190,7 @@ test("dashboard summary ignores transfers and separates excluded amounts", async
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -150,7 +202,7 @@ test("dashboard summary ignores transfers and separates excluded amounts", async
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -162,7 +214,7 @@ test("dashboard summary ignores transfers and separates excluded amounts", async
     excluded: true,
     status: "posted"
   });
-  const transferPair = await deps.transactionsRepo.createTransferPair({
+  const transferPair = await createMirroredTransferPair(deps, {
     userId: fixture.userId,
     fromAccountId: fixture.primaryAccountId,
     toAccountId: fixture.secondaryAccountId,
@@ -174,7 +226,7 @@ test("dashboard summary ignores transfers and separates excluded amounts", async
   });
   assert.equal(transferPair.created, true);
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: null,
@@ -186,7 +238,7 @@ test("dashboard summary ignores transfers and separates excluded amounts", async
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -266,7 +318,7 @@ test("patrimony series uses baseline and keeps internal transfers neutral", asyn
     to: new Date("2026-02-13T00:00:00.000Z")
   });
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: new Date("2026-02-05T12:00:00.000Z"),
@@ -276,7 +328,7 @@ test("patrimony series uses baseline and keeps internal transfers neutral", asyn
     type: "income",
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: new Date("2026-02-10T12:00:00.000Z"),
@@ -286,7 +338,7 @@ test("patrimony series uses baseline and keeps internal transfers neutral", asyn
     type: "expense",
     status: "posted"
   });
-  const transferPair = await deps.transactionsRepo.createTransferPair({
+  const transferPair = await createMirroredTransferPair(deps, {
     userId: fixture.userId,
     fromAccountId: fixture.primaryAccountId,
     toAccountId: fixture.secondaryAccountId,
@@ -297,7 +349,7 @@ test("patrimony series uses baseline and keeps internal transfers neutral", asyn
     status: "posted"
   });
   assert.equal(transferPair.created, true);
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: new Date("2026-02-12T12:00:00.000Z"),
@@ -307,7 +359,7 @@ test("patrimony series uses baseline and keeps internal transfers neutral", asyn
     type: "income",
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     date: new Date("2026-02-12T15:00:00.000Z"),
@@ -357,7 +409,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     to: new Date("2026-02-16T00:00:00.000Z")
   });
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: null,
@@ -369,7 +421,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -381,7 +433,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.secondaryAccountId,
     categoryId: travel.id,
@@ -393,7 +445,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -405,7 +457,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     excluded: true,
     status: "posted"
   });
-  const pair = await deps.transactionsRepo.createTransferPair({
+  const pair = await createMirroredTransferPair(deps, {
     userId: fixture.userId,
     fromAccountId: fixture.primaryAccountId,
     toAccountId: fixture.secondaryAccountId,
@@ -417,7 +469,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
   });
   assert.equal(pair.created, true);
 
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: null,
@@ -429,7 +481,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -441,7 +493,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.secondaryAccountId,
     categoryId: travel.id,
@@ -453,7 +505,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
     excluded: false,
     status: "posted"
   });
-  await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -527,7 +579,7 @@ test("dashboard metrics apply account/type/category/search/excluded filters cons
   assert.equal(Number(trendsExpense.toFixed(2)), 100);
 });
 
-test("dashboard metrics stay on legacy data while the compared range still has transactions without ledger mirror", async (t) => {
+test("dashboard metrics raise ledger coverage error while the compared range has transactions without ledger mirror", async (t) => {
   const deps = await requireDeps(t);
   if (!deps) return;
   const fixture = await createFixtureUser("dashboard-mixed-coverage");
@@ -570,7 +622,7 @@ test("dashboard metrics stay on legacy data while the compared range still has t
     status: "posted"
   });
 
-  const currentTx = await deps.transactionsRepo.create({
+  await createMirroredLegacyTransaction(deps, {
     userId: fixture.userId,
     accountId: fixture.primaryAccountId,
     categoryId: groceries.id,
@@ -581,52 +633,19 @@ test("dashboard metrics stay on legacy data while the compared range still has t
     type: "expense",
     status: "posted"
   });
-  assert.ok(currentTx);
-
-  await deps.ledgerRepo.upsertLedgerEntry({
-    userId: fixture.userId,
-    postedAt: new Date("2026-02-10T12:00:00.000Z"),
-    amount: 120,
-    direction: "OUT",
-    type: "expense",
-    descriptionNormalized: deps.normalizeDescription("Mercado atual com espelho"),
-    accountId: fixture.primaryAccountId,
-    categoryId: groceries.id,
-    externalRef: `LEGACY_TX:${currentTx.id}`,
-    fingerprint: `dashboard-mixed-coverage-${Date.now()}`
-  });
-
-  const summary = await deps.dashboardMetricsRepo.getSummary({
-    userId: fixture.userId,
-    range
-  });
-  assert.equal(summary.totalIncome, 0);
-  assert.equal(summary.totalExpense, 120);
-  assert.equal(summary.previousPeriodComparison.previousExpense, 80);
-
-  const categories = await deps.dashboardMetricsRepo.getTopCategories({
-    userId: fixture.userId,
-    range
-  });
-  assert.equal(categories.topCategories[0]?.total ?? 0, 120);
-  assert.equal(categories.topCategories[0]?.previousTotal ?? 0, 80);
-
-  const trends = await deps.dashboardMetricsRepo.getTrends({
-    userId: fixture.userId,
-    range,
-    granularity: "day"
-  });
-  assert.equal(trends.series.reduce((sum, point) => sum + point.expense, 0), 120);
-  assert.equal(trends.previousSeries.reduce((sum, point) => sum + point.expense, 0), 80);
-
-  const patrimony = await deps.dashboardMetricsRepo.getPatrimony({
-    userId: fixture.userId,
-    range,
-    granularity: "day"
-  });
-  assert.deepEqual(
-    patrimony.series.map((item) => item.value),
-    [300, 300, 300]
+  await assert.rejects(
+    deps.dashboardMetricsRepo.getSummary({
+      userId: fixture.userId,
+      range
+    }),
+    (error: unknown) => {
+      return (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "LEDGER_COVERAGE_INCOMPLETE"
+      );
+    }
   );
 });
 
@@ -735,8 +754,8 @@ test("ledger dashboard metrics keep opening balance only in patrimony and exclud
   assert.equal(summary.totalExpense, 100);
   assert.equal(summary.net, -100);
   assert.equal(summary.excludedTotal, 40);
-  assert.equal(summary.cashInflow, 70);
-  assert.equal(summary.cashOutflow, 170);
+  assert.equal(summary.cashInflow, 0);
+  assert.equal(summary.cashOutflow, 100);
   assert.equal(summary.cashNet, -100);
 
   const categories = await deps.dashboardMetricsRepo.getTopCategories({
@@ -945,3 +964,4 @@ test("ledger dashboard cash and patrimony stay neutral when filtering by a credi
     [0, 0, 0]
   );
 });
+

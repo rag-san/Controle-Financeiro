@@ -116,12 +116,3 @@ export const CATEGORY_COLOR_SWATCHES = categorySwatches;
 export function getCategoryColor(categoryName: string): string {
   return resolvePaletteItem(categoryName).chart;
 }
-
-export function getCategoryChipClasses(categoryName: string): {
-  bg: string;
-  border: string;
-  text: string;
-  dot: string;
-} {
-  return resolvePaletteItem(categoryName).chip;
-}

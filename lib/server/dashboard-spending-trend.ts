@@ -1,5 +1,5 @@
-import { endOfMonth, isSameMonth, subMonths } from "date-fns";
 import { absAmountCents, fromAmountCents } from "@/lib/finance/official-metrics";
+import { isSameUtcMonth, utcEndOfMonth, utcMonthReference } from "@/lib/finance/utc-date";
 
 export type SpendingTrendPoint = {
   day: number;
@@ -38,6 +38,14 @@ function dayOfMonth(date: Date): number {
   return date.getUTCDate();
 }
 
+function getUtcMonthDays(date: Date): number {
+  return utcEndOfMonth(date).getUTCDate();
+}
+
+function subUtcMonths(date: Date, months: number): Date {
+  return utcMonthReference(date, -months);
+}
+
 function buildExpenseDailyTotals(
   transactions: ExpenseTransactionLike[],
   compareUntilDay: number
@@ -57,18 +65,18 @@ function buildExpenseDailyTotals(
 }
 
 function resolveCompareUntilDay(input: { referenceDate: Date; now: Date }): number {
-  const currentMonthDays = endOfMonth(input.referenceDate).getDate();
-  const previousMonthDays = endOfMonth(subMonths(input.referenceDate, 1)).getDate();
-  const isCurrentMonthReference = isSameMonth(input.referenceDate, input.now);
-  const currentMonthCutoff = isCurrentMonthReference ? Math.min(input.now.getDate(), currentMonthDays) : currentMonthDays;
+  const currentMonthDays = getUtcMonthDays(input.referenceDate);
+  const previousMonthDays = getUtcMonthDays(subUtcMonths(input.referenceDate, 1));
+  const isCurrentMonthReference = isSameUtcMonth(input.referenceDate, input.now);
+  const currentMonthCutoff = isCurrentMonthReference ? Math.min(input.now.getUTCDate(), currentMonthDays) : currentMonthDays;
 
   return Math.max(1, Math.min(currentMonthCutoff, currentMonthDays, previousMonthDays));
 }
 
 export function buildSpendingTrendSeries(input: BuildSpendingTrendSeriesInput): SpendingTrendSeries {
-  const currentMonthDays = endOfMonth(input.referenceDate).getDate();
-  const previousMonthDays = endOfMonth(subMonths(input.referenceDate, 1)).getDate();
-  const isCurrentMonthReference = isSameMonth(input.referenceDate, input.now);
+  const currentMonthDays = getUtcMonthDays(input.referenceDate);
+  const previousMonthDays = getUtcMonthDays(subUtcMonths(input.referenceDate, 1));
+  const isCurrentMonthReference = isSameUtcMonth(input.referenceDate, input.now);
   const hasCurrentExpenseActivity = input.currentTransactions.some((tx) => tx.type === "expense");
   const hasPreviousExpenseActivity = input.previousTransactions.some((tx) => tx.type === "expense");
 

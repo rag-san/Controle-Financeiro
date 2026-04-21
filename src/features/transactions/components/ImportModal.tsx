@@ -7,6 +7,7 @@ import type { AccountDTO, CategoryDTO } from "@/lib/types";
 import { useAppShell } from "@/src/app-shell/AppShellContext";
 import { cn, formatCurrency } from "@/src/app-shell/utils";
 import { fetchJsonOrThrow, notifyFinanceDataChanged } from "@/src/features/shared/fetch";
+import { resolveImportPreviewTotal } from "@/src/features/transactions/components/import-preview-total";
 
 type ImportStep = "upload" | "processing" | "mapping" | "preview" | "success";
 
@@ -69,6 +70,9 @@ type ImportParseResponse = {
     accountHint?: string | null;
     openingBalance?: number | null;
     closingBalance?: number | null;
+    invoicePurchaseTotal?: number | null;
+    invoicePaymentTotal?: number | null;
+    invoiceTotalDue?: number | null;
     [key: string]: unknown;
   };
   accountHint?: string | null;
@@ -216,6 +220,8 @@ export function ImportModal(): React.JSX.Element | null {
   const [errorMessage, setErrorMessage] = useState("");
   const [commitResult, setCommitResult] = useState<ImportCommitResponse | null>(null);
   const [closingBalance, setClosingBalance] = useState<number | null>(null);
+  const [previewDocumentType, setPreviewDocumentType] = useState<string | null>(null);
+  const [previewMetadata, setPreviewMetadata] = useState<ImportParseResponse["metadata"] | null>(null);
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [csvSampleRows, setCsvSampleRows] = useState<Array<Record<string, string>>>([]);
   const [csvMapping, setCsvMapping] = useState<CsvMapping>(EMPTY_MAPPING);
@@ -242,6 +248,8 @@ export function ImportModal(): React.JSX.Element | null {
     setErrorMessage("");
     setCommitResult(null);
     setClosingBalance(null);
+    setPreviewDocumentType(null);
+    setPreviewMetadata(null);
     setCsvColumns([]);
     setCsvSampleRows([]);
     setCsvMapping(EMPTY_MAPPING);
@@ -327,6 +335,8 @@ export function ImportModal(): React.JSX.Element | null {
       setRows(parsed.rows);
       setPreview(buildPreview(parsed.rows, parsed.preview, parsed.accountHint));
       setClosingBalance(inferClosingBalance(parsed.rows, parsed.metadata));
+      setPreviewDocumentType(parsed.documentType ?? null);
+      setPreviewMetadata(parsed.metadata ?? null);
       setSelectedAccountId(matchAccount(accounts, parsed.accountHint ?? null)?.id ?? "");
       setCommitResult(null);
       stopProgress();
@@ -346,6 +356,8 @@ export function ImportModal(): React.JSX.Element | null {
     setCsvSampleRows([]);
     setCsvMapping(EMPTY_MAPPING);
     setMappingHint("");
+    setPreviewDocumentType(null);
+    setPreviewMetadata(null);
     await parseFile(nextFile);
   };
 
@@ -434,7 +446,15 @@ export function ImportModal(): React.JSX.Element | null {
     }
   };
 
-  const total = useMemo(() => preview.reduce((sum, item) => sum + item.signedAmount, 0), [preview]);
+  const total = useMemo(
+    () =>
+      resolveImportPreviewTotal({
+        rows: preview,
+        documentType: previewDocumentType,
+        metadata: previewMetadata
+      }),
+    [preview, previewDocumentType, previewMetadata]
+  );
   const mappingIsValid =
     csvMapping.date.trim().length > 0 &&
     csvMapping.description.trim().length > 0 &&

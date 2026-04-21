@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { createId } from "@/lib/db";
-import { shouldUseLedgerForAnalytics } from "@/lib/server/analytics-source";
 import { fromCents, nowIso } from "@/lib/server/sql";
 
 type AccountRow = {
@@ -36,27 +35,6 @@ type AccountConfirmedBalanceSnapshotRow = {
 
 function round2(value: number): number {
   return Number(value.toFixed(2));
-}
-
-async function listLegacyBalancesByUser(userId: string): Promise<Map<string, number>> {
-  const balanceRows = (await db
-    .prepare(
-      `SELECT
-         t.account_id,
-         CASE
-           WHEN a.type = 'credit' THEN LEAST(COALESCE(SUM(t.amount_cents), 0), 0)
-           ELSE COALESCE(SUM(t.amount_cents), 0)
-         END AS total_cents
-       FROM transactions t
-       JOIN accounts a
-         ON a.id = t.account_id
-        AND a.user_id = t.user_id
-       WHERE t.user_id = ?
-       GROUP BY t.account_id, a.type`
-    )
-    .all(userId)) as AccountBalanceRow[];
-
-  return new Map(balanceRows.map((row) => [row.account_id, fromCents(row.total_cents)]));
 }
 
 async function listLedgerBalancesByUser(userId: string): Promise<Map<string, number>> {
@@ -193,12 +171,8 @@ export const accountsRepo = {
 
   async listByUserWithBalance(userId: string) {
     const accounts = await this.listByUser(userId);
-    const useLedger = await shouldUseLedgerForAnalytics({
-      userId,
-      includeBalanceAdjustments: true
-    });
     const [balanceByAccountId, confirmedBalanceByAccountId] = await Promise.all([
-      useLedger ? listLedgerBalancesByUser(userId) : listLegacyBalancesByUser(userId),
+      listLedgerBalancesByUser(userId),
       listLatestConfirmedBalancesByUser(userId)
     ]);
 

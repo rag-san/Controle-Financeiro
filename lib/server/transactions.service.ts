@@ -4,6 +4,7 @@ import { isValidFlexibleDate, normalizeDescription, normalizeTransaction, parseF
 import { accountsRepo } from "@/lib/server/accounts.repo";
 import { categoriesRepo } from "@/lib/server/categories.repo";
 import { getFinancialMetricsSnapshot } from "@/lib/server/financial-metrics.service";
+import { syncLedgerForLegacyTransactions } from "@/lib/server/ledger-sync.service";
 import { transactionsRepo } from "@/lib/server/transactions.repo";
 
 const flexibleDateSchema = z
@@ -32,6 +33,7 @@ export const transactionsQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
   accountId: z.string().min(6).max(128).optional(),
+  accountType: z.enum(["checking", "credit", "cash", "investment"]).optional(),
   categoryId: z.string().min(6).max(128).optional(),
   type: z.enum(["income", "expense", "transfer"]).optional(),
   excluded: z.enum(["true", "false"]).optional(),
@@ -160,6 +162,7 @@ export async function listTransactionsForUser(userId: string, params: Transactio
     dateFrom: dateRange.gte,
     dateTo: dateRange.lte,
     accountId: params.accountId || undefined,
+    accountType: params.accountType || undefined,
     categoryId: params.categoryId || undefined,
     type: params.type || undefined,
     excluded: params.excluded === "true" ? true : false,
@@ -175,6 +178,7 @@ export async function listTransactionsForUser(userId: string, params: Transactio
     from: dateRange.gte,
     to: dateRange.lte,
     accountId: params.accountId || undefined,
+    accountType: params.accountType || undefined,
     categoryId: params.categoryId || undefined,
     transactionType: params.type || undefined,
     excluded: params.excluded === "true" ? true : false,
@@ -231,7 +235,7 @@ export async function createTransactionForUser(userId: string, input: CreateTran
     type: input.type
   });
 
-  return transactionsRepo.create({
+  const created = await transactionsRepo.create({
     userId,
     accountId: input.accountId,
     categoryId: input.categoryId,
@@ -243,4 +247,15 @@ export async function createTransactionForUser(userId: string, input: CreateTran
     excluded: input.excluded,
     status: input.status
   });
+
+  if (!created) {
+    return created;
+  }
+
+  await syncLedgerForLegacyTransactions({
+    userId,
+    transactionIds: [created.id]
+  });
+
+  return created;
 }

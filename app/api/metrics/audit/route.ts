@@ -2,9 +2,9 @@ import { endOfMonth, format, startOfMonth } from "date-fns";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/api-auth";
-import { accumulateOfficialFlowCents, fromAmountCents } from "@/lib/finance/official-metrics";
+import { LedgerCoverageError } from "@/lib/server/analytics-source";
 import { withRouteProfiling } from "@/lib/profiling";
-import { transactionsRepo } from "@/lib/server/transactions.repo";
+import { loadNormalizedTransactionsForScope } from "@/lib/server/financial-metrics.service";
 
 const querySchema = z.object({
   from: z.string().optional(),
@@ -69,43 +69,80 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Período inválido: from maior que to." }, { status: 400 });
     }
 
-    const rows = await transactionsRepo.listAll({
-      userId: auth.userId,
-      dateFrom: from,
-      dateTo: to
-    });
+    let entries;
+    try {
+      const snapshot = await loadNormalizedTransactionsForScope({
+        userId: auth.userId,
+        from,
+        to,
+        excluded: false,
+        hideCardPaymentMirrorInflow: false
+      });
+      entries = snapshot.entries.filter((entry) => !entry.excluded && !entry.isBalanceAdjustment);
+    } catch (error) {
+      if (error instanceof LedgerCoverageError) {
+        return NextResponse.json(
+          {
+            code: "ledger_coverage_incomplete",
+            message:
+              "A cobertura do ledger está incompleta para auditoria. Corrija a sincronização antes de continuar.",
+            details: {
+              reason: error.resolution.reason,
+              legacyTransactionCount: error.resolution.legacyTransactionCount,
+              unmirroredLegacyTransactionCount: error.resolution.unmirroredLegacyTransactionCount,
+              ledgerEntryCount: error.resolution.ledgerEntryCount
+            }
+          },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
 
-    const totalsCents = accumulateOfficialFlowCents(rows.map((item) => ({ type: item.type, amount: item.amount })));
-    const officialIncome = fromAmountCents(totalsCents.incomeCents);
-    const officialExpense = fromAmountCents(totalsCents.expenseCents);
-    const officialNet = fromAmountCents(totalsCents.netCents);
-    const officialTransfer = fromAmountCents(totalsCents.transferCents);
+    const officialIncome = round2(
+      entries
+        .filter((item) => item.budgetImpact === "counts_as_income")
+        .reduce((sum, item) => sum + item.budgetSignedAmount, 0)
+    );
+    const officialExpense = round2(
+      entries
+        .filter((item) => item.budgetImpact === "counts_as_expense")
+        .reduce((sum, item) => sum + -item.budgetSignedAmount, 0)
+    );
+    const officialNet = round2(officialIncome - officialExpense);
+    const officialTransfer = round2(
+      entries
+        .filter((item) => item.nature === "internal_transfer" || item.nature === "credit_card_payment")
+        .reduce((sum, item) => sum + Math.abs(item.signedAmount), 0)
+    );
 
-    const categoriesExpenseCents = rows
-      .filter((item) => item.type === "expense")
-      .reduce((sum, item) => sum + Math.round(Math.abs(item.amount) * 100), 0);
+    const categoriesExpense = round2(
+      entries
+        .filter((item) => item.budgetImpact === "counts_as_expense")
+        .reduce((sum, item) => sum + -item.budgetSignedAmount, 0)
+    );
 
     const perDay = new Map<string, { incomeCents: number; expenseCents: number }>();
-    for (const item of rows) {
-      const day = format(item.date, "yyyy-MM-dd");
+    for (const item of entries) {
+      const day = format(new Date(item.date), "yyyy-MM-dd");
       const current = perDay.get(day) ?? { incomeCents: 0, expenseCents: 0 };
-      if (item.type === "income") {
-        current.incomeCents += Math.round(Math.abs(item.amount) * 100);
-      } else if (item.type === "expense") {
-        current.expenseCents += Math.round(Math.abs(item.amount) * 100);
+      if (item.budgetImpact === "counts_as_income") {
+        current.incomeCents += Math.round(item.budgetSignedAmount * 100);
+      } else if (item.budgetImpact === "counts_as_expense") {
+        current.expenseCents += Math.round(-item.budgetSignedAmount * 100);
       }
       perDay.set(day, current);
     }
-    const timeSeriesIncome = fromAmountCents([...perDay.values()].reduce((sum, item) => sum + item.incomeCents, 0));
-    const timeSeriesExpense = fromAmountCents([...perDay.values()].reduce((sum, item) => sum + item.expenseCents, 0));
+    const timeSeriesIncome = round2([...perDay.values()].reduce((sum, item) => sum + item.incomeCents, 0) / 100);
+    const timeSeriesExpense = round2([...perDay.values()].reduce((sum, item) => sum + item.expenseCents, 0) / 100);
 
-    const accountNet = round2(rows.reduce((sum, item) => sum + item.amount, 0));
+    const accountNet = round2(entries.reduce((sum, item) => sum + item.signedAmount, 0));
 
     const checks: AuditCheck[] = [
       buildCheck({
         key: "categories_expense_equals_total_expense",
         expected: officialExpense,
-        actual: fromAmountCents(categoriesExpenseCents)
+        actual: categoriesExpense
       }),
       buildCheck({
         key: "timeseries_income_equals_total_income",

@@ -64,12 +64,14 @@ export function buildFingerprint(input: {
   accountId?: string | null;
   creditCardAccountId?: string | null;
   institutionId?: string | null;
+  sourceRef?: string | null;
 }): string {
   const accountRef = input.accountId?.trim() || input.creditCardAccountId?.trim() || "";
   const descriptionRef = normalizeText(input.descriptionNormalized);
   const merchantRef = normalizeOptionalText(input.merchantNormalized) ?? "";
   const directionRef = input.direction ?? "";
   const institutionRef = input.institutionId?.trim() ?? "";
+  const sourceRef = normalizeOptionalText(input.sourceRef) ?? "";
 
   const payload = [
     normalizeDateDay(input.postedAt),
@@ -79,7 +81,8 @@ export function buildFingerprint(input: {
     descriptionRef,
     merchantRef,
     accountRef,
-    institutionRef
+    institutionRef,
+    sourceRef
   ].join("|");
 
   return crypto.createHash("sha256").update(payload).digest("hex");

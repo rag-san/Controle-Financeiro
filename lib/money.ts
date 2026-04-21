@@ -1,16 +1,3 @@
-const brlFormatter = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL"
-});
-
-export function formatMoney(value: number | string | { toNumber?: () => number }): string {
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) {
-    return brlFormatter.format(0);
-  }
-  return brlFormatter.format(numeric);
-}
-
 export function parseMoneyInput(value: string | number): number {
   if (typeof value === "number") return value;
 
